@@ -1,5 +1,6 @@
-export const dynamic = "force-dynamic"; // MUST BE HERE
-("use client");
+"use client"; // This page uses React state and effects
+export const dynamic = "force-dynamic"; 
+
 
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
