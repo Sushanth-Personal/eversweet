@@ -391,36 +391,35 @@ export default function Home() {
           />
         </div>
 
-       
-       {/* Hero image strip — pulls from your real product photos */}
-{products.filter((p) => p.image_url).slice(0, 4).length > 0 && (
-  <div
-    style={{
-      display: 'flex',
-      gap: 6,
-      marginBottom: 24,
-      borderRadius: 8,
-      overflow: 'hidden',
-      height: 180,
-    }}
-  >
-    {products
-      .filter((p) => p.image_url)
-      .slice(0, 4)
-      .map((p, i) => (
-        <img
-          key={p.id}
-          src={p.image_url!}
-          alt={p.name}
-          style={{
-            flex: i === 0 ? 2 : 1,
-            objectFit: 'cover',
-            height: '100%',
-          }}
-        />
-      ))}
-  </div>
-)}
+        {/* Hero image strip — pulls from your real product photos */}
+        {products.filter((p) => p.image_url).slice(0, 4).length > 0 && (
+          <div
+            style={{
+              display: "flex",
+              gap: 6,
+              marginBottom: 24,
+              borderRadius: 8,
+              overflow: "hidden",
+              height: 180,
+            }}
+          >
+            {products
+              .filter((p) => p.image_url)
+              .slice(0, 4)
+              .map((p, i) => (
+                <img
+                  key={p.id}
+                  src={p.image_url!}
+                  alt={p.name}
+                  style={{
+                    flex: i === 0 ? 2 : 1,
+                    objectFit: "cover",
+                    height: "100%",
+                  }}
+                />
+              ))}
+          </div>
+        )}
 
         <p
           style={{
