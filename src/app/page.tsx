@@ -269,7 +269,7 @@ export default function Home() {
 
         {payMethod === 'phone' && (
           <a
-            href="tel:+919999999999"
+            href="tel:+917907044368"
             className="btn-gold"
             style={{ marginBottom: 24, maxWidth: 260 }}
           >
@@ -280,7 +280,7 @@ export default function Home() {
         <div className="divider" style={{ width: '100%', marginBottom: 24 }} />
 
         <a
-          href="https://instagram.com/eversweet.mochi"
+          href="https://instagram.com/byeversweet"
           target="_blank"
           rel="noopener noreferrer"
           style={{
@@ -291,7 +291,7 @@ export default function Home() {
             textDecoration: 'none',
           }}
         >
-          Follow us @eversweet.mochi →
+          Follow us @byeversweet →
         </a>
       </main>
     )
