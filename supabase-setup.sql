@@ -1,12 +1,4 @@
--- ================================================================
--- EVERSWEET — SUPABASE DATABASE SETUP
--- Run this entire file in Supabase SQL Editor
--- Supabase Dashboard → SQL Editor → New Query → paste → Run
--- ================================================================
-
-
 -- ── 1. TABLES ────────────────────────────────────────────────────
-
 create table if not exists products (
   id          uuid    default gen_random_uuid() primary key,
   name        text    not null,
@@ -54,55 +46,41 @@ create table if not exists orders (
   created_at     timestamp default now()
 );
 
-
 -- ── 2. ROW LEVEL SECURITY ────────────────────────────────────────
--- Enable RLS on all tables (secure by default)
-
 alter table products    enable row level security;
 alter table box_sizes   enable row level security;
 alter table time_slots  enable row level security;
 alter table orders      enable row level security;
 
--- Public can read products, box sizes, and time slots
-create policy "Public read products"
-  on products for select using (true);
-
-create policy "Public read box_sizes"
-  on box_sizes for select using (true);
-
-create policy "Public read time_slots"
-  on time_slots for select using (true);
-
--- Public can insert orders (no login needed)
-create policy "Public insert orders"
-  on orders for insert with check (true);
-
--- Service role (used by API routes) can do everything
--- This is handled automatically by the service_role key
-
+create policy "Public read products" on products for select using (true);
+create policy "Public read box_sizes" on box_sizes for select using (true);
+create policy "Public read time_slots" on time_slots for select using (true);
+create policy "Public insert orders" on orders for insert with check (true);
 
 -- ── 3. SEED DATA ─────────────────────────────────────────────────
+-- Clear existing data
+delete from orders;
+delete from box_sizes;
+delete from products;
 
--- Box sizes
+-- Sync Box Sizes (Correct Pricing)
 insert into box_sizes (label, count, price, sort_order) values
-  ('Box of 4',  4,  100, 1),
-  ('Box of 6',  6,  150, 2),
-  ('Box of 8',  8,  190, 3),
-  ('Box of 12', 12, 270, 4),
-  ('Box of 16', 16, 340, 5);
+  ('Box of 4',  4,  499,  1),
+  ('Box of 6',  6,  699,  2),
+  ('Box of 8',  8,  899,  3),
+  ('Box of 12', 12, 1299, 4),
+  ('Box of 16', 16, 1699, 5);
 
--- Products (add your real image URLs later via Admin panel)
-insert into products (name, description, price, is_premium, sort_order) values
-  ('Matcha Red Bean',      'Earthy matcha shell with sweet red bean paste',        30, true,  1),
-  ('Strawberry Cloud',     'Fresh strawberry with light whipped cream filling',    32, true,  2),
-  ('Dark Chocolate Fudge', 'Rich dark chocolate ganache at the centre',            30, true,  3),
-  ('Black Sesame Maracuja','Nutty black sesame with passionfruit brightness',      28, true,  4),
-  ('Mango Coconut',        'Tropical mango with coconut cream',                    25, false, 5),
-  ('Classic Vanilla',      'Soft vanilla bean mochi with a pure, simple flavour', 22, false, 6);
-
--- Time slots for today and tomorrow (you can add more from Admin panel)
-insert into time_slots (label, date, max_orders) values
-  ('5:00 PM – 6:00 PM', current_date,     10),
-  ('6:00 PM – 7:00 PM', current_date,     8),
-  ('5:00 PM – 6:00 PM', current_date + 1, 10),
-  ('6:00 PM – 7:00 PM', current_date + 1, 10);
+-- Sync All 11 Products (Correct Images & Descriptions)
+insert into products (name, description, price, image_url, is_premium, sort_order) values
+  ('Mango Mochi', 'Sweet Alphonso mango filling wrapped in a soft, pillowy mochi skin. Pure and tropical.', 0, 'https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/products/mango-mochi.png', false, 1),
+  ('Mango Passion Fruit Mochi', 'Mango meets tangy curd in a creamy layered filling. Sweet with a gentle sour finish.', 0, 'https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/products/mangopassioncurd.png', false, 2),
+  ('Strawberry Mochi', 'Fresh strawberry pulp and real fruit pieces wrapped in a soft mochi shell. Juicy, bright, and naturally sweet.', 0, 'https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/products/mochi-strawberry.webp', false, 3),
+  ('Blueberry', 'Rich blueberry compote centre with deep berry flavour and a natural purple hue.', 0, 'https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/products/blueberry.png', false, 4),
+  ('Kiwi', 'Bright, slightly tart kiwi filling — a refreshing contrast to the sweet mochi skin.', 0, 'https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/products/kiwi.png', false, 5),
+  ('Biscoff', 'Caramelised Biscoff spread filling with warm spiced cookie notes. A fan favourite.', 0, 'https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/products/biscoff.png', true, 6),
+  ('Hazelnut', 'Smooth roasted hazelnut cream. Rich, nutty, and indulgent in every bite.', 0, 'https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/products/hazlenut.png', true, 7),
+  ('Chococrisp', 'Dark chocolate ganache with a crispy feuilletine layer inside. Texture and richness together.', 0, 'https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/products/chococrisp.png', true, 8),
+  ('Coffeecrisp', 'Espresso cream with a crispy centre. A pick-me-up in every bite.', 0, NULL, true, 9),
+  ('KitKat', 'Chocolate cream with crushed KitKat pieces folded in. Crunchy, chocolatey, and fun.', 0, 'https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/products/kitkat.png', false, 10),
+  ('Nutella', 'Classic Nutella filling — hazelnut chocolate that melts right into the soft mochi shell.', 0, 'https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/products/nutella.png', false, 11);
