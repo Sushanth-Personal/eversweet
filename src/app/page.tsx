@@ -1,5 +1,5 @@
-
-"use client";
+export const dynamic = "force-dynamic"; // MUST BE HERE
+("use client");
 
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
@@ -18,12 +18,13 @@ const IMG: Record<string, string> = {
 function getImg(name: string, url: string | null): string {
   if (url) return url;
   const n = name.toLowerCase();
-  
+
   // New keyword mapping for your expanded menu
   if (n.includes("mango")) return IMG.mango;
   if (n.includes("strawberry")) return IMG.strawberry;
-  if (n.includes("coffee")) return "https://images.unsplash.com/photo-1541167760496-162955ed8a9f?w=600&q=80"; // Fallback for Coffeecrisp
-  
+  if (n.includes("coffee"))
+    return "https://images.unsplash.com/photo-1541167760496-162955ed8a9f?w=600&q=80"; // Fallback for Coffeecrisp
+
   return IMG.default;
 }
 
