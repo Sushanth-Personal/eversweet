@@ -8,17 +8,11 @@ import type { Product, BoxSize, TimeSlot, CustomerForm } from "@/lib/types";
 // ── Fallback images (until you upload real ones to Supabase Storage) ──
 const IMG: Record<string, string> = {
   matcha:
-    "https://images.unsplash.com/photo-1582623838120-7c1ec6be8f8c?w=600&q=80",
+    "https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/products/mango-mochi.png",
   strawberry:
-    "https://images.unsplash.com/photo-1565958011703-44f9829ba187?w=600&q=80",
-  chocolate:
-    "https://images.unsplash.com/photo-1481391032119-d89fee407e44?w=600&q=80",
-  sesame:
-    "https://images.unsplash.com/photo-1563805042-7684c019e1cb?w=600&q=80",
-  mango:
-    "https://images.unsplash.com/photo-1519864600265-abb23847ef2c?w=600&q=80",
+    "https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/products/mochi-strawberry.webp",
   default:
-    "https://images.unsplash.com/photo-1563805042-7684c019e1cb?w=600&q=80",
+    "https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/products/mochi-strawberry.webp",
 };
 
 function getImg(name: string, url: string | null): string {
