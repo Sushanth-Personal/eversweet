@@ -1,0 +1,233 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Design tokens ──────────────────────────────────────────────── */
+:root {
+  --bg:        #160c08;
+  --bg2:       #1e1009;
+  --surface:   #24120c;
+  --surface2:  #2e1810;
+  --surface3:  #3a1f14;
+  --gold:      #c9a84c;
+  --gold-dim:  #a07830;
+  --gold-light:#e8c97a;
+  --cream:     #f5ede0;
+  --cream-dim: #c8b89a;
+  --muted:     #7a6050;
+  --red:       #c04040;
+  --green:     #4a8a5a;
+  --border:    rgba(201, 168, 76, 0.18);
+  --border2:   rgba(201, 168, 76, 0.08);
+}
+
+/* ── Reset & base ───────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--cream);
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 300;
+  font-size: 16px;
+  line-height: 1.6;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Subtle grain overlay */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.35;
+}
+
+/* ── Typography ─────────────────────────────────────────────────── */
+.font-display {
+  font-family: 'Cormorant Garamond', serif;
+}
+
+/* ── Reusable components ────────────────────────────────────────── */
+
+/* Gold CTA button */
+.btn-gold {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--gold-dim) 0%, var(--gold) 40%, var(--gold-light) 70%, var(--gold) 100%);
+  background-size: 200% 200%;
+  color: #160c08;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 500;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  border: none;
+  cursor: pointer;
+  transition: all 0.35s ease;
+  border-radius: 3px;
+  padding: 14px 28px;
+  width: 100%;
+  text-decoration: none;
+}
+.btn-gold:hover {
+  background-position: right center;
+  box-shadow: 0 4px 24px rgba(201, 168, 76, 0.3);
+  transform: translateY(-1px);
+}
+.btn-gold:active { transform: translateY(0); }
+.btn-gold:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Ghost outline button */
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--cream);
+  border: 1px solid var(--border);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-radius: 3px;
+  padding: 10px 16px;
+}
+.btn-ghost:hover { border-color: var(--gold); color: var(--gold); }
+.btn-ghost:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* Card */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  transition: border-color 0.2s;
+}
+.card:hover { border-color: var(--border); }
+.card.selected {
+  border-color: var(--gold) !important;
+  background: var(--surface2) !important;
+}
+
+/* Section label */
+.section-label {
+  font-size: 0.6rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 8px;
+}
+
+/* Step label */
+.step-label {
+  font-size: 0.62rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+/* Gold divider line */
+.divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--gold), transparent);
+  opacity: 0.25;
+  margin: 0;
+}
+
+/* Input fields */
+.field {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--cream);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.875rem;
+  padding: 12px 14px;
+  border-radius: 4px;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.field::placeholder { color: var(--muted); }
+.field:focus { border-color: var(--gold); }
+
+/* Quantity control buttons */
+.qty-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--cream);
+  cursor: pointer;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.qty-btn:hover:not(:disabled) { border-color: var(--gold); color: var(--gold); }
+.qty-btn:disabled { opacity: 0.25; cursor: not-allowed; }
+
+/* Badge */
+.badge-premium {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: var(--gold);
+  color: #160c08;
+  font-size: 0.5rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 2px;
+}
+
+/* Scroll anchor offset */
+#order { scroll-margin-top: 20px; }
+
+/* ── Animations ─────────────────────────────────────────────────── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+.fade-up {
+  animation: fadeUp 0.5s ease forwards;
+}
+
+/* Staggered children */
+.fade-up:nth-child(1) { animation-delay: 0.05s; opacity: 0; }
+.fade-up:nth-child(2) { animation-delay: 0.10s; opacity: 0; }
+.fade-up:nth-child(3) { animation-delay: 0.15s; opacity: 0; }
+.fade-up:nth-child(4) { animation-delay: 0.20s; opacity: 0; }
+.fade-up:nth-child(5) { animation-delay: 0.25s; opacity: 0; }
+.fade-up:nth-child(6) { animation-delay: 0.30s; opacity: 0; }
+
+/* ── Scrollbar ──────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 2px; }
