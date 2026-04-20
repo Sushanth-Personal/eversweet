@@ -1,5 +1,3 @@
-// src/app/page.tsx
-export const dynamic = 'force-dynamic'; // This line fixes the "nothing changed" issue
 
 "use client";
 
