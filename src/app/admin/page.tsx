@@ -34,31 +34,33 @@ function nextStatus(current: string): string | null {
   return STATUS_FLOW[idx + 1]
 }
 
-// ── Copy icon button ───────────────────────────────────────────────
-function CopyBtn({ value }: { value: string }) {
+// ── Copy labeled button ────────────────────────────────────────────
+function CopyBtn({ value, label }: { value: string; label: string }) {
   const [copied, setCopied] = useState(false)
   function copy() {
     if (!value) return
     navigator.clipboard.writeText(value).then(() => {
       setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
+      setTimeout(() => setCopied(false), 2000)
     })
   }
   return (
     <button
       onClick={copy}
       style={{
-        background: 'transparent', border: 'none',
+        background: copied ? 'rgba(74,138,90,0.15)' : 'rgba(201,168,76,0.08)',
+        border: `1px solid ${copied ? 'rgba(74,138,90,0.4)' : 'rgba(201,168,76,0.25)'}`,
         cursor: value ? 'pointer' : 'default',
-        padding: '1px 4px', borderRadius: 3,
-        fontSize: '0.72rem',
-        color: copied ? '#4a8a5a' : '#5a4030',
-        transition: 'color 0.2s',
-        lineHeight: 1,
+        padding: '3px 9px', borderRadius: 3,
+        fontSize: '0.65rem',
+        color: copied ? '#4a8a5a' : '#c9a84c',
+        transition: 'all 0.2s',
+        letterSpacing: '0.06em',
+        fontFamily: 'DM Sans, sans-serif',
+        whiteSpace: 'nowrap' as const,
       }}
-      title="Copy"
     >
-      {copied ? '✓' : '⧉'}
+      {copied ? `✓ Copied` : `Copy ${label}`}
     </button>
   )
 }
@@ -122,7 +124,7 @@ function OrderCard({ order, isRepeat, slotLabel, onStatusChange, onCancel }: {
       {/* Name row */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5, flexWrap: 'wrap' as const }}>
         <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>{order.customer_name}</span>
-        <CopyBtn value={order.customer_name} />
+        <CopyBtn value={order.customer_name} label="Name" />
         {isRepeat && (
           <span style={{
             fontSize: '0.58rem', padding: '2px 6px', borderRadius: 10,
@@ -140,16 +142,16 @@ function OrderCard({ order, isRepeat, slotLabel, onStatusChange, onCancel }: {
       </div>
 
       {/* Phone row */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
         <span style={{ fontSize: '0.78rem', color: '#c8b89a' }}>📞 {order.phone}</span>
-        <CopyBtn value={order.phone} />
+        <CopyBtn value={order.phone} label="Phone" />
       </div>
 
       {/* Address row */}
       {order.address && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
-          <span style={{ fontSize: '0.75rem', color: '#8a7060' }}>📍 {order.address}</span>
-          <CopyBtn value={order.address} />
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 4 }}>
+          <span style={{ fontSize: '0.75rem', color: '#8a7060', flex: 1 }}>📍 {order.address}</span>
+          <CopyBtn value={order.address} label="Address" />
         </div>
       )}
 
@@ -220,6 +222,8 @@ export default function AdminPage() {
   const [repeatPhones, setRepeatPhones] = useState<Set<string>>(new Set())
 
   const [np, setNp] = useState({ name: '', description: '', price: '', is_premium: false, image_url: '' })
+  const [editingProduct, setEditingProduct] = useState<string | null>(null)
+  const [ep, setEp] = useState({ name: '', description: '', price: '', is_premium: false, image_url: '' })
   const [ns, setNs] = useState({ label: '', date: '', max_orders: '10' })
   const [nb, setNb] = useState({ label: '', count: '', price: '' })
   const [saving, setSaving] = useState(false)
@@ -459,37 +463,104 @@ export default function AdminPage() {
           {products.map((prod) => (
             <div key={prod.id} style={{
               background: '#24120c', border: '1px solid rgba(201,168,76,0.1)',
-              borderRadius: 6, padding: '10px 14px', marginBottom: 6,
-              display: 'flex', alignItems: 'center', gap: 12,
+              borderRadius: 6, marginBottom: 6, overflow: 'hidden',
             }}>
-              {prod.image_url && (
-                <img src={prod.image_url} alt={prod.name}
-                  style={{ width: 40, height: 40, borderRadius: 4, objectFit: 'cover', flexShrink: 0 }} />
+              {editingProduct === prod.id ? (
+                /* ── Inline edit form ── */
+                <div style={{ padding: '12px 14px' }}>
+                  <p style={{ fontSize: '0.65rem', color: '#8a7060', letterSpacing: '0.15em', textTransform: 'uppercase' as const, marginBottom: 10 }}>
+                    Editing: {prod.name}
+                  </p>
+                  <Input placeholder="Name *" value={ep.name} onChange={(v) => setEp((p) => ({ ...p, name: v }))} />
+                  <Input placeholder="Description" value={ep.description} onChange={(v) => setEp((p) => ({ ...p, description: v }))} />
+                  <Input placeholder="Price ₹" type="number" value={ep.price} onChange={(v) => setEp((p) => ({ ...p, price: v }))} />
+                  <Input placeholder="Image URL" value={ep.image_url} onChange={(v) => setEp((p) => ({ ...p, image_url: v }))} />
+                  {ep.image_url && (
+                    <div style={{ marginBottom: 8 }}>
+                      <img src={ep.image_url} alt="preview"
+                        style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 4, border: '1px solid rgba(201,168,76,0.2)' }}
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                      />
+                    </div>
+                  )}
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8rem', marginBottom: 12, cursor: 'pointer', color: '#c8b89a' }}>
+                    <input type="checkbox" checked={ep.is_premium}
+                      onChange={(e) => setEp((p) => ({ ...p, is_premium: e.target.checked }))}
+                      style={{ width: 'auto', accentColor: '#c9a84c' }} />
+                    Premium
+                  </label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn-gold" disabled={saving}
+                      style={{ flex: 1, padding: '10px' }}
+                      onClick={async () => {
+                        setSaving(true)
+                        await supabase.from('products').update({
+                          name: ep.name,
+                          description: ep.description,
+                          price: Number(ep.price),
+                          is_premium: ep.is_premium,
+                          image_url: ep.image_url || null,
+                        }).eq('id', prod.id)
+                        setEditingProduct(null)
+                        await load(); setSaving(false); flash(`${ep.name} updated ✓`)
+                      }}>
+                      {saving ? 'Saving…' : 'Save Changes'}
+                    </button>
+                    <Btn onClick={() => setEditingProduct(null)}>Cancel</Btn>
+                  </div>
+                </div>
+              ) : (
+                /* ── Normal product row ── */
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px' }}>
+                  {prod.image_url ? (
+                    <img src={prod.image_url} alt={prod.name}
+                      style={{ width: 44, height: 44, borderRadius: 4, objectFit: 'cover', flexShrink: 0 }} />
+                  ) : (
+                    <div style={{ width: 44, height: 44, borderRadius: 4, background: '#2d1a12', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem' }}>
+                      🍡
+                    </div>
+                  )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: '0.85rem', fontWeight: 500 }}>{prod.name}</p>
+                    <p style={{ fontSize: '0.68rem', color: '#6a5040', lineHeight: 1.4, marginBottom: 2 }}>
+                      {prod.description || <span style={{ color: '#4a3020', fontStyle: 'italic' as const }}>No description</span>}
+                    </p>
+                    <p style={{ fontSize: '0.7rem', color: '#8a7060' }}>
+                      {prod.is_premium ? <span style={{ color: '#c9a84c' }}>★ Premium</span> : 'Regular'} ·{' '}
+                      <span style={{ color: prod.is_available ? '#4a8a5a' : '#c04040' }}>
+                        {prod.is_available ? 'Visible' : 'Hidden'}
+                      </span>
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 5, flexShrink: 0 }}>
+                    <Btn active onClick={() => {
+                      setEditingProduct(prod.id)
+                      setEp({
+                        name: prod.name,
+                        description: prod.description || '',
+                        price: String(prod.price),
+                        is_premium: prod.is_premium,
+                        image_url: prod.image_url || '',
+                      })
+                    }}>
+                      Edit
+                    </Btn>
+                    <Btn onClick={async () => {
+                      await supabase.from('products').update({ is_available: !prod.is_available }).eq('id', prod.id)
+                      load(); flash(`${prod.name} ${prod.is_available ? 'hidden' : 'shown'}`)
+                    }}>
+                      {prod.is_available ? 'Hide' : 'Show'}
+                    </Btn>
+                    <Btn danger onClick={async () => {
+                      if (!confirm(`Delete ${prod.name}?`)) return
+                      await supabase.from('products').delete().eq('id', prod.id)
+                      load(); flash(`${prod.name} deleted`)
+                    }}>
+                      ✕
+                    </Btn>
+                  </div>
+                </div>
               )}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontSize: '0.85rem', fontWeight: 500 }}>{prod.name}</p>
-                <p style={{ fontSize: '0.7rem', color: '#8a7060' }}>
-                  ₹{prod.price} · {prod.is_premium ? 'Premium' : 'Regular'} ·{' '}
-                  <span style={{ color: prod.is_available ? '#4a8a5a' : '#c04040' }}>
-                    {prod.is_available ? 'Visible' : 'Hidden'}
-                  </span>
-                </p>
-              </div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <Btn onClick={async () => {
-                  await supabase.from('products').update({ is_available: !prod.is_available }).eq('id', prod.id)
-                  load(); flash(`${prod.name} ${prod.is_available ? 'hidden' : 'shown'}`)
-                }}>
-                  {prod.is_available ? 'Hide' : 'Show'}
-                </Btn>
-                <Btn danger onClick={async () => {
-                  if (!confirm(`Delete ${prod.name}?`)) return
-                  await supabase.from('products').delete().eq('id', prod.id)
-                  load(); flash(`${prod.name} deleted`)
-                }}>
-                  ✕
-                </Btn>
-              </div>
             </div>
           ))}
           <div style={{ background: '#24120c', border: '1px solid rgba(201,168,76,0.15)', borderRadius: 6, padding: 16, marginTop: 16 }}>
