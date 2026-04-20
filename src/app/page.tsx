@@ -24,11 +24,12 @@ const IMG: Record<string, string> = {
 function getImg(name: string, url: string | null): string {
   if (url) return url;
   const n = name.toLowerCase();
-  if (n.includes("matcha")) return IMG.matcha;
-  if (n.includes("strawberry")) return IMG.strawberry;
-  if (n.includes("chocolate")) return IMG.chocolate;
-  if (n.includes("sesame")) return IMG.sesame;
+  
+  // New keyword mapping for your expanded menu
   if (n.includes("mango")) return IMG.mango;
+  if (n.includes("strawberry")) return IMG.strawberry;
+  if (n.includes("coffee")) return "https://images.unsplash.com/photo-1541167760496-162955ed8a9f?w=600&q=80"; // Fallback for Coffeecrisp
+  
   return IMG.default;
 }
 

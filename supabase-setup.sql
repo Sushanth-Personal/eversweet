@@ -46,20 +46,34 @@ create table if not exists orders (
   created_at     timestamp default now()
 );
 
--- ── 2. ROW LEVEL SECURITY ────────────────────────────────────────
-alter table products    enable row level security;
-alter table box_sizes   enable row level security;
-alter table time_slots  enable row level security;
-alter table orders      enable row level security;
+-- ── 2. ROW LEVEL SECURITY (RLS) ──────────────────────────────────
+ALTER TABLE products    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE box_sizes   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE time_slots  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE orders      ENABLE ROW LEVEL SECURITY;
 
-create policy "Public read products" on products for select using (true);
-create policy "Public read box_sizes" on box_sizes for select using (true);
-create policy "Public read time_slots" on time_slots for select using (true);
-create policy "Public insert orders" on orders for insert with check (true);
+-- Clean up existing policies to prevent "already exists" errors
+DROP POLICY IF EXISTS "Public read products" ON products;
+DROP POLICY IF EXISTS "Admin manage products" ON products;
+DROP POLICY IF EXISTS "Public read box_sizes" ON box_sizes;
+DROP POLICY IF EXISTS "Admin manage boxes" ON box_sizes;
+DROP POLICY IF EXISTS "Public read time_slots" ON time_slots;
+DROP POLICY IF EXISTS "Admin manage slots" ON time_slots;
+DROP POLICY IF EXISTS "Public insert orders" ON orders;
+DROP POLICY IF EXISTS "Admin manage orders" ON orders;
 
+-- Recreate Public Read Access
+CREATE POLICY "Public read products" ON products FOR SELECT USING (true);
+CREATE POLICY "Public read box_sizes" ON box_sizes FOR SELECT USING (true);
+CREATE POLICY "Public read time_slots" ON time_slots FOR SELECT USING (true);
+CREATE POLICY "Public insert orders" ON orders FOR INSERT WITH CHECK (true);
+
+-- Recreate Service Role Access (for Admin Panel)
+CREATE POLICY "Admin manage products" ON products FOR ALL USING (auth.role() = 'service_role');
+CREATE POLICY "Admin manage slots" ON time_slots FOR ALL USING (auth.role() = 'service_role');
+CREATE POLICY "Admin manage boxes" ON box_sizes FOR ALL USING (auth.role() = 'service_role');
+CREATE POLICY "Admin manage orders" ON orders FOR ALL USING (auth.role() = 'service_role');
 -- ── 3. SEED DATA ─────────────────────────────────────────────────
--- Clear existing data
-delete from orders;
 delete from box_sizes;
 delete from products;
 
