@@ -98,3 +98,6 @@ insert into products (name, description, price, image_url, is_premium, sort_orde
   ('Coffeecrisp', 'Espresso cream with a crispy centre. A pick-me-up in every bite.', 0, NULL, true, 9),
   ('KitKat', 'Chocolate cream with crushed KitKat pieces folded in. Crunchy, chocolatey, and fun.', 0, 'https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/products/kitkat.png', false, 10),
   ('Nutella', 'Classic Nutella filling — hazelnut chocolate that melts right into the soft mochi shell.', 0, 'https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/products/nutella.png', false, 11);
+
+
+  
