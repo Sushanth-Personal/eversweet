@@ -4,7 +4,15 @@ import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import type { Product, BoxSize, TimeSlot, Order } from "@/lib/types";
 
-// ── Status flow ────────────────────────────────────────────────────
+type Tab =
+  | "orders"
+  | "dispatched"
+  | "customers"
+  | "dashboard"
+  | "products"
+  | "slots"
+  | "boxes";
+
 const STATUS_FLOW = [
   "pending",
   "confirmed",
@@ -13,17 +21,15 @@ const STATUS_FLOW = [
   "porter_booked",
   "dispatched",
 ] as const;
-type OrderStatus = (typeof STATUS_FLOW)[number] | "cancelled";
-
 const STATUS_LABELS: Record<string, string> = {
   pending: "Payment Pending",
   confirmed: "Order Confirmed",
+  cooking: "Cooking",
   cooked: "Completed Cooking",
-  porter_booked: "Book Porter now",
+  porter_booked: "Porter Booked",
   dispatched: "Dispatched",
   cancelled: "Cancelled",
 };
-
 const STATUS_COLORS: Record<
   string,
   { bg: string; text: string; border: string }
@@ -36,35 +42,11 @@ const STATUS_COLORS: Record<
   dispatched: { bg: "#e8f5e9", text: "#1b5e20", border: "#43a047" },
   cancelled: { bg: "#ffebee", text: "#b71c1c", border: "#ef5350" },
 };
-
-function nextStatus(current: string): string | null {
-  const idx = STATUS_FLOW.indexOf(current as (typeof STATUS_FLOW)[number]);
-  if (idx === -1 || idx === STATUS_FLOW.length - 1) return null;
-  return STATUS_FLOW[idx + 1];
+function nextStatus(s: string): string | null {
+  const i = STATUS_FLOW.indexOf(s as (typeof STATUS_FLOW)[number]);
+  return i === -1 || i === STATUS_FLOW.length - 1 ? null : STATUS_FLOW[i + 1];
 }
 
-const T = {
-  bg: "#f5f5f5",
-  white: "#ffffff",
-  border: "#e0e0e0",
-  text: "#1a1a1a",
-  sub: "#555555",
-  muted: "#888888",
-  gold: "#b8860b",
-  goldBg: "#fff8e6",
-  red: "#c62828",
-  redBg: "#ffebee",
-  green: "#2e7d32",
-  greenBg: "#e8f5e9",
-  blue: "#1565c0",
-  blueBg: "#e3f2fd",
-  purple: "#6a1b9a",
-  purpleBg: "#f3e5f5",
-  orange: "#e65100",
-  orangeBg: "#fff3e0",
-};
-
-// Category config
 const CATEGORY_CONFIG: Record<
   string,
   { label: string; color: string; bg: string; icon: string }
@@ -88,9 +70,49 @@ const CATEGORY_CONFIG: Record<
     icon: "🔧",
   },
   delivery: { label: "Delivery", color: "#e65100", bg: "#fff3e0", icon: "🚚" },
+  fixed: { label: "Fixed Cost", color: "#37474f", bg: "#eceff1", icon: "🏠" },
   other: { label: "Other", color: "#555555", bg: "#f5f5f5", icon: "📋" },
 };
 
+const T = {
+  bg: "#f5f5f5",
+  white: "#ffffff",
+  border: "#e0e0e0",
+  text: "#1a1a1a",
+  sub: "#555555",
+  muted: "#888888",
+  gold: "#b8860b",
+  goldBg: "#fff8e6",
+  red: "#c62828",
+  redBg: "#ffebee",
+  green: "#2e7d32",
+  greenBg: "#e8f5e9",
+  blue: "#1565c0",
+  blueBg: "#e3f2fd",
+};
+
+// ── TRACKING START DATE — set once, never change ──────────────────
+// This is the date from which cost/revenue tracking begins.
+// All data before this date is ignored in the cost per mochi calculation.
+const TRACKING_START_DATE = "2026-04-21";
+
+type Expense = {
+  id: string;
+  description: string;
+  amount: number;
+  category: string;
+  date: string;
+  note?: string;
+  created_at: string;
+};
+type ExtOrder = Order & {
+  insta_id?: string;
+  remarks?: string;
+  source?: string;
+  order_date?: string;
+};
+
+// ── Shared components ──────────────────────────────────────────────
 function Input({
   placeholder,
   value,
@@ -127,16 +149,15 @@ function Input({
 
 function CopyBtn({ value, label }: { value: string; label: string }) {
   const [copied, setCopied] = useState(false);
-  function copy() {
-    if (!value) return;
-    navigator.clipboard.writeText(value).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }
   return (
     <button
-      onClick={copy}
+      onClick={() => {
+        if (!value) return;
+        navigator.clipboard.writeText(value).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        });
+      }}
       style={{
         padding: "4px 10px",
         borderRadius: 4,
@@ -161,15 +182,13 @@ function Btn({
   onClick,
   variant = "default",
   disabled = false,
-  full = false,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   variant?: "default" | "primary" | "danger" | "purple" | "orange";
   disabled?: boolean;
-  full?: boolean;
 }) {
-  const styles: Record<string, React.CSSProperties> = {
+  const s: Record<string, React.CSSProperties> = {
     default: {
       background: T.white,
       color: T.sub,
@@ -180,7 +199,7 @@ function Btn({
       color: "#fff",
       border: "1px solid #1976d2",
     },
-    danger: { background: T.redBg, color: T.red, border: `1px solid #ef9a9a` },
+    danger: { background: T.redBg, color: T.red, border: "1px solid #ef9a9a" },
     purple: {
       background: "#f3e5f5",
       color: "#6a1b9a",
@@ -206,8 +225,7 @@ function Btn({
         transition: "all 0.15s",
         fontFamily: "system-ui, sans-serif",
         whiteSpace: "nowrap" as const,
-        width: full ? "100%" : "auto",
-        ...styles[variant],
+        ...s[variant],
       }}
     >
       {children}
@@ -263,16 +281,7 @@ function StatCard({
   );
 }
 
-type Expense = {
-  id: string;
-  description: string;
-  amount: number;
-  category: string;
-  date: string;
-  created_at: string;
-  note?: string;
-};
-
+// ── Order card ─────────────────────────────────────────────────────
 function OrderCard({
   order,
   isRepeat,
@@ -282,19 +291,18 @@ function OrderCard({
   onCancel,
   onPorterEmail,
 }: {
-  order: Order;
+  order: ExtOrder;
   isRepeat: boolean;
   slotLabel: string;
   productMap: Record<string, string>;
   onStatusChange: (id: string, status: string) => Promise<void>;
   onCancel: (id: string) => Promise<void>;
-  onPorterEmail: (order: Order, slotLabel: string) => Promise<void>;
+  onPorterEmail: (order: ExtOrder, slotLabel: string) => Promise<void>;
 }) {
   const [updating, setUpdating] = useState(false);
   const [emailing, setEmailing] = useState(false);
   const next = nextStatus(order.status);
   const sc = STATUS_COLORS[order.status] || STATUS_COLORS.pending;
-
   const flavourList = order.flavours
     ? Object.entries(order.flavours as Record<string, number>)
         .filter(([, q]) => q > 0)
@@ -341,6 +349,20 @@ function OrderCard({
             🔄 REPEAT
           </span>
         )}
+        {order.source === "dm" && (
+          <span
+            style={{
+              fontSize: "0.65rem",
+              padding: "2px 8px",
+              borderRadius: 10,
+              background: "#fce4ec",
+              color: "#c2185b",
+              fontWeight: 600,
+            }}
+          >
+            📱 DM
+          </span>
+        )}
         <span
           style={{
             marginLeft: "auto",
@@ -350,7 +372,6 @@ function OrderCard({
             background: sc.bg,
             color: sc.text,
             fontWeight: 700,
-            letterSpacing: "0.06em",
           }}
         >
           {STATUS_LABELS[order.status]}
@@ -365,10 +386,15 @@ function OrderCard({
         }}
       >
         <span style={{ fontSize: "0.9rem", color: T.text, fontWeight: 500 }}>
-          📞 {order.phone}
+          📞 {order.phone || "—"}
         </span>
-        <CopyBtn value={order.phone} label="Phone" />
+        {order.phone && <CopyBtn value={order.phone} label="Phone" />}
       </div>
+      {order.insta_id && (
+        <p style={{ fontSize: "0.82rem", color: "#c2185b", marginBottom: 4 }}>
+          📸 @{order.insta_id}
+        </p>
+      )}
       {order.address && (
         <div
           style={{
@@ -396,6 +422,18 @@ function OrderCard({
           🍡 {flavourList}
         </p>
       )}
+      {order.remarks && (
+        <p
+          style={{
+            fontSize: "0.82rem",
+            color: "#558b2f",
+            fontStyle: "italic" as const,
+            marginBottom: 4,
+          }}
+        >
+          💬 {order.remarks}
+        </p>
+      )}
       {order.notes && (
         <p
           style={{
@@ -405,7 +443,7 @@ function OrderCard({
             marginBottom: 4,
           }}
         >
-          💬 {order.notes}
+          📝 {order.notes}
         </p>
       )}
       <p style={{ fontSize: "0.72rem", color: T.muted, marginBottom: 12 }}>
@@ -413,14 +451,7 @@ function OrderCard({
         {order.dob ? ` · DOB: ${order.dob}` : ""}
       </p>
       {order.status !== "dispatched" && order.status !== "cancelled" && (
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            flexWrap: "wrap" as const,
-            alignItems: "center",
-          }}
-        >
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" as const }}>
           {next && (
             <button
               disabled={updating}
@@ -490,19 +521,6 @@ function OrderCard({
                         : "→ Mark Dispatched"}
             </button>
           )}
-          {order.status === "cooked" && (
-            <Btn
-              variant="purple"
-              disabled={emailing}
-              onClick={async () => {
-                setEmailing(true);
-                await onPorterEmail(order, slotLabel);
-                setEmailing(false);
-              }}
-            >
-              {emailing ? "Sending…" : "📧 Send Porter Email"}
-            </Btn>
-          )}
           <Btn
             variant="danger"
             disabled={updating}
@@ -521,822 +539,748 @@ function OrderCard({
   );
 }
 
-type Tab =
-  | "orders"
-  | "dispatched"
-  | "dashboard"
-  | "products"
-  | "slots"
-  | "boxes";
-
-// ── Mochi Cost Calculator Component ───────────────────────────────
-function MochiCostCalculator({
-  expenses,
-  period,
+// ── Manual order form ──────────────────────────────────────────────
+function ManualOrderForm({
+  boxes,
+  customers,
+  products,
+  slots,
+  onSave,
+  onClose,
 }: {
-  expenses: Expense[];
-  period: string;
+  boxes: BoxSize[];
+  customers: {
+    name: string;
+    phone: string;
+    insta_id: string;
+    remarks: string;
+  }[];
+  products: Product[];
+  slots: TimeSlot[];
+  onSave: () => void;
+  onClose: () => void;
 }) {
-  const [mochiCount, setMochiCount] = useState("100");
-  const [boxCount, setBoxCount] = useState("10");
+  const [form, setForm] = useState({
+    customer_name: "",
+    phone: "",
+    insta_id: "",
+    address: "",
+    dob: "",
+    remarks: "",
+    notes: "",
+    order_date: new Date().toISOString().split("T")[0],
+    payment_method: "upi",
+    status: "dispatched",
+    time_slot_id: "",
+  });
 
-  const ingredientTotal = expenses
-    .filter((e) => e.category === "ingredient")
-    .reduce((sum, e) => sum + e.amount, 0);
+  const [boxRows, setBoxRows] = useState<
+    { box_size_label: string; price: string }[]
+  >([{ box_size_label: "", price: "" }]);
 
-  const packagingTotal = expenses
-    .filter((e) => e.category === "packaging")
-    .reduce((sum, e) => sum + e.amount, 0);
+  const [flavours, setFlavours] = useState<Record<string, number>>({});
+  const [saving, setSaving] = useState(false);
+  const [nameSuggestions, setNameSuggestions] = useState<typeof customers>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const f = (k: string) => (v: string) => setForm((p) => ({ ...p, [k]: v }));
 
-  const mochiNum = parseInt(mochiCount) || 0;
-  const boxNum = parseInt(boxCount) || 0;
+  const totalPrice = boxRows.reduce(
+    (sum, r) => sum + (Number(r.price) || 0),
+    0,
+  );
 
-  const costPerMochi = mochiNum > 0 ? ingredientTotal / mochiNum : 0;
-  const costPerBox = boxNum > 0 ? packagingTotal / boxNum : 0;
-  const totalCostPerMochi =
-    costPerMochi + (boxNum > 0 && mochiNum > 0 ? packagingTotal / mochiNum : 0);
+  function handleNameChange(v: string) {
+    setForm((p) => ({ ...p, customer_name: v }));
+    if (v.trim().length >= 1) {
+      const matches = customers.filter((c) =>
+        c.name.toLowerCase().startsWith(v.toLowerCase()),
+      );
+      setNameSuggestions(matches.slice(0, 6));
+      setShowSuggestions(matches.length > 0);
+    } else {
+      setShowSuggestions(false);
+    }
+  }
+
+  function selectCustomer(c: (typeof customers)[0]) {
+    setForm((p) => ({
+      ...p,
+      customer_name: c.name,
+      phone: c.phone || p.phone,
+      insta_id: c.insta_id || p.insta_id,
+      remarks: c.remarks || p.remarks,
+    }));
+    setShowSuggestions(false);
+  }
+
+  function updateBoxRow(
+    i: number,
+    field: "box_size_label" | "price",
+    value: string,
+  ) {
+    setBoxRows((rows) => {
+      const updated = [...rows];
+      if (field === "box_size_label") {
+        const box = boxes.find((b) => b.label === value);
+        updated[i] = {
+          box_size_label: value,
+          price: box ? String(box.price) : updated[i].price,
+        };
+      } else {
+        updated[i] = { ...updated[i], price: value };
+      }
+      return updated;
+    });
+  }
+
+  function setFlavourQty(productId: string, qty: number) {
+    setFlavours((prev) => {
+      const next = { ...prev };
+      if (qty <= 0) delete next[productId];
+      else next[productId] = qty;
+      return next;
+    });
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    let isFirst = true;
+    for (const row of boxRows) {
+      if (!row.price) continue;
+      const box = boxes.find((b) => b.label === row.box_size_label);
+      await supabase.from("orders").insert({
+        customer_name: form.customer_name.trim(),
+        phone: form.phone.trim(),
+        insta_id: form.insta_id.trim(),
+        address: form.address.trim() || null,
+        dob: form.dob.trim() || null,
+        remarks: form.remarks.trim(),
+        notes: form.notes.trim() || null,
+        box_size_id: box?.id || null,
+        flavours: isFirst && Object.keys(flavours).length > 0 ? flavours : {},
+        time_slot_id: form.time_slot_id || null,
+        payment_method: form.payment_method,
+        total_price: Number(row.price),
+        status: form.status,
+        source: "dm",
+        order_date: form.order_date,
+      });
+      isFirst = false;
+    }
+    setSaving(false);
+    onSave();
+  }
 
   return (
     <div
       style={{
         background: T.white,
-        border: `1px solid ${T.border}`,
+        border: `2px solid #1976d2`,
         borderRadius: 8,
-        padding: "16px 18px",
+        padding: 16,
         marginBottom: 16,
-        boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
       }}
     >
-      <p
+      {/* Header */}
+      <div
         style={{
-          fontSize: "0.75rem",
-          color: T.muted,
-          letterSpacing: "0.1em",
-          textTransform: "uppercase" as const,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
           marginBottom: 14,
         }}
       >
-        🍡 Mochi Cost Calculator
-      </p>
+        <p style={{ fontSize: "0.88rem", fontWeight: 700, color: "#1976d2" }}>
+          Add Manual Order (DM / Walk-in)
+        </p>
+        <button
+          onClick={onClose}
+          style={{
+            background: "transparent",
+            border: "none",
+            color: T.muted,
+            cursor: "pointer",
+            fontSize: "1.1rem",
+          }}
+        >
+          ✕
+        </button>
+      </div>
 
+      {/* Customer name with autocomplete */}
       <div
         style={{
           display: "grid",
           gridTemplateColumns: "1fr 1fr",
-          gap: 8,
-          marginBottom: 14,
+          gap: "0 8px",
         }}
       >
-        <div>
-          <p
-            style={{
-              fontSize: "0.75rem",
-              color: T.sub,
-              marginBottom: 4,
-              fontWeight: 500,
-            }}
-          >
-            Mochis produced
-          </p>
+        <div style={{ position: "relative" }}>
           <input
-            type="number"
-            value={mochiCount}
-            onChange={(e) => setMochiCount(e.target.value)}
-            placeholder="e.g. 100"
+            type="text"
+            placeholder="Customer Name *"
+            value={form.customer_name}
+            onChange={(e) => handleNameChange(e.target.value)}
+            onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+            onFocus={() => {
+              if (nameSuggestions.length > 0) setShowSuggestions(true);
+            }}
             style={{
               width: "100%",
-              background: "#f9f9f9",
+              background: T.white,
               border: `1px solid ${T.border}`,
               color: T.text,
-              padding: "9px 12px",
+              padding: "10px 12px",
               borderRadius: 6,
               fontSize: "0.9rem",
+              marginBottom: 8,
               outline: "none",
               fontFamily: "system-ui, sans-serif",
+              boxShadow: "inset 0 1px 2px rgba(0,0,0,0.06)",
+              boxSizing: "border-box" as const,
             }}
           />
-        </div>
-        <div>
-          <p
-            style={{
-              fontSize: "0.75rem",
-              color: T.sub,
-              marginBottom: 4,
-              fontWeight: 500,
-            }}
-          >
-            Boxes used
-          </p>
-          <input
-            type="number"
-            value={boxCount}
-            onChange={(e) => setBoxCount(e.target.value)}
-            placeholder="e.g. 10"
-            style={{
-              width: "100%",
-              background: "#f9f9f9",
-              border: `1px solid ${T.border}`,
-              color: T.text,
-              padding: "9px 12px",
-              borderRadius: 6,
-              fontSize: "0.9rem",
-              outline: "none",
-              fontFamily: "system-ui, sans-serif",
-            }}
-          />
-        </div>
-      </div>
-
-      <div
-        style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}
-      >
-        <div
-          style={{
-            background: "#e8f5e9",
-            borderRadius: 8,
-            padding: "12px 14px",
-            textAlign: "center" as const,
-          }}
-        >
-          <p
-            style={{
-              fontSize: "0.65rem",
-              color: T.green,
-              fontWeight: 600,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase" as const,
-              marginBottom: 6,
-            }}
-          >
-            Ingredient Cost / Mochi
-          </p>
-          <p style={{ fontSize: "1.4rem", fontWeight: 700, color: T.green }}>
-            ₹{costPerMochi.toFixed(2)}
-          </p>
-          <p style={{ fontSize: "0.68rem", color: T.muted, marginTop: 4 }}>
-            ₹{ingredientTotal.toLocaleString()} ÷ {mochiNum || "?"}
-          </p>
-        </div>
-
-        <div
-          style={{
-            background: "#e3f2fd",
-            borderRadius: 8,
-            padding: "12px 14px",
-            textAlign: "center" as const,
-          }}
-        >
-          <p
-            style={{
-              fontSize: "0.65rem",
-              color: T.blue,
-              fontWeight: 600,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase" as const,
-              marginBottom: 6,
-            }}
-          >
-            Packaging Cost / Box
-          </p>
-          <p style={{ fontSize: "1.4rem", fontWeight: 700, color: T.blue }}>
-            ₹{costPerBox.toFixed(2)}
-          </p>
-          <p style={{ fontSize: "0.68rem", color: T.muted, marginTop: 4 }}>
-            ₹{packagingTotal.toLocaleString()} ÷ {boxNum || "?"}
-          </p>
-        </div>
-
-        <div
-          style={{
-            background: "#fff8e6",
-            borderRadius: 8,
-            padding: "12px 14px",
-            textAlign: "center" as const,
-          }}
-        >
-          <p
-            style={{
-              fontSize: "0.65rem",
-              color: T.gold,
-              fontWeight: 600,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase" as const,
-              marginBottom: 6,
-            }}
-          >
-            Total Cost / Mochi
-          </p>
-          <p style={{ fontSize: "1.4rem", fontWeight: 700, color: T.gold }}>
-            ₹{totalCostPerMochi.toFixed(2)}
-          </p>
-          <p style={{ fontSize: "0.68rem", color: T.muted, marginTop: 4 }}>
-            incl. packaging share
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Item-wise Purchase List Component ─────────────────────────────
-function ItemWisePurchaseList({ expenses }: { expenses: Expense[] }) {
-  const [expandedCat, setExpandedCat] = useState<string | null>("ingredient");
-
-  // Group expenses by category
-  const grouped: Record<string, Expense[]> = {};
-  expenses.forEach((e) => {
-    if (!grouped[e.category]) grouped[e.category] = [];
-    grouped[e.category].push(e);
-  });
-
-  const categoryOrder = [
-    "ingredient",
-    "packaging",
-    "equipment",
-    "delivery",
-    "other",
-  ];
-  const sortedCats = categoryOrder.filter((c) => grouped[c]?.length > 0);
-
-  const grandTotal = expenses.reduce((sum, e) => sum + e.amount, 0);
-
-  return (
-    <div
-      style={{
-        background: T.white,
-        border: `1px solid ${T.border}`,
-        borderRadius: 8,
-        padding: "16px 18px",
-        marginBottom: 16,
-        boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 14,
-        }}
-      >
-        <p
-          style={{
-            fontSize: "0.75rem",
-            color: T.muted,
-            letterSpacing: "0.1em",
-            textTransform: "uppercase" as const,
-          }}
-        >
-          📋 Item-wise Purchase List
-        </p>
-        <span style={{ fontSize: "0.8rem", fontWeight: 700, color: T.red }}>
-          Total: ₹{grandTotal.toLocaleString()}
-        </span>
-      </div>
-
-      {/* Category summary bars */}
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          flexWrap: "wrap" as const,
-          marginBottom: 16,
-        }}
-      >
-        {sortedCats.map((cat) => {
-          const cfg = CATEGORY_CONFIG[cat] || CATEGORY_CONFIG.other;
-          const catTotal = grouped[cat].reduce((sum, e) => sum + e.amount, 0);
-          const pct =
-            grandTotal > 0 ? Math.round((catTotal / grandTotal) * 100) : 0;
-          return (
-            <button
-              key={cat}
-              onClick={() => setExpandedCat(expandedCat === cat ? null : cat)}
+          {showSuggestions && (
+            <div
               style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "6px 12px",
-                borderRadius: 20,
-                border: `1px solid ${expandedCat === cat ? cfg.color : T.border}`,
-                background: expandedCat === cat ? cfg.bg : T.white,
-                cursor: "pointer",
-                fontFamily: "system-ui, sans-serif",
-                transition: "all 0.15s",
+                position: "absolute",
+                top: "100%",
+                left: 0,
+                right: 0,
+                background: T.white,
+                border: `1px solid #1976d2`,
+                borderRadius: 6,
+                zIndex: 200,
+                boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
+                marginTop: -6,
+                overflow: "hidden",
               }}
             >
-              <span style={{ fontSize: "0.82rem" }}>{cfg.icon}</span>
-              <span
-                style={{
-                  fontSize: "0.78rem",
-                  fontWeight: 600,
-                  color: cfg.color,
-                }}
-              >
-                {cfg.label}
-              </span>
-              <span style={{ fontSize: "0.72rem", color: T.muted }}>
-                ₹{catTotal.toLocaleString()}
-              </span>
-              <span
-                style={{
-                  fontSize: "0.65rem",
-                  color: cfg.color,
-                  fontWeight: 700,
-                }}
-              >
-                {pct}%
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Stacked bar chart */}
-      {grandTotal > 0 && (
-        <div
-          style={{
-            height: 8,
-            borderRadius: 4,
-            overflow: "hidden",
-            display: "flex",
-            marginBottom: 16,
-          }}
-        >
-          {sortedCats.map((cat) => {
-            const cfg = CATEGORY_CONFIG[cat] || CATEGORY_CONFIG.other;
-            const catTotal = grouped[cat].reduce((sum, e) => sum + e.amount, 0);
-            const pct = (catTotal / grandTotal) * 100;
-            return (
-              <div
-                key={cat}
-                style={{
-                  width: `${pct}%`,
-                  background: cfg.color,
-                  transition: "width 0.4s",
-                }}
-              />
-            );
-          })}
-        </div>
-      )}
-
-      {/* Expanded category items */}
-      {expandedCat && grouped[expandedCat] && (
-        <div
-          style={{
-            background: CATEGORY_CONFIG[expandedCat]?.bg || "#f5f5f5",
-            borderRadius: 8,
-            padding: "12px 14px",
-          }}
-        >
-          <p
-            style={{
-              fontSize: "0.72rem",
-              fontWeight: 700,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase" as const,
-              color: CATEGORY_CONFIG[expandedCat]?.color || T.sub,
-              marginBottom: 10,
-            }}
-          >
-            {CATEGORY_CONFIG[expandedCat]?.icon}{" "}
-            {CATEGORY_CONFIG[expandedCat]?.label} —{" "}
-            {grouped[expandedCat].length} items
-          </p>
-          {grouped[expandedCat]
-            .sort((a, b) => b.amount - a.amount)
-            .map((e) => (
-              <div
-                key={e.id}
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "flex-start",
-                  padding: "7px 0",
-                  borderBottom: `1px solid rgba(0,0,0,0.06)`,
-                }}
-              >
-                <div style={{ flex: 1, paddingRight: 12 }}>
+              {nameSuggestions.map((c, i) => (
+                <div
+                  key={i}
+                  onMouseDown={() => selectCustomer(c)}
+                  style={{
+                    padding: "9px 12px",
+                    cursor: "pointer",
+                    borderBottom:
+                      i < nameSuggestions.length - 1
+                        ? `1px solid ${T.border}`
+                        : "none",
+                    background: T.white,
+                  }}
+                  onMouseEnter={(e) =>
+                    ((e.currentTarget as HTMLDivElement).style.background =
+                      T.blueBg)
+                  }
+                  onMouseLeave={(e) =>
+                    ((e.currentTarget as HTMLDivElement).style.background =
+                      T.white)
+                  }
+                >
                   <p
                     style={{
-                      fontSize: "0.85rem",
-                      fontWeight: 500,
+                      fontSize: "0.88rem",
+                      fontWeight: 600,
                       color: T.text,
                     }}
                   >
-                    {e.description}
+                    {c.name}
                   </p>
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 8,
-                      alignItems: "center",
-                      marginTop: 2,
-                    }}
-                  >
-                    <p style={{ fontSize: "0.7rem", color: T.muted }}>
-                      {new Date(e.date).toLocaleDateString("en-IN", {
-                        day: "numeric",
-                        month: "short",
-                      })}
+                  {c.phone && (
+                    <p style={{ fontSize: "0.72rem", color: T.muted }}>
+                      📞 {c.phone}
+                      {c.insta_id ? `  ·  📸 @${c.insta_id}` : ""}
                     </p>
-                    {e.note && (
-                      <p
-                        style={{
-                          fontSize: "0.7rem",
-                          color: CATEGORY_CONFIG[expandedCat]?.color || T.sub,
-                          fontStyle: "italic" as const,
-                        }}
-                      >
-                        {e.note}
-                      </p>
-                    )}
-                  </div>
+                  )}
                 </div>
-                <span
-                  style={{
-                    fontSize: "0.9rem",
-                    fontWeight: 700,
-                    color: T.red,
-                    flexShrink: 0,
-                  }}
-                >
-                  ₹{e.amount.toLocaleString()}
-                </span>
-              </div>
-            ))}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              paddingTop: 10,
-              marginTop: 4,
-            }}
-          >
-            <span
-              style={{
-                fontSize: "0.78rem",
-                fontWeight: 700,
-                color: CATEGORY_CONFIG[expandedCat]?.color,
-              }}
-            >
-              Subtotal
-            </span>
-            <span
-              style={{
-                fontSize: "1rem",
-                fontWeight: 700,
-                color: CATEGORY_CONFIG[expandedCat]?.color,
-              }}
-            >
-              ₹
-              {grouped[expandedCat]
-                .reduce((sum, e) => sum + e.amount, 0)
-                .toLocaleString()}
-            </span>
-          </div>
+              ))}
+            </div>
+          )}
         </div>
-      )}
+        <Input placeholder="Phone" value={form.phone} onChange={f("phone")} />
+        <Input
+          placeholder="Instagram ID (without @)"
+          value={form.insta_id}
+          onChange={f("insta_id")}
+        />
+        <Input
+          placeholder="DOB (DD/MM/YYYY)"
+          value={form.dob}
+          onChange={f("dob")}
+        />
+      </div>
 
-      {sortedCats.length === 0 && (
-        <p style={{ fontSize: "0.88rem", color: T.muted, padding: "12px 0" }}>
-          No expenses for this period
-        </p>
-      )}
-    </div>
-  );
-}
+      <Input
+        placeholder="Address"
+        value={form.address}
+        onChange={f("address")}
+      />
 
-// ── Packaging Breakdown Component ─────────────────────────────────
-function PackagingBreakdown({ expenses }: { expenses: Expense[] }) {
-  const packagingItems = expenses.filter((e) => e.category === "packaging");
-  if (packagingItems.length === 0) return null;
-
-  const total = packagingItems.reduce((sum, e) => sum + e.amount, 0);
-
-  return (
-    <div
-      style={{
-        background: T.white,
-        border: `2px solid #42a5f5`,
-        borderRadius: 8,
-        padding: "16px 18px",
-        marginBottom: 16,
-        boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-      }}
-    >
-      <div
+      {/* Time slot */}
+      <select
+        value={form.time_slot_id}
+        onChange={(e) =>
+          setForm((p) => ({ ...p, time_slot_id: e.target.value }))
+        }
         style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 14,
+          width: "100%",
+          background: T.white,
+          border: `1px solid ${T.border}`,
+          color: form.time_slot_id ? T.text : T.muted,
+          padding: "10px 12px",
+          borderRadius: 6,
+          fontSize: "0.9rem",
+          marginBottom: 8,
+          fontFamily: "system-ui, sans-serif",
+          outline: "none",
         }}
       >
-        <p
-          style={{
-            fontSize: "0.75rem",
-            color: T.blue,
-            letterSpacing: "0.1em",
-            textTransform: "uppercase" as const,
-            fontWeight: 700,
-          }}
-        >
-          📦 Packaging Costs (Separate)
-        </p>
-        <span
-          style={{
-            background: T.blueBg,
-            color: T.blue,
-            padding: "4px 12px",
-            borderRadius: 12,
-            fontSize: "0.88rem",
-            fontWeight: 700,
-          }}
-        >
-          ₹{total.toLocaleString()}
-        </span>
-      </div>
-      {packagingItems
-        .sort((a, b) => b.amount - a.amount)
-        .map((e) => (
-          <div
-            key={e.id}
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              padding: "8px 0",
-              borderBottom: `1px solid ${T.border}`,
-            }}
-          >
-            <div>
-              <p style={{ fontSize: "0.85rem", fontWeight: 500 }}>
-                {e.description}
-              </p>
-              <p style={{ fontSize: "0.7rem", color: T.muted }}>
-                {new Date(e.date).toLocaleDateString("en-IN", {
-                  day: "numeric",
-                  month: "short",
-                })}
-                {e.note ? ` · ${e.note}` : ""}
-              </p>
-            </div>
-            <span
-              style={{ fontSize: "0.9rem", fontWeight: 700, color: T.blue }}
-            >
-              ₹{e.amount.toLocaleString()}
-            </span>
-          </div>
-        ))}
-    </div>
-  );
-}
+        <option value="">No slot (DM order)</option>
+        {slots
+          .filter((s) => s.is_active)
+          .map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.label} ·{" "}
+              {new Date(s.date).toLocaleDateString("en-IN", {
+                day: "numeric",
+                month: "short",
+              })}
+            </option>
+          ))}
+      </select>
 
-// ── Bulk Import JSON Component (Upload + Paste) ────────────────────
-const EXAMPLE_JSON = `[
-  {
-    "description": "Glutinous rice flour 1kg",
-    "amount": 180,
-    "category": "ingredient",
-    "date": "2025-04-20",
-    "note": ""
-  },
-  {
-    "description": "Mochi gift boxes x30",
-    "amount": 420,
-    "category": "packaging",
-    "date": "2025-04-20",
-    "note": "Packaging cost — calculate separately"
-  }
-]`;
-
-function BulkImportJSON({
-  onImport,
-  onPaste,
-}: {
-  onImport: (file: File) => Promise<void>;
-  onPaste: (text: string) => Promise<void>;
-}) {
-  const [mode, setMode] = useState<"upload" | "paste">("paste");
-  const [pasteText, setPasteText] = useState("");
-  const [pasteError, setPasteError] = useState("");
-  const [importing, setImporting] = useState(false);
-
-  async function handlePasteImport() {
-    setPasteError("");
-    const trimmed = pasteText.trim();
-    if (!trimmed) {
-      setPasteError("Paste some JSON first");
-      return;
-    }
-    try {
-      JSON.parse(trimmed);
-    } catch {
-      setPasteError("Invalid JSON — check for missing commas or brackets");
-      return;
-    }
-    setImporting(true);
-    try {
-      await onPaste(trimmed);
-      setPasteText("");
-    } finally {
-      setImporting(false);
-    }
-  }
-
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    setImporting(true);
-    try {
-      await onImport(f);
-    } finally {
-      setImporting(false);
-      (e.target as HTMLInputElement).value = "";
-    }
-  }
-
-  return (
-    <div
-      style={{
-        marginTop: 16,
-        paddingTop: 16,
-        borderTop: `1px solid ${T.border}`,
-      }}
-    >
+      {/* Box rows */}
       <p
         style={{
           fontSize: "0.8rem",
           fontWeight: 600,
           color: T.sub,
-          marginBottom: 10,
+          marginBottom: 8,
+          marginTop: 4,
         }}
       >
-        Bulk Import via JSON
+        📦 Boxes
       </p>
-
-      {/* Mode toggle */}
+      {boxRows.map((row, i) => (
+        <div
+          key={i}
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 100px 32px",
+            gap: 6,
+            marginBottom: 6,
+            alignItems: "center",
+          }}
+        >
+          <select
+            value={row.box_size_label}
+            onChange={(e) => updateBoxRow(i, "box_size_label", e.target.value)}
+            style={{
+              background: T.white,
+              border: `1px solid ${T.border}`,
+              color: row.box_size_label ? T.text : T.muted,
+              padding: "10px 12px",
+              borderRadius: 6,
+              fontSize: "0.88rem",
+              fontFamily: "system-ui, sans-serif",
+              outline: "none",
+            }}
+          >
+            <option value="">Select box</option>
+            {boxes.map((b) => (
+              <option key={b.id} value={b.label}>
+                {b.label} — ₹{b.price}
+              </option>
+            ))}
+          </select>
+          <input
+            type="number"
+            placeholder="₹"
+            value={row.price}
+            onChange={(e) => updateBoxRow(i, "price", e.target.value)}
+            style={{
+              background: T.white,
+              border: `1px solid ${T.border}`,
+              color: T.text,
+              padding: "10px 10px",
+              borderRadius: 6,
+              fontSize: "0.88rem",
+              fontFamily: "system-ui, sans-serif",
+              outline: "none",
+              width: "100%",
+              boxSizing: "border-box" as const,
+            }}
+          />
+          <button
+            onClick={() =>
+              setBoxRows((rows) =>
+                rows.length === 1 ? rows : rows.filter((_, j) => j !== i),
+              )
+            }
+            style={{
+              background: T.redBg,
+              border: `1px solid #ef9a9a`,
+              color: T.red,
+              borderRadius: 5,
+              cursor: "pointer",
+              fontSize: "0.9rem",
+              width: 32,
+              height: 38,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      ))}
       <div
         style={{
           display: "flex",
-          gap: 0,
-          marginBottom: 14,
-          border: `1px solid ${T.border}`,
-          borderRadius: 6,
-          overflow: "hidden",
-          width: "fit-content",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 12,
         }}
       >
-        {(["paste", "upload"] as const).map((m) => (
-          <button
-            key={m}
-            onClick={() => setMode(m)}
-            style={{
-              padding: "7px 18px",
-              border: "none",
-              fontFamily: "system-ui, sans-serif",
-              background: mode === m ? "#1976d2" : T.white,
-              color: mode === m ? "#fff" : T.sub,
-              fontSize: "0.8rem",
-              fontWeight: mode === m ? 600 : 400,
-              cursor: "pointer",
-              transition: "all 0.15s",
-            }}
-          >
-            {m === "paste" ? "Paste JSON" : "Upload File"}
-          </button>
-        ))}
+        <button
+          onClick={() =>
+            setBoxRows((rows) => [...rows, { box_size_label: "", price: "" }])
+          }
+          style={{
+            padding: "6px 14px",
+            borderRadius: 5,
+            border: `1px solid #1976d2`,
+            background: T.blueBg,
+            color: "#1976d2",
+            fontSize: "0.8rem",
+            fontWeight: 600,
+            cursor: "pointer",
+            fontFamily: "system-ui, sans-serif",
+          }}
+        >
+          + Add Box
+        </button>
+        {totalPrice > 0 && (
+          <p style={{ fontSize: "0.88rem", fontWeight: 700, color: T.gold }}>
+            Total: ₹{totalPrice}
+          </p>
+        )}
       </div>
 
-      {mode === "paste" ? (
-        <div>
-          <textarea
-            value={pasteText}
-            onChange={(e) => {
-              setPasteText(e.target.value);
-              setPasteError("");
-            }}
-            placeholder={
-              'Paste your JSON here...\n\nExample:\n[\n  {\n    "description": "Rice flour 1kg",\n    "amount": 180,\n    "category": "ingredient",\n    "date": "2025-04-20"\n  }\n]'
-            }
+      {/* Flavours */}
+      {products.filter((p) => p.is_available).length > 0 && (
+        <>
+          <p
             style={{
-              width: "100%",
-              minHeight: 140,
-              background: "#f8f8f8",
-              border: `1px solid ${pasteError ? T.red : T.border}`,
-              borderRadius: 6,
-              padding: "10px 12px",
-              fontSize: "0.78rem",
-              color: T.text,
-              fontFamily: "monospace",
-              resize: "vertical" as const,
-              outline: "none",
+              fontSize: "0.8rem",
+              fontWeight: 600,
+              color: T.sub,
               marginBottom: 8,
-              boxSizing: "border-box" as const,
-              lineHeight: 1.5,
             }}
-          />
-          {pasteError && (
-            <p style={{ fontSize: "0.75rem", color: T.red, marginBottom: 8 }}>
-              ⚠ {pasteError}
-            </p>
-          )}
+          >
+            🍡 Flavours
+          </p>
           <div
             style={{
-              display: "flex",
-              gap: 8,
-              alignItems: "center",
-              marginBottom: 10,
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 6,
+              marginBottom: 12,
             }}
           >
-            <button
-              disabled={importing || !pasteText.trim()}
-              onClick={handlePasteImport}
-              style={{
-                padding: "10px 24px",
-                borderRadius: 6,
-                border: "none",
-                background: importing || !pasteText.trim() ? "#ccc" : "#1976d2",
-                color: "#fff",
-                fontSize: "0.88rem",
-                fontWeight: 600,
-                cursor:
-                  importing || !pasteText.trim() ? "not-allowed" : "pointer",
-                fontFamily: "system-ui, sans-serif",
-              }}
-            >
-              {importing ? "Importing..." : "Import JSON"}
-            </button>
-            {pasteText && !importing && (
-              <button
-                onClick={() => {
-                  setPasteText("");
-                  setPasteError("");
-                }}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  color: T.muted,
-                  fontSize: "0.8rem",
-                  cursor: "pointer",
-                  fontFamily: "system-ui, sans-serif",
-                }}
-              >
-                Clear
-              </button>
-            )}
+            {products
+              .filter((p) => p.is_available)
+              .map((prod) => {
+                const qty = flavours[prod.id] || 0;
+                return (
+                  <div
+                    key={prod.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "8px 10px",
+                      borderRadius: 6,
+                      border: `1px solid ${qty > 0 ? "#1976d2" : T.border}`,
+                      background: qty > 0 ? T.blueBg : T.white,
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: "0.82rem",
+                        fontWeight: qty > 0 ? 600 : 400,
+                        color: qty > 0 ? "#1976d2" : T.text,
+                        flex: 1,
+                      }}
+                    >
+                      {prod.name}
+                      {prod.is_premium && (
+                        <span style={{ color: T.gold, marginLeft: 4 }}>★</span>
+                      )}
+                    </span>
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 6 }}
+                    >
+                      <button
+                        onClick={() => setFlavourQty(prod.id, qty - 1)}
+                        disabled={qty === 0}
+                        style={{
+                          width: 24,
+                          height: 24,
+                          borderRadius: 4,
+                          border: `1px solid ${T.border}`,
+                          background: T.white,
+                          color: T.sub,
+                          cursor: qty === 0 ? "not-allowed" : "pointer",
+                          fontSize: "1rem",
+                          lineHeight: "1",
+                          opacity: qty === 0 ? 0.3 : 1,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        −
+                      </button>
+                      <span
+                        style={{
+                          fontSize: "0.88rem",
+                          fontWeight: 700,
+                          minWidth: 16,
+                          textAlign: "center" as const,
+                          color: T.text,
+                        }}
+                      >
+                        {qty}
+                      </span>
+                      <button
+                        onClick={() => setFlavourQty(prod.id, qty + 1)}
+                        style={{
+                          width: 24,
+                          height: 24,
+                          borderRadius: 4,
+                          border: `1px solid #1976d2`,
+                          background: "#1976d2",
+                          color: "#fff",
+                          cursor: "pointer",
+                          fontSize: "1rem",
+                          lineHeight: "1",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
           </div>
-          <p style={{ fontSize: "0.7rem", color: T.muted }}>
-            Categories: ingredient / packaging / delivery / equipment / other
-          </p>
-        </div>
-      ) : (
-        <div>
-          <pre
-            style={{
-              background: "#f8f8f8",
-              border: `1px solid ${T.border}`,
-              borderRadius: 6,
-              padding: "10px 12px",
-              fontSize: "0.72rem",
-              color: T.sub,
-              marginBottom: 10,
-              overflowX: "auto" as const,
-            }}
-          >
-            {EXAMPLE_JSON}
-          </pre>
-          <p style={{ fontSize: "0.72rem", color: T.muted, marginBottom: 12 }}>
-            Categories: ingredient / packaging / delivery / equipment / other
-          </p>
-          <label
-            style={{
-              display: "inline-block",
-              padding: "9px 18px",
-              borderRadius: 6,
-              border: "1px solid #1976d2",
-              background: importing ? "#f0f0f0" : T.blueBg,
-              color: importing ? T.muted : "#1976d2",
-              fontSize: "0.85rem",
-              fontWeight: 600,
-              cursor: importing ? "not-allowed" : "pointer",
-              fontFamily: "system-ui, sans-serif",
-            }}
-          >
-            {importing ? "Importing..." : "Choose JSON File"}
-            <input
-              type="file"
-              accept=".json"
-              style={{ display: "none" }}
-              disabled={importing}
-              onChange={handleFileChange}
-            />
-          </label>
-        </div>
+        </>
       )}
+
+      {/* Date / status / remarks */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: "0 8px",
+        }}
+      >
+        <Input
+          placeholder="Order Date *"
+          type="date"
+          value={form.order_date}
+          onChange={f("order_date")}
+        />
+        <select
+          value={form.status}
+          onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}
+          style={{
+            width: "100%",
+            background: T.white,
+            border: `1px solid ${T.border}`,
+            color: T.text,
+            padding: "10px 12px",
+            borderRadius: 6,
+            fontSize: "0.9rem",
+            marginBottom: 8,
+            fontFamily: "system-ui, sans-serif",
+            outline: "none",
+          }}
+        >
+          <option value="dispatched">Dispatched (already delivered)</option>
+          <option value="pending">Pending</option>
+          <option value="confirmed">Confirmed</option>
+        </select>
+      </div>
+      <Input
+        placeholder="Remarks (customer feedback, notes)"
+        value={form.remarks}
+        onChange={f("remarks")}
+      />
+      <Input
+        placeholder="Internal notes"
+        value={form.notes}
+        onChange={f("notes")}
+      />
+
+      <button
+        disabled={saving || !form.customer_name || totalPrice === 0}
+        onClick={handleSave}
+        style={{
+          width: "100%",
+          padding: "11px",
+          borderRadius: 6,
+          border: "none",
+          background:
+            saving || !form.customer_name || totalPrice === 0
+              ? "#ccc"
+              : "#1976d2",
+          color: "#fff",
+          fontSize: "0.9rem",
+          fontWeight: 600,
+          cursor: "pointer",
+          fontFamily: "system-ui, sans-serif",
+        }}
+      >
+        {saving
+          ? "Saving…"
+          : `Save ${
+              boxRows.filter((r) => r.price).length > 1
+                ? `${boxRows.filter((r) => r.price).length} Orders`
+                : "Order"
+            } · ₹${totalPrice}`}
+      </button>
+    </div>
+  );
+}
+
+// ── Bulk import JSON for orders ────────────────────────────────────
+function BulkOrderImport({
+  onImport,
+}: {
+  onImport: (text: string) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [importing, setImporting] = useState(false);
+
+  if (!open)
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        style={{
+          padding: "8px 16px",
+          borderRadius: 6,
+          border: `1px solid ${T.border}`,
+          background: T.white,
+          color: T.sub,
+          fontSize: "0.82rem",
+          cursor: "pointer",
+          fontFamily: "system-ui, sans-serif",
+        }}
+      >
+        📂 Bulk Import Orders (JSON / Excel export)
+      </button>
+    );
+
+  return (
+    <div
+      style={{
+        background: T.white,
+        border: `1px solid ${T.border}`,
+        borderRadius: 8,
+        padding: 14,
+        marginBottom: 12,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 10,
+        }}
+      >
+        <p style={{ fontSize: "0.82rem", fontWeight: 600, color: T.sub }}>
+          Paste order JSON
+        </p>
+        <button
+          onClick={() => setOpen(false)}
+          style={{
+            background: "transparent",
+            border: "none",
+            color: T.muted,
+            cursor: "pointer",
+          }}
+        >
+          ✕
+        </button>
+      </div>
+      <pre
+        style={{
+          background: "#f8f8f8",
+          borderRadius: 6,
+          padding: "8px 10px",
+          fontSize: "0.68rem",
+          color: T.sub,
+          marginBottom: 8,
+          overflowX: "auto" as const,
+        }}
+      >
+        {`[{ "customer_name":"Name", "phone":"", "insta_id":"",
+   "box_size_label":"Box of 4", "total_price":499,
+   "order_date":"2026-04-20", "status":"dispatched",
+   "remarks":"", "payment_method":"upi" }]`}
+      </pre>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="Paste JSON here..."
+        style={{
+          width: "100%",
+          minHeight: 100,
+          background: "#f8f8f8",
+          border: `1px solid ${T.border}`,
+          borderRadius: 6,
+          padding: "8px 10px",
+          fontSize: "0.78rem",
+          color: T.text,
+          fontFamily: "monospace",
+          resize: "vertical" as const,
+          outline: "none",
+          boxSizing: "border-box" as const,
+          marginBottom: 8,
+        }}
+      />
+      <button
+        disabled={importing || !text.trim()}
+        onClick={async () => {
+          setImporting(true);
+          await onImport(text);
+          setImporting(false);
+          setText("");
+          setOpen(false);
+        }}
+        style={{
+          padding: "9px 20px",
+          borderRadius: 6,
+          border: "none",
+          background: "#1976d2",
+          color: "#fff",
+          fontSize: "0.85rem",
+          fontWeight: 600,
+          cursor: "pointer",
+          fontFamily: "system-ui, sans-serif",
+        }}
+      >
+        {importing ? "Importing…" : "Import Orders"}
+      </button>
     </div>
   );
 }
@@ -1344,20 +1288,22 @@ function BulkImportJSON({
 // ── Main ───────────────────────────────────────────────────────────
 export default function AdminPage() {
   const [authed, setAuthed] = useState(false);
-
-  useEffect(() => {
-    if (localStorage.getItem("es_admin") === "true") setAuthed(true);
-  }, []);
   const [pw, setPw] = useState("");
   const [pwError, setPwError] = useState(false);
   const [tab, setTab] = useState<Tab>("orders");
 
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [orders, setOrders] = useState<ExtOrder[]>([]);
   const [slots, setSlots] = useState<TimeSlot[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [boxes, setBoxes] = useState<BoxSize[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [repeatPhones, setRepeatPhones] = useState<Set<string>>(new Set());
+
+  const [showManualForm, setShowManualForm] = useState(false);
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [editingCustomer, setEditingCustomer] = useState<string | null>(null);
+  const [editRemarks, setEditRemarks] = useState("");
+  const [editInsta, setEditInsta] = useState("");
 
   const [np, setNp] = useState({
     name: "",
@@ -1387,9 +1333,15 @@ export default function AdminPage() {
     text: "",
     type: "success",
   });
+
+  // ── Default to "from_start" so cost calc ignores all history ──
   const [dashPeriod, setDashPeriod] = useState<
-    "today" | "week" | "month" | "all"
-  >("week");
+    "from_start" | "today" | "week" | "month" | "all"
+  >("from_start");
+
+  useEffect(() => {
+    if (localStorage.getItem("es_admin") === "true") setAuthed(true);
+  }, []);
 
   const productMap: Record<string, string> = {};
   products.forEach((p) => {
@@ -1403,7 +1355,7 @@ export default function AdminPage() {
           .from("orders")
           .select("*")
           .order("created_at", { ascending: false })
-          .limit(300),
+          .limit(500),
         supabase.from("time_slots").select("*").order("date").order("label"),
         supabase.from("products").select("*").order("sort_order"),
         supabase.from("box_sizes").select("*").order("sort_order"),
@@ -1413,10 +1365,10 @@ export default function AdminPage() {
           .order("date", { ascending: false }),
       ]);
     if (o) {
-      setOrders(o as Order[]);
+      setOrders(o as ExtOrder[]);
       const counts: Record<string, number> = {};
-      (o as Order[]).forEach((ord) => {
-        counts[ord.phone] = (counts[ord.phone] || 0) + 1;
+      (o as ExtOrder[]).forEach((ord) => {
+        if (ord.phone) counts[ord.phone] = (counts[ord.phone] || 0) + 1;
       });
       setRepeatPhones(
         new Set(
@@ -1442,8 +1394,9 @@ export default function AdminPage() {
   }
 
   function getSlotLabel(slotId: string) {
+    if (!slotId) return "DM Order";
     const slot = slots.find((s) => s.id === slotId);
-    if (!slot) return "—";
+    if (!slot) return "DM Order";
     return `${slot.label} · ${new Date(slot.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`;
   }
 
@@ -1466,7 +1419,7 @@ export default function AdminPage() {
     flash("Order cancelled");
   }
 
-  async function handlePorterEmail(order: Order, slotLabel: string) {
+  async function handlePorterEmail(order: ExtOrder, slotLabel: string) {
     try {
       const res = await fetch("/api/porter-email", {
         method: "POST",
@@ -1479,34 +1432,42 @@ export default function AdminPage() {
           total_price: order.total_price,
         }),
       });
-      if (res.ok) flash("📧 Porter reminder email sent ✓");
+      if (res.ok) flash("📧 Porter email sent ✓");
       else flash("Email send failed", "error");
     } catch {
       flash("Email send failed", "error");
     }
   }
 
-  async function handleExpenseJSONText(text: string) {
+  async function handleBulkOrderImport(text: string) {
     try {
-      // Strip smart quotes and invisible characters that break JSON
-      const cleaned = text
-        .trim()
-        .replace(/[\u201C\u201D]/g, '"') // smart double quotes
-        .replace(/[\u2018\u2019]/g, "'") // smart single quotes
-        .replace(/[\u00A0]/g, " ") // non-breaking spaces
-        .replace(/^\uFEFF/, ""); // BOM character
+      const data = JSON.parse(text.trim());
+      const items = Array.isArray(data) ? data : data.orders;
+      if (!Array.isArray(items)) throw new Error("Expected array");
+      const res = await fetch("/api/import-orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(items),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error);
+      await load();
+      flash(`${result.imported} orders imported ✓`);
+    } catch (err: unknown) {
+      flash(
+        `Import failed: ${err instanceof Error ? err.message : "Invalid JSON"}`,
+        "error",
+      );
+    }
+  }
 
-      const data = JSON.parse(cleaned);
+  async function handleExpenseImport(text: string) {
+    try {
+      const data = JSON.parse(text);
       const items = Array.isArray(data) ? data : data.expenses;
-      if (!Array.isArray(items)) throw new Error("Expected a JSON array");
-
+      if (!Array.isArray(items)) throw new Error("Expected array");
       const valid = items
-        .filter(
-          (e) =>
-            e.description &&
-            (typeof e.amount === "number" || typeof e.amount === "string") &&
-            Number(e.amount) > 0,
-        )
+        .filter((e) => e.description && Number(e.amount) > 0)
         .map((e) => ({
           description: String(e.description).trim(),
           amount: Number(e.amount),
@@ -1514,12 +1475,7 @@ export default function AdminPage() {
           date: e.date || new Date().toISOString().split("T")[0],
           note: e.note || "",
         }));
-
-      if (valid.length === 0)
-        throw new Error(
-          "No valid entries — check description and amount fields",
-        );
-
+      if (valid.length === 0) throw new Error("No valid entries");
       const { error } = await supabase.from("expenses").insert(valid);
       if (error) throw error;
       await load();
@@ -1532,42 +1488,59 @@ export default function AdminPage() {
     }
   }
 
-  async function handleExpenseJSON(file: File) {
-    try {
-      const text = await file.text();
-      const data = JSON.parse(text);
-      const items = Array.isArray(data) ? data : data.expenses;
-      if (!Array.isArray(items))
-        throw new Error("Expected array or { expenses: [] }");
-
-      const valid = items
-        .filter(
-          (e) =>
-            typeof e.description === "string" &&
-            typeof e.amount === "number" &&
-            e.amount > 0,
-        )
-        .map((e) => ({
-          description: e.description,
-          amount: e.amount,
-          category: e.category || "ingredient",
-          date: e.date || new Date().toISOString().split("T")[0],
-          note: e.note || "",
-        }));
-
-      if (valid.length === 0) throw new Error("No valid expense entries found");
-      const { error } = await supabase.from("expenses").insert(valid);
-      if (error) throw error;
-      await load();
-      flash(`${valid.length} expenses imported ✓`);
-    } catch (err: unknown) {
-      flash(
-        `Import failed: ${err instanceof Error ? err.message : "Invalid file"}`,
-        "error",
-      );
+  // ── Customer grouping ──────────────────────────────────────────
+  const customerMap: Record<
+    string,
+    {
+      name: string;
+      phone: string;
+      insta_id: string;
+      remarks: string;
+      orders: ExtOrder[];
+      total: number;
+      latest_id: string;
     }
-  }
+  > = {};
+  orders.forEach((o) => {
+    const key = o.phone || o.customer_name;
+    if (!customerMap[key]) {
+      customerMap[key] = {
+        name: o.customer_name,
+        phone: o.phone || "",
+        insta_id: (o as ExtOrder).insta_id || "",
+        remarks: (o as ExtOrder).remarks || "",
+        orders: [],
+        total: 0,
+        latest_id: o.id,
+      };
+    }
+    customerMap[key].orders.push(o);
+    customerMap[key].total += o.total_price || 0;
+    if (
+      new Date(o.created_at) >
+      new Date(customerMap[key].orders[0]?.created_at || 0)
+    ) {
+      customerMap[key].latest_id = o.id;
+      customerMap[key].insta_id =
+        (o as ExtOrder).insta_id || customerMap[key].insta_id;
+      customerMap[key].remarks =
+        (o as ExtOrder).remarks || customerMap[key].remarks;
+    }
+  });
+  const customers = Object.entries(customerMap)
+    .map(([key, v]) => ({ key, ...v }))
+    .sort((a, b) => b.total - a.total);
+  const filteredCustomers = customers.filter(
+    (c) =>
+      !customerSearch ||
+      c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
+      c.phone.includes(customerSearch) ||
+      (c.insta_id || "").toLowerCase().includes(customerSearch.toLowerCase()),
+  );
 
+  // ── Dashboard period filtering ─────────────────────────────────
+  // FIX: from_start uses a fixed date so data accumulates correctly.
+  // Each filter function returns a filtered array (not nested filter).
   const PAID_STATUSES = [
     "confirmed",
     "cooking",
@@ -1579,7 +1552,14 @@ export default function AdminPage() {
   function filterByPeriod<T extends { created_at: string }>(items: T[]): T[] {
     const now = new Date();
     return items.filter((item) => {
-      const d = new Date(item.created_at);
+      const dateStr =
+        (item as Record<string, string>).order_date || item.created_at;
+      const d = new Date(dateStr);
+      if (dashPeriod === "from_start") {
+        const start = new Date(TRACKING_START_DATE);
+        start.setHours(0, 0, 0, 0);
+        return d >= start;
+      }
       if (dashPeriod === "today")
         return d.toDateString() === now.toDateString();
       if (dashPeriod === "week")
@@ -1593,10 +1573,15 @@ export default function AdminPage() {
     });
   }
 
-  function filterExpByPeriod(items: Expense[]) {
+  function filterExpByPeriod(items: Expense[]): Expense[] {
     const now = new Date();
     return items.filter((item) => {
       const d = new Date(item.date);
+      if (dashPeriod === "from_start") {
+        const start = new Date(TRACKING_START_DATE);
+        start.setHours(0, 0, 0, 0);
+        return d >= start;
+      }
       if (dashPeriod === "today")
         return d.toDateString() === now.toDateString();
       if (dashPeriod === "week")
@@ -1606,15 +1591,14 @@ export default function AdminPage() {
           d.getMonth() === now.getMonth() &&
           d.getFullYear() === now.getFullYear()
         );
-      return true;
+      return true; // "all"
     });
   }
 
   const paidOrders = filterByPeriod(
     orders.filter((o) => PAID_STATUSES.includes(o.status)),
-  ) as Order[];
+  ) as ExtOrder[];
   const periodExpenses = filterExpByPeriod(expenses);
-
   const totalRevenue = paidOrders.reduce(
     (sum, o) => sum + (o.total_price || 0),
     0,
@@ -1623,14 +1607,16 @@ export default function AdminPage() {
     (sum, e) => sum + (e.amount || 0),
     0,
   );
-  const ingredientExpenses = periodExpenses
+  const ingredientExp = periodExpenses
     .filter((e) => e.category === "ingredient")
     .reduce((sum, e) => sum + e.amount, 0);
-  const packagingExpenses = periodExpenses
+  const packagingExp = periodExpenses
     .filter((e) => e.category === "packaging")
     .reduce((sum, e) => sum + e.amount, 0);
+  const fixedExp = periodExpenses
+    .filter((e) => e.category === "fixed")
+    .reduce((sum, e) => sum + e.amount, 0);
   const profit = totalRevenue - totalExpenses;
-
   const flavourCounts: Record<string, number> = {};
   paidOrders.forEach((o) => {
     if (!o.flavours) return;
@@ -1644,7 +1630,6 @@ export default function AdminPage() {
   const topFlavours = Object.entries(flavourCounts)
     .sort(([, a], [, b]) => b - a)
     .slice(0, 8);
-
   const boxRevenue: Record<string, { count: number; revenue: number }> = {};
   paidOrders.forEach((o) => {
     const box = boxes.find((b) => b.id === o.box_size_id);
@@ -1660,6 +1645,16 @@ export default function AdminPage() {
   const dispatchedOrders = orders.filter((o) => o.status === "dispatched");
   const pendingCount = orders.filter((o) => o.status === "pending").length;
 
+  // ── Period button label helper ─────────────────────────────────
+  function periodLabel(p: string): string {
+    if (p === "from_start") return "📌 From Start";
+    if (p === "today") return "Today";
+    if (p === "week") return "This Week";
+    if (p === "month") return "This Month";
+    return "All Time";
+  }
+
+  // ── Login ──────────────────────────────────────────────────────
   if (!authed) {
     return (
       <main
@@ -1744,7 +1739,7 @@ export default function AdminPage() {
         color: T.text,
       }}
     >
-      {/* Top nav */}
+      {/* Nav */}
       <div
         style={{
           background: T.white,
@@ -1758,7 +1753,7 @@ export default function AdminPage() {
       >
         <div
           style={{
-            maxWidth: 860,
+            maxWidth: 900,
             margin: "0 auto",
             display: "flex",
             alignItems: "center",
@@ -1766,8 +1761,8 @@ export default function AdminPage() {
             height: 56,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            <h1 style={{ fontSize: "1.1rem", fontWeight: 700, color: T.text }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <h1 style={{ fontSize: "1.1rem", fontWeight: 700 }}>
               Eversweet Admin
             </h1>
             {pendingCount > 0 && (
@@ -1785,28 +1780,46 @@ export default function AdminPage() {
               </span>
             )}
           </div>
-          <button
-            onClick={load}
-            style={{
-              background: "transparent",
-              border: `1px solid ${T.border}`,
-              color: T.sub,
-              padding: "6px 14px",
-              borderRadius: 6,
-              cursor: "pointer",
-              fontSize: "0.8rem",
-              fontWeight: 500,
-            }}
-          >
-            ↻ Refresh
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              onClick={load}
+              style={{
+                background: "transparent",
+                border: `1px solid ${T.border}`,
+                color: T.sub,
+                padding: "6px 14px",
+                borderRadius: 6,
+                cursor: "pointer",
+                fontSize: "0.8rem",
+                fontWeight: 500,
+              }}
+            >
+              ↻
+            </button>
+            <button
+              onClick={() => {
+                localStorage.removeItem("es_admin");
+                setAuthed(false);
+              }}
+              style={{
+                background: "transparent",
+                border: `1px solid ${T.border}`,
+                color: T.muted,
+                padding: "6px 14px",
+                borderRadius: 6,
+                cursor: "pointer",
+                fontSize: "0.8rem",
+              }}
+            >
+              Sign out
+            </button>
+          </div>
         </div>
         <div
           style={{
-            maxWidth: 860,
+            maxWidth: 900,
             margin: "0 auto",
             display: "flex",
-            gap: 0,
             overflowX: "auto" as const,
           }}
         >
@@ -1817,6 +1830,7 @@ export default function AdminPage() {
                 id: "dispatched",
                 label: `Dispatched (${dispatchedOrders.length})`,
               },
+              { id: "customers", label: `Customers (${customers.length})` },
               { id: "dashboard", label: "📊 Dashboard" },
               { id: "products", label: "Products" },
               { id: "slots", label: "Slots" },
@@ -1827,30 +1841,29 @@ export default function AdminPage() {
               key={t.id}
               onClick={() => setTab(t.id)}
               style={{
-                padding: "12px 18px",
+                padding: "12px 16px",
                 background: "transparent",
                 border: "none",
                 borderBottom:
                   tab === t.id ? "2px solid #1976d2" : "2px solid transparent",
                 color: tab === t.id ? "#1976d2" : T.muted,
-                fontSize: "0.82rem",
+                fontSize: "0.8rem",
                 fontWeight: tab === t.id ? 700 : 400,
                 cursor: "pointer",
                 whiteSpace: "nowrap" as const,
                 fontFamily: "system-ui, sans-serif",
-                transition: "all 0.15s",
               }}
             >
               {t.label}
               {t.id === "orders" && pendingCount > 0 && (
                 <span
                   style={{
-                    marginLeft: 6,
+                    marginLeft: 5,
                     background: "#f44336",
                     color: "#fff",
                     borderRadius: 10,
-                    padding: "1px 6px",
-                    fontSize: "0.62rem",
+                    padding: "1px 5px",
+                    fontSize: "0.6rem",
                   }}
                 >
                   {pendingCount}
@@ -1862,7 +1875,7 @@ export default function AdminPage() {
       </div>
 
       <div
-        style={{ maxWidth: 860, margin: "0 auto", padding: "20px 16px 80px" }}
+        style={{ maxWidth: 900, margin: "0 auto", padding: "20px 16px 80px" }}
       >
         {msg.text && (
           <div
@@ -1881,15 +1894,15 @@ export default function AdminPage() {
           </div>
         )}
 
+        {/* ── ORDERS ─────────────────────────────────────────── */}
         {tab === "orders" && (
           <div>
             <div
               style={{
                 display: "flex",
                 gap: 4,
-                marginBottom: 16,
+                marginBottom: 12,
                 overflowX: "auto" as const,
-                paddingBottom: 4,
               }}
             >
               {STATUS_FLOW.map((s, i) => (
@@ -1923,6 +1936,48 @@ export default function AdminPage() {
                 </div>
               ))}
             </div>
+
+            <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+              <button
+                onClick={() => setShowManualForm((f) => !f)}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: 6,
+                  border: "1px solid #1976d2",
+                  background: T.blueBg,
+                  color: "#1976d2",
+                  fontSize: "0.82rem",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  fontFamily: "system-ui, sans-serif",
+                }}
+              >
+                + Add Manual Order
+              </button>
+            </div>
+
+            {showManualForm && (
+              // In the tab === "orders" section, find ManualOrderForm and add customers prop:
+              <ManualOrderForm
+                boxes={boxes}
+                slots={slots}
+                customers={customers.map((c) => ({
+                  name: c.name,
+                  phone: c.phone,
+                  insta_id: c.insta_id || "",
+                  remarks: c.remarks || "",
+                }))}
+                products={products}
+                onSave={() => {
+                  load();
+                  setShowManualForm(false);
+                  flash("Order saved ✓");
+                }}
+                onClose={() => setShowManualForm(false)}
+              />
+            )}
+            <BulkOrderImport onImport={handleBulkOrderImport} />
+
             {activeOrders.length === 0 ? (
               <div
                 style={{
@@ -1934,129 +1989,798 @@ export default function AdminPage() {
                 }}
               >
                 <p style={{ fontSize: "2rem", marginBottom: 8 }}>✓</p>
-                <p style={{ color: T.muted, fontSize: "0.9rem" }}>
-                  All caught up — no active orders
-                </p>
+                <p style={{ color: T.muted }}>No active orders</p>
               </div>
             ) : (
-              activeOrders.map((o) => (
-                <OrderCard
-                  key={o.id}
-                  order={o}
-                  isRepeat={repeatPhones.has(o.phone)}
-                  slotLabel={getSlotLabel(o.time_slot_id)}
-                  productMap={productMap}
-                  onStatusChange={handleStatusChange}
-                  onCancel={handleCancel}
-                  onPorterEmail={handlePorterEmail}
-                />
-              ))
-            )}
-          </div>
-        )}
+              (() => {
+                // Group by (phone or name) + (slot or date)
+                const groups: { key: string; orders: ExtOrder[] }[] = [];
+                const seen = new Map<string, ExtOrder[]>();
 
-        {tab === "dispatched" && (
-          <div>
-            <p style={{ fontSize: "0.8rem", color: T.muted, marginBottom: 14 }}>
-              {dispatchedOrders.length} dispatched order
-              {dispatchedOrders.length !== 1 ? "s" : ""}
-            </p>
-            {dispatchedOrders.length === 0 ? (
-              <div
-                style={{
-                  background: T.white,
-                  borderRadius: 8,
-                  padding: 48,
-                  textAlign: "center" as const,
-                  border: `1px solid ${T.border}`,
-                }}
-              >
-                <p style={{ color: T.muted }}>No dispatched orders yet</p>
-              </div>
-            ) : (
-              dispatchedOrders.map((o) => (
-                <div
-                  key={o.id}
-                  style={{
-                    background: T.white,
-                    border: `1px solid ${T.border}`,
-                    borderLeft: "4px solid #43a047",
-                    borderRadius: 8,
-                    padding: "12px 16px",
-                    marginBottom: 8,
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "flex-start",
-                    }}
-                  >
-                    <div>
+                activeOrders.forEach((o) => {
+                  const slotOrDate =
+                    o.time_slot_id ||
+                    (o as ExtOrder).order_date ||
+                    o.created_at?.split("T")[0];
+                  const identity =
+                    o.phone?.trim() || o.customer_name?.trim().toLowerCase();
+                  const key = `${identity}__${slotOrDate}`;
+
+                  if (!seen.has(key)) {
+                    seen.set(key, []);
+                    groups.push({ key, orders: seen.get(key)! });
+                  }
+                  seen.get(key)!.push(o);
+                });
+
+                return groups.map(({ key, orders: grp }) => {
+                  // Single order — render normal OrderCard
+                  if (grp.length === 1) {
+                    return (
+                      <OrderCard
+                        key={grp[0].id}
+                        order={grp[0]}
+                        isRepeat={repeatPhones.has(grp[0].phone)}
+                        slotLabel={getSlotLabel(grp[0].time_slot_id)}
+                        productMap={productMap}
+                        onStatusChange={handleStatusChange}
+                        onCancel={handleCancel}
+                        onPorterEmail={handlePorterEmail}
+                      />
+                    );
+                  }
+
+                  // Grouped card
+                  const first = grp[0];
+                  const combinedTotal = grp.reduce(
+                    (s, o) => s + (o.total_price || 0),
+                    0,
+                  );
+                  const sc =
+                    STATUS_COLORS[first.status] || STATUS_COLORS.pending;
+                  const allSameStatus = grp.every(
+                    (o) => o.status === first.status,
+                  );
+
+                  // Merge flavours across all orders in group
+                  const mergedFlavours: Record<string, number> = {};
+                  grp.forEach((o) => {
+                    if (!o.flavours) return;
+                    Object.entries(
+                      o.flavours as Record<string, number>,
+                    ).forEach(([id, qty]) => {
+                      mergedFlavours[id] = (mergedFlavours[id] || 0) + qty;
+                    });
+                  });
+                  const flavourList = Object.entries(mergedFlavours)
+                    .filter(([, q]) => q > 0)
+                    .map(([id, q]) => `${productMap[id] || "Unknown"} ×${q}`)
+                    .join(", ");
+
+                  return (
+                    <div
+                      key={key}
+                      style={{
+                        background: T.white,
+                        border: `1px solid ${sc.border}`,
+                        borderLeft: `4px solid ${sc.border}`,
+                        borderRadius: 8,
+                        padding: "14px 16px",
+                        marginBottom: 10,
+                        boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+                      }}
+                    >
+                      {/* Name row */}
                       <div
                         style={{
                           display: "flex",
                           alignItems: "center",
                           gap: 8,
-                          marginBottom: 4,
+                          marginBottom: 8,
+                          flexWrap: "wrap" as const,
                         }}
                       >
-                        <p style={{ fontSize: "0.95rem", fontWeight: 700 }}>
-                          {o.customer_name}
-                        </p>
-                        {repeatPhones.has(o.phone) && (
+                        <span
+                          style={{
+                            fontSize: "1rem",
+                            fontWeight: 700,
+                            color: T.text,
+                          }}
+                        >
+                          {first.customer_name}
+                        </span>
+                        <CopyBtn value={first.customer_name} label="Name" />
+                        {repeatPhones.has(first.phone) && (
                           <span
                             style={{
                               fontSize: "0.65rem",
-                              color: T.blue,
-                              background: T.blueBg,
-                              padding: "1px 7px",
+                              padding: "2px 8px",
                               borderRadius: 10,
+                              background: T.blueBg,
+                              color: T.blue,
                               fontWeight: 600,
                             }}
                           >
-                            🔄
+                            🔄 REPEAT
                           </span>
                         )}
-                      </div>
-                      <p style={{ fontSize: "0.82rem", color: T.sub }}>
-                        {o.phone} ·{" "}
-                        <span style={{ color: T.gold, fontWeight: 600 }}>
-                          ₹{o.total_price}
+                        {(first as ExtOrder).source === "dm" && (
+                          <span
+                            style={{
+                              fontSize: "0.65rem",
+                              padding: "2px 8px",
+                              borderRadius: 10,
+                              background: "#fce4ec",
+                              color: "#c2185b",
+                              fontWeight: 600,
+                            }}
+                          >
+                            📱 DM
+                          </span>
+                        )}
+                        <span
+                          style={{
+                            fontSize: "0.65rem",
+                            padding: "2px 8px",
+                            borderRadius: 10,
+                            background: T.goldBg,
+                            color: T.gold,
+                            fontWeight: 600,
+                          }}
+                        >
+                          📦 {grp.length} boxes
                         </span>
-                      </p>
-                      {o.address && (
-                        <p style={{ fontSize: "0.8rem", color: T.muted }}>
-                          📍 {o.address}
+                        <span
+                          style={{
+                            marginLeft: "auto",
+                            fontSize: "0.7rem",
+                            padding: "3px 10px",
+                            borderRadius: 12,
+                            background: sc.bg,
+                            color: sc.text,
+                            fontWeight: 700,
+                          }}
+                        >
+                          {allSameStatus
+                            ? STATUS_LABELS[first.status]
+                            : grp
+                                .map((o) => STATUS_LABELS[o.status])
+                                .join(" / ")}
+                        </span>
+                      </div>
+
+                      {/* Phone */}
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          marginBottom: 5,
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: "0.9rem",
+                            color: T.text,
+                            fontWeight: 500,
+                          }}
+                        >
+                          📞 {first.phone || "—"}
+                        </span>
+                        {first.phone && (
+                          <CopyBtn value={first.phone} label="Phone" />
+                        )}
+                      </div>
+
+                      {/* Instagram */}
+                      {(first as ExtOrder).insta_id && (
+                        <p
+                          style={{
+                            fontSize: "0.82rem",
+                            color: "#c2185b",
+                            marginBottom: 4,
+                          }}
+                        >
+                          📸 @{(first as ExtOrder).insta_id}
                         </p>
                       )}
+
+                      {/* Address */}
+                      {first.address && (
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "flex-start",
+                            gap: 8,
+                            marginBottom: 5,
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize: "0.85rem",
+                              color: T.sub,
+                              flex: 1,
+                            }}
+                          >
+                            📍 {first.address}
+                          </span>
+                          <CopyBtn value={first.address} label="Address" />
+                        </div>
+                      )}
+
+                      {/* Slot + total */}
+                      <p
+                        style={{
+                          fontSize: "0.85rem",
+                          color: T.sub,
+                          marginBottom: 6,
+                        }}
+                      >
+                        🕐 {getSlotLabel(first.time_slot_id)} ·{" "}
+                        <span style={{ color: T.gold, fontWeight: 600 }}>
+                          ₹{combinedTotal}
+                        </span>{" "}
+                        · {first.payment_method}
+                      </p>
+
+                      {/* Per-box breakdown */}
+                      <div
+                        style={{
+                          background: "#fafafa",
+                          border: `1px solid ${T.border}`,
+                          borderRadius: 6,
+                          padding: "8px 10px",
+                          marginBottom: 6,
+                        }}
+                      >
+                        {grp.map((o) => {
+                          const boxLabel =
+                            boxes.find((b) => b.id === o.box_size_id)?.label ||
+                            "Unknown box";
+                          return (
+                            <div
+                              key={o.id}
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                padding: "3px 0",
+                              }}
+                            >
+                              <span
+                                style={{ fontSize: "0.82rem", color: T.sub }}
+                              >
+                                📦 {boxLabel}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: "0.82rem",
+                                  fontWeight: 600,
+                                  color: T.gold,
+                                }}
+                              >
+                                ₹{o.total_price}
+                              </span>
+                            </div>
+                          );
+                        })}
+                        <div
+                          style={{
+                            borderTop: `1px solid ${T.border}`,
+                            marginTop: 4,
+                            paddingTop: 4,
+                            display: "flex",
+                            justifyContent: "space-between",
+                          }}
+                        >
+                          <span style={{ fontSize: "0.78rem", color: T.muted }}>
+                            Combined
+                          </span>
+                          <span
+                            style={{
+                              fontSize: "0.85rem",
+                              fontWeight: 700,
+                              color: T.gold,
+                            }}
+                          >
+                            ₹{combinedTotal}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Flavours */}
+                      {flavourList && (
+                        <p
+                          style={{
+                            fontSize: "0.82rem",
+                            color: T.muted,
+                            marginBottom: 4,
+                          }}
+                        >
+                          🍡 {flavourList}
+                        </p>
+                      )}
+
+                      {/* Remarks */}
+                      {(first as ExtOrder).remarks && (
+                        <p
+                          style={{
+                            fontSize: "0.82rem",
+                            color: "#558b2f",
+                            fontStyle: "italic" as const,
+                            marginBottom: 4,
+                          }}
+                        >
+                          💬 {(first as ExtOrder).remarks}
+                        </p>
+                      )}
+
                       <p
                         style={{
                           fontSize: "0.72rem",
                           color: T.muted,
-                          marginTop: 3,
+                          marginBottom: 12,
                         }}
                       >
-                        {getSlotLabel(o.time_slot_id)}
+                        {new Date(first.created_at).toLocaleString("en-IN")}
                       </p>
+
+                      {/* Action buttons — advance/cancel all */}
+                      {grp.every(
+                        (o) =>
+                          o.status !== "dispatched" && o.status !== "cancelled",
+                      ) && (
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 8,
+                            flexWrap: "wrap" as const,
+                          }}
+                        >
+                          {nextStatus(first.status) && (
+                            <button
+                              onClick={async () => {
+                                for (const o of grp) {
+                                  const next = nextStatus(o.status);
+                                  if (next === "porter_booked") {
+                                    await handlePorterEmail(
+                                      o,
+                                      getSlotLabel(o.time_slot_id),
+                                    );
+                                  }
+                                  if (next)
+                                    await handleStatusChange(o.id, next);
+                                }
+                              }}
+                              style={{
+                                padding: "8px 18px",
+                                borderRadius: 5,
+                                fontSize: "0.85rem",
+                                fontWeight: 600,
+                                cursor: "pointer",
+                                border: "1px solid",
+                                fontFamily: "system-ui, sans-serif",
+                                transition: "all 0.15s",
+                                ...(first.status === "pending"
+                                  ? {
+                                      background: "#e3f2fd",
+                                      color: "#1565c0",
+                                      borderColor: "#42a5f5",
+                                    }
+                                  : first.status === "confirmed"
+                                    ? {
+                                        background: "#fff3e0",
+                                        color: "#e65100",
+                                        borderColor: "#ffa726",
+                                      }
+                                    : first.status === "cooking"
+                                      ? {
+                                          background: "#e8f5e9",
+                                          color: "#2e7d32",
+                                          borderColor: "#66bb6a",
+                                        }
+                                      : first.status === "cooked"
+                                        ? {
+                                            background: "#f3e5f5",
+                                            color: "#6a1b9a",
+                                            borderColor: "#ab47bc",
+                                          }
+                                        : {
+                                            background: "#e8f5e9",
+                                            color: "#1b5e20",
+                                            borderColor: "#43a047",
+                                          }),
+                              }}
+                            >
+                              {first.status === "pending"
+                                ? "→ Confirm Order"
+                                : first.status === "confirmed"
+                                  ? "→ Start Cooking"
+                                  : first.status === "cooking"
+                                    ? "✓ Cooking Done"
+                                    : first.status === "cooked"
+                                      ? "📦 Book Porter"
+                                      : "→ Mark Dispatched"}
+                            </button>
+                          )}
+                          <Btn
+                            variant="danger"
+                            onClick={async () => {
+                              if (
+                                !confirm(
+                                  `Cancel all orders for ${first.customer_name}?`,
+                                )
+                              )
+                                return;
+                              for (const o of grp) await handleCancel(o.id);
+                            }}
+                          >
+                            Cancel All
+                          </Btn>
+                        </div>
+                      )}
                     </div>
-                    <span
+                  );
+                });
+              })()
+            )}
+          </div>
+        )}
+
+        {/* ── DISPATCHED ─────────────────────────────────────── */}
+        {tab === "dispatched" && (
+          <div>
+            <p style={{ fontSize: "0.8rem", color: T.muted, marginBottom: 14 }}>
+              {dispatchedOrders.length} dispatched orders
+            </p>
+            {dispatchedOrders.map((o) => (
+              <div
+                key={o.id}
+                style={{
+                  background: T.white,
+                  border: `1px solid ${T.border}`,
+                  borderLeft: "4px solid #43a047",
+                  borderRadius: 8,
+                  padding: "12px 16px",
+                  marginBottom: 8,
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                  }}
+                >
+                  <div>
+                    <div
                       style={{
-                        fontSize: "0.72rem",
-                        padding: "3px 9px",
-                        borderRadius: 10,
-                        background: T.greenBg,
-                        color: T.green,
-                        fontWeight: 700,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        marginBottom: 4,
                       }}
                     >
-                      ✓ Done
-                    </span>
+                      <p style={{ fontSize: "0.95rem", fontWeight: 700 }}>
+                        {o.customer_name}
+                      </p>
+                      {repeatPhones.has(o.phone) && (
+                        <span
+                          style={{
+                            fontSize: "0.65rem",
+                            color: T.blue,
+                            background: T.blueBg,
+                            padding: "1px 7px",
+                            borderRadius: 10,
+                          }}
+                        >
+                          🔄
+                        </span>
+                      )}
+                      {(o as ExtOrder).source === "dm" && (
+                        <span
+                          style={{
+                            fontSize: "0.65rem",
+                            color: "#c2185b",
+                            background: "#fce4ec",
+                            padding: "1px 7px",
+                            borderRadius: 10,
+                          }}
+                        >
+                          📱 DM
+                        </span>
+                      )}
+                    </div>
+                    <p style={{ fontSize: "0.82rem", color: T.sub }}>
+                      {o.phone || "—"} ·{" "}
+                      <span style={{ color: T.gold, fontWeight: 600 }}>
+                        ₹{o.total_price}
+                      </span>
+                    </p>
+                    {(o as ExtOrder).insta_id && (
+                      <p style={{ fontSize: "0.78rem", color: "#c2185b" }}>
+                        📸 @{(o as ExtOrder).insta_id}
+                      </p>
+                    )}
+                    {o.address && (
+                      <p style={{ fontSize: "0.8rem", color: T.muted }}>
+                        📍 {o.address}
+                      </p>
+                    )}
+                    {(o as ExtOrder).remarks && (
+                      <p
+                        style={{
+                          fontSize: "0.78rem",
+                          color: "#558b2f",
+                          fontStyle: "italic" as const,
+                        }}
+                      >
+                        💬 {(o as ExtOrder).remarks}
+                      </p>
+                    )}
+                    <p
+                      style={{
+                        fontSize: "0.72rem",
+                        color: T.muted,
+                        marginTop: 3,
+                      }}
+                    >
+                      {getSlotLabel(o.time_slot_id)}
+                    </p>
                   </div>
+                  <span
+                    style={{
+                      fontSize: "0.72rem",
+                      padding: "3px 9px",
+                      borderRadius: 10,
+                      background: T.greenBg,
+                      color: T.green,
+                      fontWeight: 700,
+                    }}
+                  >
+                    ✓ Done
+                  </span>
                 </div>
-              ))
-            )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── CUSTOMERS ──────────────────────────────────────── */}
+        {tab === "customers" && (
+          <div>
+            <div style={{ marginBottom: 16 }}>
+              <Input
+                placeholder="Search by name, phone, or Instagram..."
+                value={customerSearch}
+                onChange={setCustomerSearch}
+              />
+            </div>
+            <p style={{ fontSize: "0.8rem", color: T.muted, marginBottom: 14 }}>
+              {filteredCustomers.length} customers · ₹
+              {customers.reduce((s, c) => s + c.total, 0).toLocaleString()}{" "}
+              total revenue
+            </p>
+
+            {filteredCustomers.map((c) => (
+              <div
+                key={c.key}
+                style={{
+                  background: T.white,
+                  border: `1px solid ${T.border}`,
+                  borderRadius: 8,
+                  padding: "14px 16px",
+                  marginBottom: 8,
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+                }}
+              >
+                {editingCustomer === c.key ? (
+                  <div>
+                    <p
+                      style={{
+                        fontSize: "0.82rem",
+                        fontWeight: 700,
+                        marginBottom: 10,
+                      }}
+                    >
+                      Editing: {c.name}
+                    </p>
+                    <Input
+                      placeholder="Instagram ID (without @)"
+                      value={editInsta}
+                      onChange={setEditInsta}
+                    />
+                    <textarea
+                      value={editRemarks}
+                      onChange={(e) => setEditRemarks(e.target.value)}
+                      placeholder="Remarks / notes about this customer"
+                      style={{
+                        width: "100%",
+                        minHeight: 80,
+                        background: "#f8f8f8",
+                        border: `1px solid ${T.border}`,
+                        borderRadius: 6,
+                        padding: "10px 12px",
+                        fontSize: "0.88rem",
+                        color: T.text,
+                        fontFamily: "system-ui, sans-serif",
+                        resize: "vertical" as const,
+                        outline: "none",
+                        marginBottom: 10,
+                        boxSizing: "border-box" as const,
+                      }}
+                    />
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button
+                        onClick={async () => {
+                          const ordersForCustomer = c.orders;
+                          for (const o of ordersForCustomer) {
+                            await supabase
+                              .from("orders")
+                              .update({
+                                insta_id: editInsta.trim(),
+                                remarks: editRemarks.trim(),
+                              })
+                              .eq("id", o.id);
+                          }
+                          setEditingCustomer(null);
+                          await load();
+                          flash("Customer updated ✓");
+                        }}
+                        style={{
+                          padding: "9px 20px",
+                          borderRadius: 6,
+                          border: "none",
+                          background: "#1976d2",
+                          color: "#fff",
+                          fontSize: "0.85rem",
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          fontFamily: "system-ui, sans-serif",
+                        }}
+                      >
+                        Save
+                      </button>
+                      <Btn onClick={() => setEditingCustomer(null)}>Cancel</Btn>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "flex-start",
+                      }}
+                    >
+                      <div style={{ flex: 1 }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            marginBottom: 5,
+                            flexWrap: "wrap" as const,
+                          }}
+                        >
+                          <p style={{ fontSize: "0.95rem", fontWeight: 700 }}>
+                            {c.name}
+                          </p>
+                          {c.orders.length > 1 && (
+                            <span
+                              style={{
+                                fontSize: "0.65rem",
+                                padding: "2px 8px",
+                                borderRadius: 10,
+                                background: T.blueBg,
+                                color: T.blue,
+                                fontWeight: 600,
+                              }}
+                            >
+                              🔄 {c.orders.length}x customer
+                            </span>
+                          )}
+                        </div>
+                        {c.phone && (
+                          <p
+                            style={{
+                              fontSize: "0.85rem",
+                              color: T.sub,
+                              marginBottom: 3,
+                            }}
+                          >
+                            📞 {c.phone}
+                          </p>
+                        )}
+                        {c.insta_id && (
+                          <p
+                            style={{
+                              fontSize: "0.82rem",
+                              color: "#c2185b",
+                              marginBottom: 3,
+                            }}
+                          >
+                            📸 @{c.insta_id}
+                          </p>
+                        )}
+                        <p
+                          style={{
+                            fontSize: "0.82rem",
+                            color: T.muted,
+                            marginBottom: 3,
+                          }}
+                        >
+                          {c.orders.length} order
+                          {c.orders.length > 1 ? "s" : ""} ·{" "}
+                          <span style={{ color: T.gold, fontWeight: 700 }}>
+                            ₹{c.total.toLocaleString()}
+                          </span>{" "}
+                          total
+                        </p>
+                        <div
+                          style={{
+                            marginTop: 6,
+                            paddingTop: 6,
+                            borderTop: `1px solid ${T.border}`,
+                          }}
+                        >
+                          {c.orders.slice(0, 3).map((o) => (
+                            <p
+                              key={o.id}
+                              style={{
+                                fontSize: "0.75rem",
+                                color: T.muted,
+                                marginBottom: 2,
+                              }}
+                            >
+                              {(o as ExtOrder).order_date ||
+                                o.created_at?.split("T")[0]}{" "}
+                              ·{" "}
+                              {boxes.find((b) => b.id === o.box_size_id)
+                                ?.label || `Box`}{" "}
+                              · ₹{o.total_price}
+                              {o.status === "cancelled" && (
+                                <span style={{ color: T.red }}>
+                                  {" "}
+                                  · cancelled
+                                </span>
+                              )}
+                            </p>
+                          ))}
+                          {c.orders.length > 3 && (
+                            <p style={{ fontSize: "0.72rem", color: T.muted }}>
+                              +{c.orders.length - 3} more
+                            </p>
+                          )}
+                        </div>
+                        {c.remarks && (
+                          <p
+                            style={{
+                              fontSize: "0.8rem",
+                              color: "#558b2f",
+                              fontStyle: "italic" as const,
+                              marginTop: 6,
+                            }}
+                          >
+                            💬 {c.remarks}
+                          </p>
+                        )}
+                      </div>
+                      <Btn
+                        variant="primary"
+                        onClick={() => {
+                          setEditingCustomer(c.key);
+                          setEditInsta(c.insta_id || "");
+                          setEditRemarks(c.remarks || "");
+                        }}
+                      >
+                        Edit
+                      </Btn>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         )}
 
@@ -2064,55 +2788,70 @@ export default function AdminPage() {
         {tab === "dashboard" && (
           <div>
             {/* Period selector */}
-            <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
-              {(["today", "week", "month", "all"] as const).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setDashPeriod(p)}
-                  style={{
-                    padding: "7px 16px",
-                    borderRadius: 20,
-                    border: "1px solid",
-                    borderColor: dashPeriod === p ? "#1976d2" : T.border,
-                    background: dashPeriod === p ? "#1976d2" : T.white,
-                    color: dashPeriod === p ? "#fff" : T.sub,
-                    fontSize: "0.8rem",
-                    fontWeight: dashPeriod === p ? 600 : 400,
-                    cursor: "pointer",
-                    fontFamily: "system-ui, sans-serif",
-                  }}
-                >
-                  {p === "all"
-                    ? "All Time"
-                    : p === "week"
-                      ? "This Week"
-                      : p === "month"
-                        ? "This Month"
-                        : "Today"}
-                </button>
-              ))}
-            </div>
-
-            <p
-              style={{ fontSize: "0.72rem", color: T.muted, marginBottom: 16 }}
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                marginBottom: 8,
+                flexWrap: "wrap" as const,
+              }}
             >
-              * Revenue counts confirmed orders only (excludes pending &amp;
-              cancelled)
+              {(["from_start", "today", "week", "month", "all"] as const).map(
+                (p) => (
+                  <button
+                    key={p}
+                    onClick={() => setDashPeriod(p)}
+                    style={{
+                      padding: "7px 16px",
+                      borderRadius: 20,
+                      border: "1px solid",
+                      borderColor: dashPeriod === p ? "#1976d2" : T.border,
+                      background: dashPeriod === p ? "#1976d2" : T.white,
+                      color: dashPeriod === p ? "#fff" : T.sub,
+                      fontSize: "0.8rem",
+                      fontWeight: dashPeriod === p ? 600 : 400,
+                      cursor: "pointer",
+                      fontFamily: "system-ui, sans-serif",
+                    }}
+                  >
+                    {periodLabel(p)}
+                  </button>
+                ),
+              )}
+            </div>
+            {/* Show the tracking start date when From Start is active */}
+            {dashPeriod === "from_start" && (
+              <p
+                style={{ fontSize: "0.72rem", color: T.blue, marginBottom: 6 }}
+              >
+                📌 Tracking from{" "}
+                {new Date(TRACKING_START_DATE).toLocaleDateString("en-IN", {
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
+                })}{" "}
+                onwards
+              </p>
+            )}
+            <p
+              style={{ fontSize: "0.72rem", color: T.muted, marginBottom: 14 }}
+            >
+              * Revenue = confirmed orders only. Pending &amp; cancelled
+              excluded.
             </p>
 
-            {/* Stats grid */}
             <div
               style={{
                 display: "grid",
                 gridTemplateColumns: "1fr 1fr",
                 gap: 12,
-                marginBottom: 20,
+                marginBottom: 16,
               }}
             >
               <StatCard
                 label="Revenue"
                 value={`₹${totalRevenue.toLocaleString()}`}
-                sub={`${paidOrders.length} confirmed orders`}
+                sub={`${paidOrders.length} orders`}
                 color="#1976d2"
               />
               <StatCard
@@ -2135,110 +2874,252 @@ export default function AdminPage() {
                     : "—"
                 }
                 sub="per order"
-                color={T.text}
               />
             </div>
 
-            {/* Expense category quick stats */}
+            {/* Expense breakdown */}
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 12,
-                marginBottom: 20,
+                gridTemplateColumns: "1fr 1fr 1fr",
+                gap: 10,
+                marginBottom: 16,
               }}
             >
-              <div
-                style={{
-                  background: "#e8f5e9",
-                  border: "1px solid #a5d6a7",
-                  borderRadius: 8,
-                  padding: "14px 16px",
-                }}
-              >
-                <p
+              {[
+                {
+                  label: "🧪 Ingredients",
+                  val: ingredientExp,
+                  color: T.green,
+                  bg: T.greenBg,
+                },
+                {
+                  label: "📦 Packaging",
+                  val: packagingExp,
+                  color: T.blue,
+                  bg: T.blueBg,
+                },
+                {
+                  label: "🏠 Fixed Costs",
+                  val: fixedExp,
+                  color: "#37474f",
+                  bg: "#eceff1",
+                },
+              ].map(({ label, val, color, bg }) => (
+                <div
+                  key={label}
                   style={{
-                    fontSize: "0.68rem",
-                    color: T.green,
-                    letterSpacing: "0.1em",
-                    textTransform: "uppercase" as const,
-                    marginBottom: 6,
-                    fontWeight: 600,
+                    background: bg,
+                    border: `1px solid ${color}22`,
+                    borderRadius: 8,
+                    padding: "12px 14px",
                   }}
                 >
-                  🧪 Ingredient Cost
-                </p>
-                <p
-                  style={{
-                    fontSize: "1.5rem",
-                    fontWeight: 700,
-                    color: T.green,
-                  }}
-                >
-                  ₹{ingredientExpenses.toLocaleString()}
-                </p>
-                <p style={{ fontSize: "0.72rem", color: T.muted }}>
-                  {totalExpenses > 0
-                    ? Math.round((ingredientExpenses / totalExpenses) * 100)
-                    : 0}
-                  % of expenses
-                </p>
-              </div>
-              <div
-                style={{
-                  background: "#e3f2fd",
-                  border: "1px solid #90caf9",
-                  borderRadius: 8,
-                  padding: "14px 16px",
-                }}
-              >
-                <p
-                  style={{
-                    fontSize: "0.68rem",
-                    color: T.blue,
-                    letterSpacing: "0.1em",
-                    textTransform: "uppercase" as const,
-                    marginBottom: 6,
-                    fontWeight: 600,
-                  }}
-                >
-                  📦 Packaging Cost
-                </p>
-                <p
-                  style={{ fontSize: "1.5rem", fontWeight: 700, color: T.blue }}
-                >
-                  ₹{packagingExpenses.toLocaleString()}
-                </p>
-                <p style={{ fontSize: "0.72rem", color: T.muted }}>
-                  {totalExpenses > 0
-                    ? Math.round((packagingExpenses / totalExpenses) * 100)
-                    : 0}
-                  % of expenses
-                </p>
-              </div>
+                  <p
+                    style={{
+                      fontSize: "0.65rem",
+                      color,
+                      fontWeight: 700,
+                      letterSpacing: "0.08em",
+                      textTransform: "uppercase" as const,
+                      marginBottom: 6,
+                    }}
+                  >
+                    {label}
+                  </p>
+                  <p style={{ fontSize: "1.3rem", fontWeight: 700, color }}>
+                    ₹{val.toLocaleString()}
+                  </p>
+                  <p style={{ fontSize: "0.68rem", color: T.muted }}>
+                    {totalExpenses > 0
+                      ? Math.round((val / totalExpenses) * 100)
+                      : 0}
+                    % of expenses
+                  </p>
+                </div>
+              ))}
             </div>
 
-            {/* Mochi Cost Calculator */}
-            <MochiCostCalculator
-              expenses={periodExpenses}
-              period={dashPeriod}
-            />
-
-            {/* Item-wise purchase list */}
-            <ItemWisePurchaseList expenses={periodExpenses} />
-
-            {/* Packaging breakdown (separate) */}
-            <PackagingBreakdown expenses={periodExpenses} />
-
-            {/* Customers */}
+            {/* Cost per mochi calculator */}
+            {/* FIX: uses ingredientExp + packagingExp for true cost per mochi */}
             <div
               style={{
                 background: T.white,
                 border: `1px solid ${T.border}`,
                 borderRadius: 8,
                 padding: "16px 18px",
-                marginBottom: 16,
+                marginBottom: 14,
                 boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+              }}
+            >
+              <p
+                style={{
+                  fontSize: "0.75rem",
+                  color: T.muted,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase" as const,
+                  marginBottom: 12,
+                }}
+              >
+                🍡 Cost per Mochi
+              </p>
+              <p
+                style={{ fontSize: "0.82rem", color: T.sub, marginBottom: 12 }}
+              >
+                All-time cost per mochi (ingredients + packaging) — unaffected
+                by period filter.
+              </p>
+              {(() => {
+                const trackingStart = new Date(TRACKING_START_DATE);
+                trackingStart.setHours(0, 0, 0, 0);
+
+                const trackedOrders = orders.filter((o) => {
+                  if (!PAID_STATUSES.includes(o.status)) return false;
+                  const dateStr = (o as ExtOrder).order_date || o.created_at;
+                  return new Date(dateStr) >= trackingStart;
+                });
+
+                const trackedExpenses = expenses.filter(
+                  (e) => new Date(e.date) >= trackingStart,
+                );
+
+                const allIngredientExp = trackedExpenses
+                  .filter((e) => e.category === "ingredient")
+                  .reduce((sum, e) => sum + e.amount, 0);
+                const allPackagingExp = trackedExpenses
+                  .filter((e) => e.category === "packaging")
+                  .reduce((sum, e) => sum + e.amount, 0);
+
+                const totalMochi = trackedOrders.reduce((sum, o) => {
+                  const box = boxes.find((b) => b.id === o.box_size_id);
+                  return sum + (box?.count || 0);
+                }, 0);
+                const costPerMochi =
+                  totalMochi > 0
+                    ? (allIngredientExp + allPackagingExp) / totalMochi
+                    : 0;
+                const allRevenue = trackedOrders.reduce(
+                  (s, o) => s + (o.total_price || 0),
+                  0,
+                );
+                const revenuePerMochi =
+                  totalMochi > 0 ? allRevenue / totalMochi : 0;
+                return (
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr 1fr",
+                      gap: 10,
+                    }}
+                  >
+                    <div
+                      style={{
+                        textAlign: "center" as const,
+                        background: T.greenBg,
+                        borderRadius: 6,
+                        padding: "10px",
+                      }}
+                    >
+                      <p
+                        style={{
+                          fontSize: "0.65rem",
+                          color: T.green,
+                          fontWeight: 700,
+                          marginBottom: 4,
+                        }}
+                      >
+                        COST / MOCHI
+                      </p>
+                      <p
+                        style={{
+                          fontSize: "1.4rem",
+                          fontWeight: 700,
+                          color: T.green,
+                        }}
+                      >
+                        {totalMochi > 0 ? `₹${costPerMochi.toFixed(1)}` : "—"}
+                      </p>
+                      <p style={{ fontSize: "0.65rem", color: T.muted }}>
+                        ingredients + packaging
+                      </p>
+                    </div>
+                    <div
+                      style={{
+                        textAlign: "center" as const,
+                        background: T.blueBg,
+                        borderRadius: 6,
+                        padding: "10px",
+                      }}
+                    >
+                      <p
+                        style={{
+                          fontSize: "0.65rem",
+                          color: T.blue,
+                          fontWeight: 700,
+                          marginBottom: 4,
+                        }}
+                      >
+                        REVENUE / MOCHI
+                      </p>
+                      <p
+                        style={{
+                          fontSize: "1.4rem",
+                          fontWeight: 700,
+                          color: T.blue,
+                        }}
+                      >
+                        {totalMochi > 0
+                          ? `₹${revenuePerMochi.toFixed(1)}`
+                          : "—"}
+                      </p>
+                      <p style={{ fontSize: "0.65rem", color: T.muted }}>
+                        /mochi
+                      </p>
+                    </div>
+                    <div
+                      style={{
+                        textAlign: "center" as const,
+                        background: T.goldBg,
+                        borderRadius: 6,
+                        padding: "10px",
+                      }}
+                    >
+                      <p
+                        style={{
+                          fontSize: "0.65rem",
+                          color: T.gold,
+                          fontWeight: 700,
+                          marginBottom: 4,
+                        }}
+                      >
+                        TOTAL MOCHIS
+                      </p>
+                      <p
+                        style={{
+                          fontSize: "1.4rem",
+                          fontWeight: 700,
+                          color: T.gold,
+                        }}
+                      >
+                        {totalMochi > 0 ? totalMochi : "—"}
+                      </p>
+                      <p style={{ fontSize: "0.65rem", color: T.muted }}>
+                        all-time delivered
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Customers summary */}
+            <div
+              style={{
+                background: T.white,
+                border: `1px solid ${T.border}`,
+                borderRadius: 8,
+                padding: "16px 18px",
+                marginBottom: 14,
               }}
             >
               <p
@@ -2261,7 +3142,10 @@ export default function AdminPage() {
                       color: "#1976d2",
                     }}
                   >
-                    {new Set(paidOrders.map((o) => o.phone)).size}
+                    {
+                      new Set(paidOrders.map((o) => o.phone || o.customer_name))
+                        .size
+                    }
                   </p>
                   <p style={{ fontSize: "0.75rem", color: T.muted }}>Unique</p>
                 </div>
@@ -2304,8 +3188,7 @@ export default function AdminPage() {
                   border: `1px solid ${T.border}`,
                   borderRadius: 8,
                   padding: "16px 18px",
-                  marginBottom: 16,
-                  boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+                  marginBottom: 14,
                 }}
               >
                 <p
@@ -2319,51 +3202,46 @@ export default function AdminPage() {
                 >
                   Top Flavours
                 </p>
-                {topFlavours.map(([name, count], i) => {
-                  const max = topFlavours[0][1];
-                  return (
-                    <div key={name} style={{ marginBottom: 10 }}>
-                      <div
+                {topFlavours.map(([name, count], i) => (
+                  <div key={name} style={{ marginBottom: 10 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        marginBottom: 4,
+                      }}
+                    >
+                      <span
                         style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          marginBottom: 4,
+                          fontSize: "0.88rem",
+                          fontWeight: i === 0 ? 700 : 400,
                         }}
                       >
-                        <span
-                          style={{
-                            fontSize: "0.88rem",
-                            fontWeight: i === 0 ? 700 : 400,
-                            color: T.text,
-                          }}
-                        >
-                          {name}
-                        </span>
-                        <span style={{ fontSize: "0.82rem", color: T.muted }}>
-                          {count} pieces
-                        </span>
-                      </div>
-                      <div
-                        style={{
-                          height: 6,
-                          background: "#f0f0f0",
-                          borderRadius: 3,
-                          overflow: "hidden",
-                        }}
-                      >
-                        <div
-                          style={{
-                            height: "100%",
-                            width: `${(count / max) * 100}%`,
-                            background: i === 0 ? "#1976d2" : "#90caf9",
-                            borderRadius: 3,
-                            transition: "width 0.4s",
-                          }}
-                        />
-                      </div>
+                        {name}
+                      </span>
+                      <span style={{ fontSize: "0.82rem", color: T.muted }}>
+                        {count}
+                      </span>
                     </div>
-                  );
-                })}
+                    <div
+                      style={{
+                        height: 6,
+                        background: "#f0f0f0",
+                        borderRadius: 3,
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          height: "100%",
+                          width: `${(count / topFlavours[0][1]) * 100}%`,
+                          background: i === 0 ? "#1976d2" : "#90caf9",
+                          borderRadius: 3,
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
 
@@ -2375,8 +3253,7 @@ export default function AdminPage() {
                   border: `1px solid ${T.border}`,
                   borderRadius: 8,
                   padding: "16px 18px",
-                  marginBottom: 16,
-                  boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+                  marginBottom: 14,
                 }}
               >
                 <p
@@ -2417,7 +3294,7 @@ export default function AdminPage() {
                           ₹{data.revenue.toLocaleString()}
                         </p>
                         <p style={{ fontSize: "0.72rem", color: T.muted }}>
-                          {data.count} order{data.count > 1 ? "s" : ""}
+                          {data.count} orders
                         </p>
                       </div>
                     </div>
@@ -2425,15 +3302,14 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* Expense log + add form */}
+            {/* Expenses log */}
             <div
               style={{
                 background: T.white,
                 border: `1px solid ${T.border}`,
                 borderRadius: 8,
                 padding: "16px 18px",
-                marginBottom: 16,
-                boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+                marginBottom: 14,
               }}
             >
               <p
@@ -2445,18 +3321,11 @@ export default function AdminPage() {
                   marginBottom: 14,
                 }}
               >
-                All Expense Entries
+                Expense Log
               </p>
-
               {periodExpenses.length === 0 ? (
-                <p
-                  style={{
-                    fontSize: "0.88rem",
-                    color: T.muted,
-                    padding: "12px 0",
-                  }}
-                >
-                  No expenses for this period
+                <p style={{ fontSize: "0.88rem", color: T.muted }}>
+                  No expenses this period
                 </p>
               ) : (
                 periodExpenses.map((e) => {
@@ -2475,12 +3344,7 @@ export default function AdminPage() {
                     >
                       <div>
                         <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 6,
-                            marginBottom: 2,
-                          }}
+                          style={{ display: "flex", gap: 6, marginBottom: 2 }}
                         >
                           <span
                             style={{
@@ -2536,7 +3400,6 @@ export default function AdminPage() {
                             color: T.muted,
                             cursor: "pointer",
                             fontSize: "1rem",
-                            lineHeight: 1,
                           }}
                         >
                           ✕
@@ -2547,7 +3410,7 @@ export default function AdminPage() {
                 })
               )}
 
-              {/* Add expense form */}
+              {/* Add expense */}
               <div
                 style={{
                   marginTop: 16,
@@ -2566,7 +3429,7 @@ export default function AdminPage() {
                   Add Expense
                 </p>
                 <Input
-                  placeholder="Description (e.g. Mango pulp 2kg) *"
+                  placeholder="Description *"
                   value={ne.description}
                   onChange={(v) => setNe((e) => ({ ...e, description: v }))}
                 />
@@ -2607,6 +3470,9 @@ export default function AdminPage() {
                   >
                     <option value="ingredient">🧪 Ingredient</option>
                     <option value="packaging">📦 Packaging</option>
+                    <option value="fixed">
+                      🏠 Fixed Cost (rent, utensils)
+                    </option>
                     <option value="delivery">🚚 Delivery</option>
                     <option value="equipment">🔧 Equipment</option>
                     <option value="other">📋 Other</option>
@@ -2652,22 +3518,61 @@ export default function AdminPage() {
                     color: "#fff",
                     fontSize: "0.88rem",
                     fontWeight: 600,
-                    cursor:
-                      saving || !ne.description || !ne.amount
-                        ? "not-allowed"
-                        : "pointer",
+                    cursor: "pointer",
                     fontFamily: "system-ui, sans-serif",
                   }}
                 >
                   {saving ? "Adding…" : "Add Expense"}
                 </button>
-              </div>
 
-              {/* JSON bulk upload / paste */}
-              <BulkImportJSON
-                onImport={handleExpenseJSON}
-                onPaste={handleExpenseJSONText}
-              />
+                {/* JSON import for expenses */}
+                <div
+                  style={{
+                    marginTop: 14,
+                    paddingTop: 14,
+                    borderTop: `1px solid ${T.border}`,
+                  }}
+                >
+                  <p
+                    style={{
+                      fontSize: "0.78rem",
+                      fontWeight: 600,
+                      color: T.sub,
+                      marginBottom: 8,
+                    }}
+                  >
+                    Bulk import expenses (JSON)
+                  </p>
+                  <label
+                    style={{
+                      display: "inline-block",
+                      padding: "8px 16px",
+                      borderRadius: 6,
+                      border: `1px solid #1976d2`,
+                      background: T.blueBg,
+                      color: "#1976d2",
+                      fontSize: "0.82rem",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      fontFamily: "system-ui, sans-serif",
+                    }}
+                  >
+                    📂 Upload JSON File
+                    <input
+                      type="file"
+                      accept=".json"
+                      style={{ display: "none" }}
+                      onChange={async (e) => {
+                        const f = e.target.files?.[0];
+                        if (!f) return;
+                        const text = await f.text();
+                        await handleExpenseImport(text);
+                        (e.target as HTMLInputElement).value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -2742,7 +3647,6 @@ export default function AdminPage() {
                         fontSize: "0.88rem",
                         marginBottom: 14,
                         cursor: "pointer",
-                        color: T.text,
                       }}
                     >
                       <input
@@ -2956,7 +3860,6 @@ export default function AdminPage() {
                   fontSize: "0.88rem",
                   marginBottom: 14,
                   cursor: "pointer",
-                  color: T.text,
                 }}
               >
                 <input
@@ -3000,7 +3903,7 @@ export default function AdminPage() {
                   color: "#fff",
                   fontSize: "0.88rem",
                   fontWeight: 600,
-                  cursor: saving || !np.name ? "not-allowed" : "pointer",
+                  cursor: "pointer",
                   fontFamily: "system-ui, sans-serif",
                 }}
               >
@@ -3029,7 +3932,6 @@ export default function AdminPage() {
                   alignItems: "center",
                   justifyContent: "space-between",
                   gap: 12,
-                  boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
                 }}
               >
                 <div>
@@ -3042,7 +3944,7 @@ export default function AdminPage() {
                       day: "numeric",
                       month: "short",
                     })}{" "}
-                    · {s.current_orders}/{s.max_orders} orders ·{" "}
+                    · {s.current_orders}/{s.max_orders} ·{" "}
                     <span
                       style={{
                         color: s.is_active ? T.green : T.red,
@@ -3111,7 +4013,7 @@ export default function AdminPage() {
               />
               <Input
                 type="number"
-                placeholder="Max orders (default 10)"
+                placeholder="Max orders"
                 value={ns.max_orders}
                 onChange={(v) => setNs((s) => ({ ...s, max_orders: v }))}
               />
@@ -3169,7 +4071,6 @@ export default function AdminPage() {
                   alignItems: "center",
                   justifyContent: "space-between",
                   gap: 12,
-                  boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
                 }}
               >
                 <div>
