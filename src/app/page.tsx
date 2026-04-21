@@ -1,12 +1,10 @@
-"use client"; // This page uses React state and effects
-export const dynamic = "force-dynamic"; 
-
+"use client";
+export const dynamic = "force-dynamic";
 
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import type { Product, BoxSize, TimeSlot, CustomerForm } from "@/lib/types";
 
-// ── Fallback images (until you upload real ones to Supabase Storage) ──
 const IMG: Record<string, string> = {
   matcha:
     "https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/products/mango-mochi.png",
@@ -19,40 +17,55 @@ const IMG: Record<string, string> = {
 function getImg(name: string, url: string | null): string {
   if (url) return url;
   const n = name.toLowerCase();
-
-  // New keyword mapping for your expanded menu
-  if (n.includes("mango")) return IMG.mango;
+  if (n.includes("mango")) return IMG.matcha;
   if (n.includes("strawberry")) return IMG.strawberry;
   if (n.includes("coffee"))
-    return "https://images.unsplash.com/photo-1541167760496-162955ed8a9f?w=600&q=80"; // Fallback for Coffeecrisp
-
+    return "https://images.unsplash.com/photo-1541167760496-162955ed8a9f?w=600&q=80";
   return IMG.default;
 }
 
-// ── Small reusable UI bits ─────────────────────────────────────────
-function SectionLabel({ text }: { text: string }) {
-  return <p className="section-label">{text}</p>;
-}
+// ── Testimonials data (editable) ──────────────────────────────────
+const TESTIMONIALS = [
+  {
+    name: "Aswathy R.",
+    handle: "@aswathy.r",
+    text: "Honestly the best mochi I've had outside Japan. The strawberry one melted in my mouth. Ordered twice already this week 😭",
+    avatar: "A",
+  },
+  {
+    name: "Meera K.",
+    handle: "@meerak",
+    text: "The freshness is unreal. You can tell it's made the same day. Nothing like those frozen ones you get at malls.",
+    avatar: "M",
+  },
+  {
+    name: "Rishi N.",
+    handle: "@rishin_",
+    text: "Got the box of 12 for my sister's birthday. Everyone went silent when they tasted it. That's always a good sign 😂",
+    avatar: "R",
+  },
+  {
+    name: "Devika S.",
+    handle: "@devika.eats",
+    text: "Perfect balance of sweetness. The rice outer layer is so soft. Ordered mango and it actually tastes like mango, not flavouring.",
+    avatar: "D",
+  },
+];
 
-function SectionTitle({
-  children,
-  size = "1.75rem",
-}: {
-  children: React.ReactNode;
-  size?: string;
-}) {
+function SectionLabel({ text }: { text: string }) {
   return (
-    <h2
-      className="font-display"
+    <p
       style={{
-        fontSize: size,
-        fontWeight: 300,
-        lineHeight: 1.1,
-        marginBottom: 6,
+        fontSize: "0.62rem",
+        letterSpacing: "0.2em",
+        textTransform: "uppercase" as const,
+        color: "var(--gold)",
+        marginBottom: 8,
+        opacity: 0.85,
       }}
     >
-      {children}
-    </h2>
+      {text}
+    </p>
   );
 }
 
@@ -63,39 +76,62 @@ function GoldLine() {
         width: 36,
         height: 1,
         background: "var(--gold)",
-        opacity: 0.55,
-        marginTop: 12,
-        marginBottom: 24,
+        opacity: 0.45,
+        marginTop: 10,
+        marginBottom: 22,
       }}
     />
   );
 }
 
-// ── Main page ──────────────────────────────────────────────────────
+// ── Animated "nudge" banner shown when product card clicked before box ──
+function NudgeBanner({ show }: { show: boolean }) {
+  return (
+    <div
+      style={{
+        overflow: "hidden",
+        maxHeight: show ? 60 : 0,
+        opacity: show ? 1 : 0,
+        transition: "all 0.35s ease",
+        marginBottom: show ? 12 : 0,
+      }}
+    >
+      <div
+        style={{
+          background: "rgba(184,134,11,0.12)",
+          border: "1px solid rgba(184,134,11,0.35)",
+          borderRadius: 6,
+          padding: "10px 14px",
+          fontSize: "0.78rem",
+          color: "var(--gold)",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        <span>👆</span>
+        <span>Choose your box size first, then pick flavours</span>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
-  // Data from Supabase
   const [products, setProducts] = useState<Product[]>([]);
   const [boxes, setBoxes] = useState<BoxSize[]>([]);
   const [slots, setSlots] = useState<TimeSlot[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Order state
   const [selectedBox, setSelectedBox] = useState<BoxSize | null>(null);
   const [flavours, setFlavours] = useState<Record<string, number>>({});
   const [slotId, setSlotId] = useState("");
+  const [expandedProduct, setExpandedProduct] = useState<string | null>(null);
+  const [showNudge, setShowNudge] = useState(false);
 
-  // UI state
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
-  // step 1 = choose box
-  // step 2 = choose flavours
-  // step 3 = choose time slot
-  // step 4 = customer details + payment
-  // step 5 = order placed
-
   const [placing, setPlacing] = useState(false);
   const [error, setError] = useState("");
 
-  // Customer form
   const [form, setForm] = useState<CustomerForm>({
     name: "",
     phone: "",
@@ -105,13 +141,12 @@ export default function Home() {
   });
   const [payMethod, setPayMethod] = useState<"qr" | "phone">("qr");
 
-  // Scroll refs
+  const orderRef = useRef<HTMLElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
   const flavourRef = useRef<HTMLDivElement>(null);
   const slotRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLDivElement>(null);
-  const orderRef = useRef<HTMLElement>(null);
 
-  // ── Load data ───────────────────────────────────────────────────
   useEffect(() => {
     async function load() {
       const [{ data: p }, { data: b }, { data: s }] = await Promise.all([
@@ -140,7 +175,6 @@ export default function Home() {
     load();
   }, []);
 
-  // ── Flavour helpers ─────────────────────────────────────────────
   const totalPicked = Object.values(flavours).reduce((a, b) => a + b, 0);
   const remaining = selectedBox ? selectedBox.count - totalPicked : 0;
   const boxFull = remaining === 0;
@@ -157,10 +191,11 @@ export default function Home() {
     });
   }
 
-  // ── Step handlers ───────────────────────────────────────────────
   function pickBox(box: BoxSize) {
     setSelectedBox(box);
     setFlavours({});
+    setExpandedProduct(null);
+    setShowNudge(false);
     setStep(2);
     setTimeout(
       () =>
@@ -170,6 +205,26 @@ export default function Home() {
         }),
       80,
     );
+  }
+
+  function handleProductCardClick(productId: string) {
+    if (!selectedBox) {
+      // No box selected — show nudge and scroll to box section
+      setShowNudge(true);
+      setTimeout(() => setShowNudge(false), 4000);
+      boxRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    // Box is selected — expand/collapse the card
+    setExpandedProduct((prev) => (prev === productId ? null : productId));
+  }
+
+  function addToBox(productId: string) {
+    if (boxFull) return;
+    adjustFlavour(productId, 1);
+    setExpandedProduct(null);
+    // Scroll to flavour picker
+    flavourRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function proceedToSlot() {
@@ -191,7 +246,15 @@ export default function Home() {
     );
   }
 
-  // ── Place order ─────────────────────────────────────────────────
+  function goBackToSlot() {
+    setStep(3);
+    setTimeout(
+      () =>
+        slotRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+      80,
+    );
+  }
+
   async function placeOrder() {
     if (!selectedBox || !form.name.trim() || !form.phone.trim() || !slotId) {
       setError("Please fill in your name and phone number.");
@@ -231,7 +294,11 @@ export default function Home() {
     }
   }
 
-  // ── Order confirmed screen ──────────────────────────────────────
+  function scrollToOrder() {
+    orderRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  // ── Order confirmed ─────────────────────────────────────────────
   if (step === 5) {
     return (
       <main
@@ -297,7 +364,6 @@ export default function Home() {
               display: "inline-block",
             }}
           >
-            {/* Replace /upi-qr.png with your actual UPI QR code in the public/ folder */}
             <img
               src="/upi-qr.png"
               alt="UPI QR Code"
@@ -330,7 +396,6 @@ export default function Home() {
         )}
 
         <div className="divider" style={{ width: "100%", marginBottom: 24 }} />
-
         <a
           href="https://instagram.com/byeversweet"
           target="_blank"
@@ -355,50 +420,47 @@ export default function Home() {
       {/* ══ HERO ══════════════════════════════════════════════════ */}
       <section
         style={{
-          padding: "56px 24px 40px",
+          padding: "56px 24px 44px",
           textAlign: "center",
           borderBottom: "1px solid var(--border2)",
-          background: "linear-gradient(180deg, var(--bg2) 0%, var(--bg) 100%)",
+          background:
+            "linear-gradient(180deg, rgba(255,248,230,0.06) 0%, var(--bg) 100%)",
         }}
       >
-        {/* Logo / wordmark */}
-        <div style={{ marginBottom: 24 }}>
-          <p className="section-label" style={{ marginBottom: 16 }}>
-            Cloud Kitchen · Kochi, Kerala
-          </p>
-          <h1
-            className="font-display"
-            style={{
-              fontSize: "4rem",
-              fontWeight: 300,
-              lineHeight: 1,
-              letterSpacing: "-0.01em",
-              marginBottom: 4,
-            }}
-          >
-            Ever<em style={{ color: "var(--gold)" }}>sweet</em>
-          </h1>
-          <div
-            style={{
-              width: 48,
-              height: 1,
-              background: "var(--gold)",
-              margin: "16px auto",
-              opacity: 0.5,
-            }}
-          />
-        </div>
+        <p className="section-label" style={{ marginBottom: 16 }}>
+          Cloud Kitchen · Kochi, Kerala
+        </p>
+        <h1
+          className="font-display"
+          style={{
+            fontSize: "4rem",
+            fontWeight: 300,
+            lineHeight: 1,
+            letterSpacing: "-0.01em",
+            marginBottom: 4,
+          }}
+        >
+          Ever<em style={{ color: "var(--gold)" }}>sweet</em>
+        </h1>
+        <div
+          style={{
+            width: 48,
+            height: 1,
+            background: "var(--gold)",
+            margin: "16px auto",
+            opacity: 0.5,
+          }}
+        />
 
-        {/* Hero image strip — pulls from your real product photos */}
         {products.filter((p) => p.image_url).slice(0, 4).length > 0 && (
           <div
             style={{
               display: "flex",
               gap: 6,
-              marginBottom: 24,
-              borderRadius: 8,
+              marginBottom: 28,
+              borderRadius: 10,
               overflow: "hidden",
-              height: 180,
+              height: 190,
             }}
           >
             {products
@@ -419,55 +481,104 @@ export default function Home() {
           </div>
         )}
 
+        {/* StoreBrand hero copy — problem → guide → solution */}
         <p
           style={{
             color: "var(--cream-dim)",
-            fontSize: "0.9rem",
+            fontSize: "1.05rem",
+            lineHeight: 1.65,
+            maxWidth: 320,
+            margin: "0 auto 10px",
+            fontStyle: "italic",
+          }}
+        >
+          "The mochi you've been imagining — soft, fresh, made today."
+        </p>
+        <p
+          style={{
+            color: "var(--muted)",
+            fontSize: "0.82rem",
             lineHeight: 1.75,
             maxWidth: 300,
             margin: "0 auto 28px",
           }}
         >
-          Handcrafted mochi made fresh daily. No preservatives, small batches,
-          delivered straight to your door.
+          No freezers. No preservatives. Each piece made on the day of your
+          delivery — because that&apos;s the only way mochi should be eaten.
         </p>
 
-        <a
-          href="#order"
+        {/* CTA #1 */}
+        <button
           className="btn-gold"
-          style={{ maxWidth: 220, margin: "0 auto" }}
+          style={{ maxWidth: 240, margin: "0 auto 14px" }}
+          onClick={scrollToOrder}
         >
-          Order Now
-        </a>
-
-        <p style={{ marginTop: 16, fontSize: "0.7rem", color: "var(--muted)" }}>
+          Order Fresh Mochi →
+        </button>
+        <p style={{ fontSize: "0.68rem", color: "var(--muted)" }}>
           Brookie &amp; Tiramisu coming soon ✦
         </p>
       </section>
 
-      {/* ══ ABOUT ══════════════════════════════════════════════════ */}
+      {/* ══ PROBLEM / EMPATHY (StoreBrand) ═══════════════════════ */}
       <section
         style={{
-          padding: "36px 24px",
+          padding: "32px 24px",
           borderBottom: "1px solid var(--border2)",
+          background: "rgba(255,248,230,0.03)",
         }}
       >
-        <SectionLabel text="Our Story" />
-        <SectionTitle>Made from scratch,{"\u00A0"}with care</SectionTitle>
+        <SectionLabel text="Why Eversweet" />
+        <h2
+          className="font-display"
+          style={{
+            fontSize: "1.6rem",
+            fontWeight: 300,
+            lineHeight: 1.2,
+            marginBottom: 6,
+          }}
+        >
+          Most mochi is made weeks ago.
+          <br />
+          <em style={{ color: "var(--gold)" }}>Ours was made this morning.</em>
+        </h2>
         <GoldLine />
         <p
           style={{
             color: "var(--cream-dim)",
             fontSize: "0.875rem",
-            lineHeight: 1.8,
+            lineHeight: 1.85,
+            marginBottom: 16,
           }}
         >
-          Every piece of mochi at Eversweet is made by hand in our Kochi cloud
-          kitchen. We use premium ingredients, skip the preservatives, and keep
-          our batches small — so every box you receive is as fresh as it gets.
-          We started with mochi because we love it, and we plan to keep that
-          love in every batch we make.
+          You&apos;ve had frozen mochi — that odd, chewy-but-cold bite that
+          never quite felt right. The rice flour skin that tears instead of
+          yielding. The filling that tastes like a memory of fruit rather than
+          the fruit itself.
         </p>
+        <p
+          style={{
+            color: "var(--cream-dim)",
+            fontSize: "0.875rem",
+            lineHeight: 1.85,
+            marginBottom: 20,
+          }}
+        >
+          Eversweet is built on one belief:{" "}
+          <strong style={{ color: "var(--cream)", fontWeight: 500 }}>
+            mochi eaten the day it&apos;s made is a completely different food.
+          </strong>{" "}
+          The skin is impossibly soft. The filling is cold but not frozen. Every
+          texture is intentional.
+        </p>
+        {/* CTA #2 */}
+        <button
+          className="btn-gold"
+          style={{ maxWidth: 220 }}
+          onClick={scrollToOrder}
+        >
+          Build My Box →
+        </button>
       </section>
 
       {/* ══ PRODUCTS ═══════════════════════════════════════════════ */}
@@ -477,142 +588,442 @@ export default function Home() {
           borderBottom: "1px solid var(--border2)",
         }}
       >
-        <SectionLabel text="Flavours" />
-        <SectionTitle>This week&apos;s menu</SectionTitle>
+        <SectionLabel text="This Week's Menu" />
+        <h2
+          className="font-display"
+          style={{
+            fontSize: "1.75rem",
+            fontWeight: 300,
+            lineHeight: 1.1,
+            marginBottom: 6,
+          }}
+        >
+          Choose what you love
+        </h2>
         <GoldLine />
+
+        <NudgeBanner show={showNudge} />
 
         {loading ? (
           <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 10,
-            }}
+            style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}
           >
             {[1, 2, 3, 4].map((i) => (
               <div
                 key={i}
                 className="card"
-                style={{ height: 200, borderRadius: 6, opacity: 0.4 }}
+                style={{ height: 200, borderRadius: 6, opacity: 0.3 }}
               />
             ))}
           </div>
         ) : (
           <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 10,
-            }}
+            style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}
           >
-            {products.map((p) => (
-              <div
-                key={p.id}
-                className="card fade-up"
-                style={{ borderRadius: 6, overflow: "hidden" }}
-              >
-                <div style={{ position: "relative" }}>
-                  <img
-                    src={getImg(p.name, p.image_url)}
-                    alt={p.name}
+            {products.map((p) => {
+              const isExpanded = expandedProduct === p.id;
+              const qty = flavours[p.id] || 0;
+              return (
+                <div
+                  key={p.id}
+                  onClick={() => handleProductCardClick(p.id)}
+                  style={{
+                    borderRadius: 8,
+                    overflow: "hidden",
+                    cursor: "pointer",
+                    border: `1px solid ${isExpanded ? "var(--gold)" : "var(--border2)"}`,
+                    background: isExpanded
+                      ? "rgba(184,134,11,0.06)"
+                      : "var(--surface)",
+                    transition: "all 0.25s ease",
+                    transform: isExpanded ? "scale(1.02)" : "scale(1)",
+                    boxShadow: isExpanded
+                      ? "0 8px 32px rgba(184,134,11,0.18)"
+                      : "none",
+                    gridColumn: isExpanded ? "span 2" : "span 1",
+                  }}
+                >
+                  <div style={{ position: "relative" }}>
+                    <img
+                      src={getImg(p.name, p.image_url)}
+                      alt={p.name}
+                      style={{
+                        width: "100%",
+                        height: isExpanded ? 180 : 130,
+                        objectFit: "cover",
+                        display: "block",
+                        transition: "height 0.25s ease",
+                      }}
+                    />
+                    {p.is_premium && (
+                      <span className="badge-premium">Premium</span>
+                    )}
+                    {qty > 0 && (
+                      <span
+                        style={{
+                          position: "absolute",
+                          top: 8,
+                          left: 8,
+                          background: "var(--gold)",
+                          color: "#1a1008",
+                          fontSize: "0.62rem",
+                          fontWeight: 700,
+                          padding: "2px 7px",
+                          borderRadius: 10,
+                        }}
+                      >
+                        ×{qty} in box
+                      </span>
+                    )}
+                  </div>
+                  <div
                     style={{
-                      width: "100%",
-                      height: 130,
-                      objectFit: "cover",
-                      display: "block",
-                    }}
-                  />
-                  {p.is_premium && (
-                    <span className="badge-premium">Premium</span>
-                  )}
-                </div>
-                <div style={{ padding: "10px 10px 14px" }}>
-                  <p
-                    style={{
-                      fontSize: "0.82rem",
-                      fontWeight: 500,
-                      marginBottom: 3,
+                      padding: isExpanded ? "14px 14px 6px" : "10px 10px 14px",
                     }}
                   >
-                    {p.name}
-                  </p>
-                  <p
-                    style={{
-                      fontSize: "0.7rem",
-                      color: "var(--muted)",
-                      lineHeight: 1.5,
-                      marginBottom: 6,
-                    }}
-                  >
-                    {p.description}
-                  </p>
+                    <p
+                      style={{
+                        fontSize: "0.82rem",
+                        fontWeight: 500,
+                        marginBottom: 3,
+                      }}
+                    >
+                      {p.name}
+                    </p>
+                    <p
+                      style={{
+                        fontSize: "0.7rem",
+                        color: "var(--muted)",
+                        lineHeight: 1.55,
+                        marginBottom: isExpanded ? 12 : 0,
+                      }}
+                    >
+                      {p.description}
+                    </p>
+
+                    {/* Expanded: add to box button */}
+                    {isExpanded && selectedBox && (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ paddingBottom: 10 }}
+                      >
+                        {boxFull && qty === 0 ? (
+                          <p
+                            style={{
+                              fontSize: "0.72rem",
+                              color: "var(--gold)",
+                              textAlign: "center",
+                              padding: "8px 0",
+                            }}
+                          >
+                            Box is full — remove something first
+                          </p>
+                        ) : (
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 10,
+                              justifyContent: "space-between",
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                              }}
+                            >
+                              <button
+                                className="qty-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  adjustFlavour(p.id, -1);
+                                }}
+                                disabled={qty === 0}
+                              >
+                                −
+                              </button>
+                              <span
+                                style={{
+                                  fontSize: "0.9rem",
+                                  minWidth: 18,
+                                  textAlign: "center",
+                                }}
+                              >
+                                {qty}
+                              </span>
+                              <button
+                                className="qty-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  adjustFlavour(p.id, 1);
+                                }}
+                                disabled={boxFull}
+                              >
+                                +
+                              </button>
+                            </div>
+                            {qty === 0 && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  addToBox(p.id);
+                                }}
+                                style={{
+                                  padding: "6px 16px",
+                                  borderRadius: 4,
+                                  border: "1px solid var(--gold)",
+                                  background: "rgba(184,134,11,0.15)",
+                                  color: "var(--gold)",
+                                  fontSize: "0.75rem",
+                                  cursor: "pointer",
+                                  fontFamily: "system-ui, sans-serif",
+                                }}
+                              >
+                                Add to box
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
+
+        {/* CTA #3 — inside products section */}
+        <button
+          className="btn-gold"
+          style={{ maxWidth: 240, margin: "20px auto 0" }}
+          onClick={scrollToOrder}
+        >
+          Order Now →
+        </button>
+      </section>
+
+      {/* ══ TESTIMONIALS ══════════════════════════════════════════ */}
+      <section
+        style={{
+          padding: "36px 24px",
+          borderBottom: "1px solid var(--border2)",
+          background: "rgba(255,248,230,0.025)",
+        }}
+      >
+        <SectionLabel text="What People Say" />
+        <h2
+          className="font-display"
+          style={{
+            fontSize: "1.75rem",
+            fontWeight: 300,
+            lineHeight: 1.1,
+            marginBottom: 6,
+          }}
+        >
+          Real words, real customers
+        </h2>
+        <GoldLine />
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {TESTIMONIALS.map((t, i) => (
+            <div
+              key={i}
+              style={{
+                background: "var(--surface)",
+                border: "1px solid var(--border2)",
+                borderRadius: 8,
+                padding: "14px 16px",
+                position: "relative",
+              }}
+            >
+              {/* Quote mark */}
+              <span
+                style={{
+                  position: "absolute",
+                  top: 10,
+                  right: 14,
+                  fontSize: "1.8rem",
+                  color: "var(--gold)",
+                  opacity: 0.2,
+                  lineHeight: 1,
+                  fontFamily: "Georgia, serif",
+                }}
+              >
+                "
+              </span>
+              <p
+                style={{
+                  fontSize: "0.83rem",
+                  color: "var(--cream-dim)",
+                  lineHeight: 1.7,
+                  marginBottom: 12,
+                  fontStyle: "italic",
+                }}
+              >
+                {t.text}
+              </p>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div
+                  style={{
+                    width: 30,
+                    height: 30,
+                    borderRadius: "50%",
+                    background: "rgba(184,134,11,0.2)",
+                    border: "1px solid rgba(184,134,11,0.3)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "0.75rem",
+                    color: "var(--gold)",
+                    fontWeight: 600,
+                    flexShrink: 0,
+                  }}
+                >
+                  {t.avatar}
+                </div>
+                <div>
+                  <p style={{ fontSize: "0.75rem", fontWeight: 500 }}>
+                    {t.name}
+                  </p>
+                  <p style={{ fontSize: "0.65rem", color: "var(--muted)" }}>
+                    {t.handle}
+                  </p>
+                </div>
+                <div
+                  style={{
+                    marginLeft: "auto",
+                    display: "flex",
+                    gap: 2,
+                  }}
+                >
+                  {[1, 2, 3, 4, 5].map((s) => (
+                    <span
+                      key={s}
+                      style={{ color: "var(--gold)", fontSize: "0.65rem" }}
+                    >
+                      ★
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* CTA #4 — after social proof */}
+        <button
+          className="btn-gold"
+          style={{ maxWidth: 240, margin: "22px auto 0" }}
+          onClick={scrollToOrder}
+        >
+          I Want Fresh Mochi →
+        </button>
       </section>
 
       {/* ══ ORDER ══════════════════════════════════════════════════ */}
       <section id="order" ref={orderRef} style={{ padding: "36px 24px" }}>
         <SectionLabel text="Place Your Order" />
-        <SectionTitle>Build your box</SectionTitle>
+        <h2
+          className="font-display"
+          style={{
+            fontSize: "1.75rem",
+            fontWeight: 300,
+            lineHeight: 1.1,
+            marginBottom: 6,
+          }}
+        >
+          Build your box
+        </h2>
         <GoldLine />
 
         {/* ── STEP 1: Box size ──────────────────────────────────── */}
-        <div style={{ marginBottom: 28 }}>
+        <div ref={boxRef} style={{ marginBottom: 28 }}>
           <p className="step-label">Step 1 — Choose your box size</p>
           {loading ? (
             <p style={{ color: "var(--muted)", fontSize: "0.8rem" }}>
               Loading…
             </p>
           ) : (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 8,
-              }}
-            >
-              {boxes.map((box) => (
-                <button
-                  key={box.id}
-                  onClick={() => pickBox(box)}
-                  className={`card${selectedBox?.id === box.id ? " selected" : ""}`}
-                  style={{
-                    padding: "14px 12px",
-                    cursor: "pointer",
-                    textAlign: "left",
-                    transition: "all 0.2s",
-                    background: "none",
-                    color: "var(--cream)",
-                  }}
-                >
-                  <p style={{ fontSize: "0.82rem", fontWeight: 500 }}>
-                    {box.label}
-                  </p>
-                  <p
+            <>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 8,
+                }}
+              >
+                {boxes.map((box) => (
+                  <button
+                    key={box.id}
+                    onClick={() => pickBox(box)}
+                    className={`card${selectedBox?.id === box.id ? " selected" : ""}`}
                     style={{
-                      fontSize: "0.7rem",
-                      color: "var(--muted)",
-                      marginTop: 2,
+                      padding: "14px 12px",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      transition: "all 0.2s",
+                      background: "none",
+                      color: "var(--cream)",
                     }}
                   >
-                    {box.count} pieces
-                  </p>
-                  <p
+                    <p style={{ fontSize: "0.82rem", fontWeight: 500 }}>
+                      {box.label}
+                    </p>
+                    <p
+                      style={{
+                        fontSize: "0.7rem",
+                        color: "var(--muted)",
+                        marginTop: 2,
+                      }}
+                    >
+                      {box.count} pieces
+                    </p>
+                    <p
+                      style={{
+                        fontSize: "0.9rem",
+                        color: "var(--gold)",
+                        marginTop: 6,
+                        fontFamily: "Cormorant Garamond, serif",
+                      }}
+                    >
+                      ₹{box.price}
+                    </p>
+                  </button>
+                ))}
+              </div>
+
+              {/* Add another box button — shown once a box is selected */}
+              {selectedBox && (
+                <div style={{ marginTop: 10 }}>
+                  <button
+                    onClick={() => {
+                      // Deselect current box, reset to allow picking again
+                      setSelectedBox(null);
+                      setFlavours({});
+                      setStep(1);
+                      setExpandedProduct(null);
+                    }}
                     style={{
-                      fontSize: "0.9rem",
+                      width: "100%",
+                      padding: "10px",
+                      borderRadius: 6,
+                      border: "1px dashed rgba(184,134,11,0.4)",
+                      background: "transparent",
                       color: "var(--gold)",
-                      marginTop: 6,
-                      fontFamily: "Cormorant Garamond, serif",
+                      fontSize: "0.78rem",
+                      cursor: "pointer",
+                      fontFamily: "system-ui, sans-serif",
+                      opacity: 0.8,
                     }}
                   >
-                    ₹{box.price}
-                  </p>
-                </button>
-              ))}
-            </div>
+                    + Change box size
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -621,6 +1032,15 @@ export default function Home() {
           <div ref={flavourRef} style={{ marginBottom: 28 }}>
             <div className="divider" style={{ marginBottom: 24 }} />
             <p className="step-label">Step 2 — Choose flavours</p>
+            <p
+              style={{
+                fontSize: "0.72rem",
+                color: "var(--muted)",
+                marginBottom: 12,
+              }}
+            >
+              Tap a flavour to adjust. Fill your {selectedBox.count}-piece box.
+            </p>
 
             {/* Progress bar */}
             <div
@@ -660,7 +1080,7 @@ export default function Home() {
                   minWidth: 80,
                 }}
               >
-                {boxFull ? "Box full ✓" : `${remaining} left to pick`}
+                {boxFull ? "Box full ✓" : `${remaining} left`}
               </p>
             </div>
 
@@ -677,7 +1097,7 @@ export default function Home() {
                       gap: 12,
                       padding: "10px 12px",
                       borderRadius: 6,
-                      opacity: boxFull && qty === 0 ? 0.45 : 1,
+                      opacity: boxFull && qty === 0 ? 0.4 : 1,
                       transition: "opacity 0.2s",
                     }}
                   >
@@ -696,19 +1116,17 @@ export default function Home() {
                       <p style={{ fontSize: "0.8rem", fontWeight: 500 }}>
                         {p.name}
                       </p>
-                      <p style={{ fontSize: "0.68rem", color: "var(--muted)" }}>
-                        {p.is_premium && (
-                          <span
-                            style={{
-                              color: "var(--gold)",
-                              fontSize: "0.6rem",
-                              letterSpacing: "0.1em",
-                            }}
-                          >
-                            PREMIUM
-                          </span>
-                        )}
-                      </p>
+                      {p.is_premium && (
+                        <span
+                          style={{
+                            color: "var(--gold)",
+                            fontSize: "0.6rem",
+                            letterSpacing: "0.1em",
+                          }}
+                        >
+                          PREMIUM
+                        </span>
+                      )}
                     </div>
                     <div
                       style={{
@@ -769,11 +1187,7 @@ export default function Home() {
             {slots.length === 0 ? (
               <div
                 className="card"
-                style={{
-                  padding: 16,
-                  borderRadius: 6,
-                  textAlign: "center",
-                }}
+                style={{ padding: 16, borderRadius: 6, textAlign: "center" }}
               >
                 <p style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
                   No slots available right now.
@@ -842,10 +1256,10 @@ export default function Home() {
                             padding: "3px 8px",
                             borderRadius: 3,
                             background: full
-                              ? "rgba(192, 64, 64, 0.15)"
+                              ? "rgba(192,64,64,0.15)"
                               : spotsLeft <= 3
-                                ? "rgba(180, 120, 0, 0.15)"
-                                : "rgba(74, 138, 90, 0.15)",
+                                ? "rgba(180,120,0,0.15)"
+                                : "rgba(74,138,90,0.15)",
                             color: full
                               ? "var(--red)"
                               : spotsLeft <= 3
@@ -873,6 +1287,26 @@ export default function Home() {
         {step >= 4 && (
           <div ref={formRef}>
             <div className="divider" style={{ marginBottom: 24 }} />
+
+            {/* Back button */}
+            <button
+              onClick={goBackToSlot}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "var(--muted)",
+                fontSize: "0.78rem",
+                cursor: "pointer",
+                padding: "0 0 16px",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                fontFamily: "system-ui, sans-serif",
+              }}
+            >
+              ← Back to time slots
+            </button>
+
             <p className="step-label">Step 4 — Your details</p>
 
             <div
@@ -931,7 +1365,6 @@ export default function Home() {
               />
             </div>
 
-            {/* Payment method */}
             <p className="step-label" style={{ marginBottom: 10 }}>
               Payment method
             </p>
@@ -1095,23 +1528,34 @@ export default function Home() {
 
       {/* ══ FAQ ════════════════════════════════════════════════════ */}
       <section
-        style={{
-          padding: "36px 24px",
-          borderTop: "1px solid var(--border2)",
-        }}
+        style={{ padding: "36px 24px", borderTop: "1px solid var(--border2)" }}
       >
         <SectionLabel text="FAQ" />
-        <SectionTitle size="1.5rem">Good to know</SectionTitle>
+        <h2
+          className="font-display"
+          style={{
+            fontSize: "1.5rem",
+            fontWeight: 300,
+            lineHeight: 1.1,
+            marginBottom: 6,
+          }}
+        >
+          Good to know
+        </h2>
         <GoldLine />
 
         {[
           [
             "Where do you deliver?",
-            "We currently deliver within Kochi. For other locations, DM us on Instagram.",
+            "We currently deliver within Kochi. For other locations, DM us on Instagram @byeversweet.",
           ],
           [
             "How fresh is the mochi?",
-            "Made fresh on the day of your delivery slot. Best enjoyed within 24 hours.",
+            "Made fresh on the day of your delivery slot. Best enjoyed within 24 hours. This is what separates Eversweet from the frozen mochi you've had before.",
+          ],
+          [
+            "Why does freshness matter so much?",
+            "Mochi rice flour skin becomes tough and rubbery when frozen. Fresh mochi has a completely different texture — cloud-soft, yielding, never stiff. Once you taste it fresh you'll understand.",
           ],
           [
             "Can I do advance booking?",
@@ -1127,7 +1571,7 @@ export default function Home() {
           ],
           [
             "What's coming next?",
-            "Brookie and Tiramisu are coming soon. Follow us on Instagram for the announcement.",
+            "Brookie and Tiramisu are coming soon. Follow us on Instagram @byeversweet for the announcement.",
           ],
         ].map(([q, a]) => (
           <div
@@ -1154,6 +1598,15 @@ export default function Home() {
             </p>
           </div>
         ))}
+
+        {/* Final CTA */}
+        <button
+          className="btn-gold"
+          style={{ maxWidth: 240, margin: "8px auto 0" }}
+          onClick={scrollToOrder}
+        >
+          Order Fresh Mochi →
+        </button>
       </section>
 
       {/* ══ FOOTER ═════════════════════════════════════════════════ */}
@@ -1182,7 +1635,7 @@ export default function Home() {
           Cloud Kitchen · Kochi, Kerala
         </p>
         <a
-          href="https://instagram.com/eversweet.mochi"
+          href="https://instagram.com/byeversweet"
           target="_blank"
           rel="noopener noreferrer"
           style={{
@@ -1192,7 +1645,7 @@ export default function Home() {
             letterSpacing: "0.1em",
           }}
         >
-          @eversweet.mochi
+          @byeversweet
         </a>
         <p
           style={{

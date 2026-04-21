@@ -3171,7 +3171,7 @@ export default function AdminPage() {
                       color: T.green,
                     }}
                   >
-                    {orders.filter((o) => o.status === "dispatched").length}
+                    {paidOrders.filter((o) => o.status === "dispatched").length}
                   </p>
                   <p style={{ fontSize: "0.75rem", color: T.muted }}>
                     Delivered
