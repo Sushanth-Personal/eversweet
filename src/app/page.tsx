@@ -634,6 +634,7 @@ export default function Home() {
               return (
                 <div
                   key={p.id}
+                  onClick={() => adjustFlavour(p.id, 1)}
                   style={{
                     borderRadius: 8,
                     overflow: "hidden",
@@ -641,6 +642,8 @@ export default function Home() {
                     background:
                       qty > 0 ? "rgba(184,134,11,0.06)" : "var(--surface)",
                     transition: "all 0.25s ease",
+                    cursor: "pointer",
+                    userSelect: "none",
                   }}
                 >
                   <div style={{ position: "relative" }}>
@@ -656,6 +659,29 @@ export default function Home() {
                     />
                     {p.is_premium && (
                       <span className="badge-premium">Premium</span>
+                    )}
+                    {/* Qty badge on image */}
+                    {qty > 0 && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: 8,
+                          right: 8,
+                          width: 26,
+                          height: 26,
+                          borderRadius: "50%",
+                          background: "var(--gold)",
+                          color: "#1a0e00",
+                          fontSize: "0.78rem",
+                          fontWeight: 700,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
+                        }}
+                      >
+                        {qty}
+                      </div>
                     )}
                   </div>
                   <div style={{ padding: "10px 10px 12px" }}>
@@ -679,27 +705,50 @@ export default function Home() {
                       {p.description}
                     </p>
                     <div
+                      onClick={(e) => e.stopPropagation()}
                       style={{
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
-                        gap: 12,
+                        gap: 0,
+                        background: "rgba(255,255,255,0.07)",
+                        border: "1px solid rgba(255,255,255,0.18)",
+                        borderRadius: 99,
+                        padding: "2px",
+                        width: "fit-content",
+                        margin: "0 auto",
                       }}
                     >
                       <button
                         className="qty-btn"
                         onClick={() => adjustFlavour(p.id, -1)}
                         disabled={qty === 0}
+                        style={{
+                          width: 30,
+                          height: 30,
+                          borderRadius: "50%",
+                          background:
+                            qty > 0 ? "rgba(184,134,11,0.25)" : "transparent",
+                          border: "none",
+                          color:
+                            qty > 0 ? "var(--gold)" : "rgba(255,255,255,0.35)",
+                          fontSize: "1.1rem",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          cursor: qty === 0 ? "not-allowed" : "pointer",
+                        }}
                       >
                         −
                       </button>
                       <span
                         style={{
                           fontSize: "0.95rem",
-                          minWidth: 20,
+                          minWidth: 28,
                           textAlign: "center",
-                          color: qty > 0 ? "var(--gold)" : "var(--muted)",
-                          fontWeight: qty > 0 ? 600 : 400,
+                          color:
+                            qty > 0 ? "var(--gold)" : "rgba(255,255,255,0.5)",
+                          fontWeight: qty > 0 ? 700 : 400,
                         }}
                       >
                         {qty}
@@ -707,6 +756,19 @@ export default function Home() {
                       <button
                         className="qty-btn"
                         onClick={() => adjustFlavour(p.id, 1)}
+                        style={{
+                          width: 30,
+                          height: 30,
+                          borderRadius: "50%",
+                          background: "rgba(184,134,11,0.25)",
+                          border: "none",
+                          color: "var(--gold)",
+                          fontSize: "1.1rem",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          cursor: "pointer",
+                        }}
                       >
                         +
                       </button>
