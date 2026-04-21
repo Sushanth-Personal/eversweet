@@ -1343,10 +1343,11 @@ function BulkImportJSON({
 
 // ── Main ───────────────────────────────────────────────────────────
 export default function AdminPage() {
-  const [authed, setAuthed] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return localStorage.getItem("es_admin") === "true";
-  });
+  const [authed, setAuthed] = useState(false);
+
+  useEffect(() => {
+    if (localStorage.getItem("es_admin") === "true") setAuthed(true);
+  }, []);
   const [pw, setPw] = useState("");
   const [pwError, setPwError] = useState(false);
   const [tab, setTab] = useState<Tab>("orders");
