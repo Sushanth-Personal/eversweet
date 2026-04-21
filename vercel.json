@@ -1,8 +1,0 @@
-{
-  "crons": [
-    {
-      "path": "/api/cron/porter-reminder",
-      "schedule": "*/30 * * * *"
-    }
-  ]
-}
