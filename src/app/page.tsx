@@ -24,33 +24,51 @@ function getImg(name: string, url: string | null): string {
   return IMG.default;
 }
 
-// ── Testimonials data (editable) ──────────────────────────────────
+// ── Real testimonials from customer DMs ───────────────────────────
 const TESTIMONIALS = [
   {
-    name: "Aswathy R.",
-    handle: "@aswathy.r",
-    text: "Honestly the best mochi I've had outside Japan. The strawberry one melted in my mouth. Ordered twice already this week 😭",
+    name: "Sneha R.",
+    handle: "via Instagram DM",
+    text: "Absolutely loved these mochis! Soft, chewy, and perfectly sweet — each bite just melts in the mouth. Definitely craving more!",
+    avatar: "S",
+  },
+  {
+    name: "Divya M.",
+    handle: "via Instagram DM",
+    text: "The mochis are amazing.... too good 🩷 Thank you for the surprise!",
+    avatar: "D",
+  },
+  {
+    name: "Anju K.",
+    handle: "via Instagram DM",
+    text: "Hi got the Mochi. It was yummy.. we loved it 😍 Thank you",
     avatar: "A",
   },
   {
-    name: "Meera K.",
-    handle: "@meerak",
-    text: "The freshness is unreal. You can tell it's made the same day. Nothing like those frozen ones you get at malls.",
-    avatar: "M",
+    name: "Priya S.",
+    handle: "via Instagram DM",
+    text: "Sooooooo good! We finished in seconds. Will get more from u ❤️",
+    avatar: "P",
   },
   {
-    name: "Rishi N.",
-    handle: "@rishin_",
-    text: "Got the box of 12 for my sister's birthday. Everyone went silent when they tasted it. That's always a good sign 😂",
-    avatar: "R",
-  },
-  {
-    name: "Devika S.",
-    handle: "@devika.eats",
-    text: "Perfect balance of sweetness. The rice outer layer is so soft. Ordered mango and it actually tastes like mango, not flavouring.",
-    avatar: "D",
+    name: "Nithya V.",
+    handle: "via Instagram DM",
+    text: "Its was soo good! Nalla taste. But fruit flavours was awesome ❤️❤️❤️❤️",
+    avatar: "N",
   },
 ];
+
+// ── Box sizes sorted by count — used for auto-selection ───────────
+const BOX_COUNTS = [4, 6, 8, 12, 16];
+
+function getAutoBox(boxes: BoxSize[], totalPicked: number): BoxSize | null {
+  if (totalPicked === 0) return null;
+  // find the smallest box that fits totalPicked
+  const sorted = [...boxes].sort((a, b) => a.count - b.count);
+  return (
+    sorted.find((b) => b.count >= totalPicked) || sorted[sorted.length - 1]
+  );
+}
 
 function SectionLabel({ text }: { text: string }) {
   return (
@@ -62,6 +80,7 @@ function SectionLabel({ text }: { text: string }) {
         color: "var(--gold)",
         marginBottom: 8,
         opacity: 0.85,
+        textAlign: "center",
       }}
     >
       {text}
@@ -79,40 +98,10 @@ function GoldLine() {
         opacity: 0.45,
         marginTop: 10,
         marginBottom: 22,
+        marginLeft: "auto",
+        marginRight: "auto",
       }}
     />
-  );
-}
-
-// ── Animated "nudge" banner shown when product card clicked before box ──
-function NudgeBanner({ show }: { show: boolean }) {
-  return (
-    <div
-      style={{
-        overflow: "hidden",
-        maxHeight: show ? 60 : 0,
-        opacity: show ? 1 : 0,
-        transition: "all 0.35s ease",
-        marginBottom: show ? 12 : 0,
-      }}
-    >
-      <div
-        style={{
-          background: "rgba(184,134,11,0.12)",
-          border: "1px solid rgba(184,134,11,0.35)",
-          borderRadius: 6,
-          padding: "10px 14px",
-          fontSize: "0.78rem",
-          color: "var(--gold)",
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-        }}
-      >
-        <span>👆</span>
-        <span>Choose your box size first, then pick flavours</span>
-      </div>
-    </div>
   );
 }
 
@@ -122,13 +111,15 @@ export default function Home() {
   const [slots, setSlots] = useState<TimeSlot[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [selectedBox, setSelectedBox] = useState<BoxSize | null>(null);
+  // New simplified flow: customer picks flavours freely
   const [flavours, setFlavours] = useState<Record<string, number>>({});
   const [slotId, setSlotId] = useState("");
-  const [expandedProduct, setExpandedProduct] = useState<string | null>(null);
-  const [showNudge, setShowNudge] = useState(false);
 
-  const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+  // Auto-box state
+  const [autoBox, setAutoBox] = useState<BoxSize | null>(null);
+  const [needsOneMore, setNeedsOneMore] = useState(false); // prompt user to add 1 more
+
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [placing, setPlacing] = useState(false);
   const [error, setError] = useState("");
 
@@ -140,9 +131,9 @@ export default function Home() {
     notes: "",
   });
   const [payMethod, setPayMethod] = useState<"qr" | "phone">("qr");
+  const [orderDone, setOrderDone] = useState(false);
 
   const orderRef = useRef<HTMLElement>(null);
-  const boxRef = useRef<HTMLDivElement>(null);
   const flavourRef = useRef<HTMLDivElement>(null);
   const slotRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLDivElement>(null);
@@ -176,59 +167,47 @@ export default function Home() {
   }, []);
 
   const totalPicked = Object.values(flavours).reduce((a, b) => a + b, 0);
-  const remaining = selectedBox ? selectedBox.count - totalPicked : 0;
-  const boxFull = remaining === 0;
+
+  // Recompute auto-box whenever flavours change
+  useEffect(() => {
+    const box = getAutoBox(boxes, totalPicked);
+    setAutoBox(box);
+    // Check if user is just 1 short of filling the current box
+    if (box && box.count - totalPicked === 1) {
+      setNeedsOneMore(true);
+    } else {
+      setNeedsOneMore(false);
+    }
+  }, [flavours, boxes]);
 
   function adjustFlavour(id: string, delta: number) {
     setFlavours((prev) => {
       const cur = prev[id] || 0;
       const next = cur + delta;
       if (next < 0) return prev;
-      if (delta > 0 && remaining <= 0) return prev;
+      // cap at the largest box size
+      const maxBox = [...boxes].sort((a, b) => b.count - a.count)[0];
+      const maxAllowed = maxBox ? maxBox.count : 16;
+      if (totalPicked + delta > maxAllowed) return prev;
       const updated = { ...prev, [id]: next };
       if (updated[id] === 0) delete updated[id];
       return updated;
     });
   }
 
-  function pickBox(box: BoxSize) {
-    setSelectedBox(box);
-    setFlavours({});
-    setExpandedProduct(null);
-    setShowNudge(false);
-    setStep(2);
-    setTimeout(
-      () =>
-        flavourRef.current?.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        }),
-      80,
-    );
-  }
-
-  function handleProductCardClick(productId: string) {
-    if (!selectedBox) {
-      // No box selected — show nudge and scroll to box section
-      setShowNudge(true);
-      setTimeout(() => setShowNudge(false), 4000);
-      boxRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  function proceedToSlot() {
+    if (totalPicked === 0) {
+      setError("Please choose at least one flavour.");
       return;
     }
-    // Box is selected — expand/collapse the card
-    setExpandedProduct((prev) => (prev === productId ? null : productId));
-  }
-
-  function addToBox(productId: string) {
-    if (boxFull) return;
-    adjustFlavour(productId, 1);
-    setExpandedProduct(null);
-    // Scroll to flavour picker
-    flavourRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
-
-  function proceedToSlot() {
-    setStep(3);
+    if (autoBox && totalPicked < autoBox.count) {
+      setError(
+        `Add ${autoBox.count - totalPicked} more piece${autoBox.count - totalPicked === 1 ? "" : "s"} to fill your ${autoBox.label}.`,
+      );
+      return;
+    }
+    setError("");
+    setStep(2);
     setTimeout(
       () =>
         slotRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
@@ -238,7 +217,7 @@ export default function Home() {
 
   function pickSlot(id: string) {
     setSlotId(id);
-    setStep(4);
+    setStep(3);
     setTimeout(
       () =>
         formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
@@ -247,7 +226,7 @@ export default function Home() {
   }
 
   function goBackToSlot() {
-    setStep(3);
+    setStep(2);
     setTimeout(
       () =>
         slotRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
@@ -256,7 +235,7 @@ export default function Home() {
   }
 
   async function placeOrder() {
-    if (!selectedBox || !form.name.trim() || !form.phone.trim() || !slotId) {
+    if (!autoBox || !form.name.trim() || !form.phone.trim() || !slotId) {
       setError("Please fill in your name and phone number.");
       return;
     }
@@ -272,16 +251,16 @@ export default function Home() {
           address: form.address.trim(),
           dob: form.dob.trim(),
           notes: form.notes.trim(),
-          box_size_id: selectedBox.id,
+          box_size_id: autoBox.id,
           flavours,
           time_slot_id: slotId,
           payment_method: payMethod,
-          total_price: selectedBox.price,
+          total_price: autoBox.price,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Something went wrong");
-      setStep(5);
+      setOrderDone(true);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e: unknown) {
       setError(
@@ -299,7 +278,7 @@ export default function Home() {
   }
 
   // ── Order confirmed ─────────────────────────────────────────────
-  if (step === 5) {
+  if (orderDone) {
     return (
       <main
         style={{
@@ -380,7 +359,7 @@ export default function Home() {
                 textAlign: "center",
               }}
             >
-              Scan to pay ₹{selectedBox?.price}
+              Scan to pay ₹{autoBox?.price}
             </p>
           </div>
         )}
@@ -481,7 +460,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* StoreBrand hero copy — problem → guide → solution */}
         <p
           style={{
             color: "var(--cream-dim)",
@@ -507,25 +485,29 @@ export default function Home() {
           delivery — because that&apos;s the only way mochi should be eaten.
         </p>
 
-        {/* CTA #1 */}
-        <button
-          className="btn-gold"
-          style={{ maxWidth: 240, margin: "0 auto 14px" }}
-          onClick={scrollToOrder}
+        <div style={{ display: "flex", justifyContent: "center" }}>
+          <button
+            className="btn-gold"
+            style={{ maxWidth: 240 }}
+            onClick={scrollToOrder}
+          >
+            Order Fresh Mochi →
+          </button>
+        </div>
+        <p
+          style={{ fontSize: "0.68rem", color: "var(--muted)", marginTop: 14 }}
         >
-          Order Fresh Mochi →
-        </button>
-        <p style={{ fontSize: "0.68rem", color: "var(--muted)" }}>
           Brookie &amp; Tiramisu coming soon ✦
         </p>
       </section>
 
-      {/* ══ PROBLEM / EMPATHY (StoreBrand) ═══════════════════════ */}
+      {/* ══ PROBLEM / EMPATHY ═════════════════════════════════════ */}
       <section
         style={{
           padding: "32px 24px",
           borderBottom: "1px solid var(--border2)",
           background: "rgba(255,248,230,0.03)",
+          textAlign: "center",
         }}
       >
         <SectionLabel text="Why Eversweet" />
@@ -549,6 +531,7 @@ export default function Home() {
             fontSize: "0.875rem",
             lineHeight: 1.85,
             marginBottom: 16,
+            textAlign: "left",
           }}
         >
           You&apos;ve had frozen mochi — that odd, chewy-but-cold bite that
@@ -562,6 +545,7 @@ export default function Home() {
             fontSize: "0.875rem",
             lineHeight: 1.85,
             marginBottom: 20,
+            textAlign: "left",
           }}
         >
           Eversweet is built on one belief:{" "}
@@ -571,21 +555,23 @@ export default function Home() {
           The skin is impossibly soft. The filling is cold but not frozen. Every
           texture is intentional.
         </p>
-        {/* CTA #2 */}
-        <button
-          className="btn-gold"
-          style={{ maxWidth: 220 }}
-          onClick={scrollToOrder}
-        >
-          Build My Box →
-        </button>
+        <div style={{ display: "flex", justifyContent: "center" }}>
+          <button
+            className="btn-gold"
+            style={{ maxWidth: 220 }}
+            onClick={scrollToOrder}
+          >
+            Build My Box →
+          </button>
+        </div>
       </section>
 
-      {/* ══ PRODUCTS ═══════════════════════════════════════════════ */}
+      {/* ══ PRODUCTS (browse only, no box logic here) ══════════════ */}
       <section
         style={{
           padding: "36px 24px",
           borderBottom: "1px solid var(--border2)",
+          textAlign: "center",
         }}
       >
         <SectionLabel text="This Week's Menu" />
@@ -601,8 +587,6 @@ export default function Home() {
           Choose what you love
         </h2>
         <GoldLine />
-
-        <NudgeBanner show={showNudge} />
 
         {loading ? (
           <div
@@ -621,26 +605,17 @@ export default function Home() {
             style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}
           >
             {products.map((p) => {
-              const isExpanded = expandedProduct === p.id;
               const qty = flavours[p.id] || 0;
               return (
                 <div
                   key={p.id}
-                  onClick={() => handleProductCardClick(p.id)}
                   style={{
                     borderRadius: 8,
                     overflow: "hidden",
-                    cursor: "pointer",
-                    border: `1px solid ${isExpanded ? "var(--gold)" : "var(--border2)"}`,
-                    background: isExpanded
-                      ? "rgba(184,134,11,0.06)"
-                      : "var(--surface)",
+                    border: `1px solid ${qty > 0 ? "var(--gold)" : "var(--border2)"}`,
+                    background:
+                      qty > 0 ? "rgba(184,134,11,0.06)" : "var(--surface)",
                     transition: "all 0.25s ease",
-                    transform: isExpanded ? "scale(1.02)" : "scale(1)",
-                    boxShadow: isExpanded
-                      ? "0 8px 32px rgba(184,134,11,0.18)"
-                      : "none",
-                    gridColumn: isExpanded ? "span 2" : "span 1",
                   }}
                 >
                   <div style={{ position: "relative" }}>
@@ -649,145 +624,68 @@ export default function Home() {
                       alt={p.name}
                       style={{
                         width: "100%",
-                        height: isExpanded ? 180 : 130,
+                        height: 120,
                         objectFit: "cover",
                         display: "block",
-                        transition: "height 0.25s ease",
                       }}
                     />
                     {p.is_premium && (
                       <span className="badge-premium">Premium</span>
                     )}
-                    {qty > 0 && (
-                      <span
-                        style={{
-                          position: "absolute",
-                          top: 8,
-                          left: 8,
-                          background: "var(--gold)",
-                          color: "#1a1008",
-                          fontSize: "0.62rem",
-                          fontWeight: 700,
-                          padding: "2px 7px",
-                          borderRadius: 10,
-                        }}
-                      >
-                        ×{qty} in box
-                      </span>
-                    )}
                   </div>
-                  <div
-                    style={{
-                      padding: isExpanded ? "14px 14px 6px" : "10px 10px 14px",
-                    }}
-                  >
+                  <div style={{ padding: "10px 10px 12px" }}>
                     <p
                       style={{
                         fontSize: "0.82rem",
                         fontWeight: 500,
-                        marginBottom: 3,
+                        marginBottom: 2,
                       }}
                     >
                       {p.name}
                     </p>
                     <p
                       style={{
-                        fontSize: "0.7rem",
+                        fontSize: "0.68rem",
                         color: "var(--muted)",
-                        lineHeight: 1.55,
-                        marginBottom: isExpanded ? 12 : 0,
+                        lineHeight: 1.5,
+                        marginBottom: 10,
                       }}
                     >
                       {p.description}
                     </p>
-
-                    {/* Expanded: add to box button */}
-                    {isExpanded && selectedBox && (
-                      <div
-                        onClick={(e) => e.stopPropagation()}
-                        style={{ paddingBottom: 10 }}
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 12,
+                      }}
+                    >
+                      <button
+                        className="qty-btn"
+                        onClick={() => adjustFlavour(p.id, -1)}
+                        disabled={qty === 0}
                       >
-                        {boxFull && qty === 0 ? (
-                          <p
-                            style={{
-                              fontSize: "0.72rem",
-                              color: "var(--gold)",
-                              textAlign: "center",
-                              padding: "8px 0",
-                            }}
-                          >
-                            Box is full — remove something first
-                          </p>
-                        ) : (
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 10,
-                              justifyContent: "space-between",
-                            }}
-                          >
-                            <div
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 8,
-                              }}
-                            >
-                              <button
-                                className="qty-btn"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  adjustFlavour(p.id, -1);
-                                }}
-                                disabled={qty === 0}
-                              >
-                                −
-                              </button>
-                              <span
-                                style={{
-                                  fontSize: "0.9rem",
-                                  minWidth: 18,
-                                  textAlign: "center",
-                                }}
-                              >
-                                {qty}
-                              </span>
-                              <button
-                                className="qty-btn"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  adjustFlavour(p.id, 1);
-                                }}
-                                disabled={boxFull}
-                              >
-                                +
-                              </button>
-                            </div>
-                            {qty === 0 && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  addToBox(p.id);
-                                }}
-                                style={{
-                                  padding: "6px 16px",
-                                  borderRadius: 4,
-                                  border: "1px solid var(--gold)",
-                                  background: "rgba(184,134,11,0.15)",
-                                  color: "var(--gold)",
-                                  fontSize: "0.75rem",
-                                  cursor: "pointer",
-                                  fontFamily: "system-ui, sans-serif",
-                                }}
-                              >
-                                Add to box
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
+                        −
+                      </button>
+                      <span
+                        style={{
+                          fontSize: "0.95rem",
+                          minWidth: 20,
+                          textAlign: "center",
+                          color: qty > 0 ? "var(--gold)" : "var(--muted)",
+                          fontWeight: qty > 0 ? 600 : 400,
+                        }}
+                      >
+                        {qty}
+                      </span>
+                      <button
+                        className="qty-btn"
+                        onClick={() => adjustFlavour(p.id, 1)}
+                      >
+                        +
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
@@ -795,14 +693,91 @@ export default function Home() {
           </div>
         )}
 
-        {/* CTA #3 — inside products section */}
-        <button
-          className="btn-gold"
-          style={{ maxWidth: 240, margin: "20px auto 0" }}
-          onClick={scrollToOrder}
+        {/* Live auto-box indicator */}
+        {totalPicked > 0 && autoBox && (
+          <div
+            style={{
+              marginTop: 16,
+              padding: "12px 16px",
+              background: "rgba(184,134,11,0.10)",
+              border: "1px solid rgba(184,134,11,0.35)",
+              borderRadius: 8,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              flexWrap: "wrap",
+              gap: 8,
+            }}
+          >
+            <div style={{ textAlign: "left" }}>
+              <p
+                style={{
+                  fontSize: "0.78rem",
+                  color: "var(--gold)",
+                  fontWeight: 500,
+                }}
+              >
+                {autoBox.label} selected automatically
+              </p>
+              <p
+                style={{
+                  fontSize: "0.68rem",
+                  color: "var(--muted)",
+                  marginTop: 2,
+                }}
+              >
+                {totalPicked} of {autoBox.count} pieces chosen · ₹
+                {autoBox.price}
+              </p>
+            </div>
+            {needsOneMore && (
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: "10px 14px",
+                  background: "rgba(184,134,11,0.18)",
+                  border: "1.5px dashed var(--gold)",
+                  borderRadius: 8,
+                  textAlign: "center",
+                }}
+              >
+                <p
+                  style={{
+                    fontSize: "0.82rem",
+                    color: "var(--gold)",
+                    fontWeight: 600,
+                    margin: 0,
+                  }}
+                >
+                  ✨ Add 1 more piece to fill your box!
+                </p>
+                <p
+                  style={{
+                    fontSize: "0.68rem",
+                    color: "var(--muted)",
+                    marginTop: 3,
+                    marginBottom: 0,
+                  }}
+                >
+                  You're {autoBox!.count - totalPicked} away from a full{" "}
+                  {autoBox!.label}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div
+          style={{ display: "flex", justifyContent: "center", marginTop: 20 }}
         >
-          Order Now →
-        </button>
+          <button
+            className="btn-gold"
+            style={{ maxWidth: 240 }}
+            onClick={scrollToOrder}
+          >
+            Order Now →
+          </button>
+        </div>
       </section>
 
       {/* ══ TESTIMONIALS ══════════════════════════════════════════ */}
@@ -811,6 +786,7 @@ export default function Home() {
           padding: "36px 24px",
           borderBottom: "1px solid var(--border2)",
           background: "rgba(255,248,230,0.025)",
+          textAlign: "center",
         }}
       >
         <SectionLabel text="What People Say" />
@@ -837,9 +813,9 @@ export default function Home() {
                 borderRadius: 8,
                 padding: "14px 16px",
                 position: "relative",
+                textAlign: "left",
               }}
             >
-              {/* Quote mark */}
               <span
                 style={{
                   position: "absolute",
@@ -892,13 +868,7 @@ export default function Home() {
                     {t.handle}
                   </p>
                 </div>
-                <div
-                  style={{
-                    marginLeft: "auto",
-                    display: "flex",
-                    gap: 2,
-                  }}
-                >
+                <div style={{ marginLeft: "auto", display: "flex", gap: 2 }}>
                   {[1, 2, 3, 4, 5].map((s) => (
                     <span
                       key={s}
@@ -913,18 +883,25 @@ export default function Home() {
           ))}
         </div>
 
-        {/* CTA #4 — after social proof */}
-        <button
-          className="btn-gold"
-          style={{ maxWidth: 240, margin: "22px auto 0" }}
-          onClick={scrollToOrder}
+        <div
+          style={{ display: "flex", justifyContent: "center", marginTop: 22 }}
         >
-          I Want Fresh Mochi →
-        </button>
+          <button
+            className="btn-gold"
+            style={{ maxWidth: 240 }}
+            onClick={scrollToOrder}
+          >
+            I Want Fresh Mochi →
+          </button>
+        </div>
       </section>
 
       {/* ══ ORDER ══════════════════════════════════════════════════ */}
-      <section id="order" ref={orderRef} style={{ padding: "36px 24px" }}>
+      <section
+        id="order"
+        ref={orderRef}
+        style={{ padding: "36px 24px", textAlign: "center" }}
+      >
         <SectionLabel text="Place Your Order" />
         <h2
           className="font-display"
@@ -939,151 +916,25 @@ export default function Home() {
         </h2>
         <GoldLine />
 
-        {/* ── STEP 1: Box size ──────────────────────────────────── */}
-        <div ref={boxRef} style={{ marginBottom: 28 }}>
-          <p className="step-label">Step 1 — Choose your box size</p>
+        {/* ── STEP 1: Pick flavours (no box selection needed) ──── */}
+        <div ref={flavourRef} style={{ marginBottom: 28, textAlign: "left" }}>
+          <p className="step-label">Step 1 — Pick your flavours</p>
+          <p
+            style={{
+              fontSize: "0.72rem",
+              color: "var(--muted)",
+              marginBottom: 14,
+            }}
+          >
+            Choose as many as you like. We&apos;ll automatically select the best
+            box size for you.
+          </p>
+
           {loading ? (
             <p style={{ color: "var(--muted)", fontSize: "0.8rem" }}>
               Loading…
             </p>
           ) : (
-            <>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: 8,
-                }}
-              >
-                {boxes.map((box) => (
-                  <button
-                    key={box.id}
-                    onClick={() => pickBox(box)}
-                    className={`card${selectedBox?.id === box.id ? " selected" : ""}`}
-                    style={{
-                      padding: "14px 12px",
-                      cursor: "pointer",
-                      textAlign: "left",
-                      transition: "all 0.2s",
-                      background: "none",
-                      color: "var(--cream)",
-                    }}
-                  >
-                    <p style={{ fontSize: "0.82rem", fontWeight: 500 }}>
-                      {box.label}
-                    </p>
-                    <p
-                      style={{
-                        fontSize: "0.7rem",
-                        color: "var(--muted)",
-                        marginTop: 2,
-                      }}
-                    >
-                      {box.count} pieces
-                    </p>
-                    <p
-                      style={{
-                        fontSize: "0.9rem",
-                        color: "var(--gold)",
-                        marginTop: 6,
-                        fontFamily: "Cormorant Garamond, serif",
-                      }}
-                    >
-                      ₹{box.price}
-                    </p>
-                  </button>
-                ))}
-              </div>
-
-              {/* Add another box button — shown once a box is selected */}
-              {selectedBox && (
-                <div style={{ marginTop: 10 }}>
-                  <button
-                    onClick={() => {
-                      // Deselect current box, reset to allow picking again
-                      setSelectedBox(null);
-                      setFlavours({});
-                      setStep(1);
-                      setExpandedProduct(null);
-                    }}
-                    style={{
-                      width: "100%",
-                      padding: "10px",
-                      borderRadius: 6,
-                      border: "1px dashed rgba(184,134,11,0.4)",
-                      background: "transparent",
-                      color: "var(--gold)",
-                      fontSize: "0.78rem",
-                      cursor: "pointer",
-                      fontFamily: "system-ui, sans-serif",
-                      opacity: 0.8,
-                    }}
-                  >
-                    + Change box size
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-
-        {/* ── STEP 2: Flavours ──────────────────────────────────── */}
-        {step >= 2 && selectedBox && (
-          <div ref={flavourRef} style={{ marginBottom: 28 }}>
-            <div className="divider" style={{ marginBottom: 24 }} />
-            <p className="step-label">Step 2 — Choose flavours</p>
-            <p
-              style={{
-                fontSize: "0.72rem",
-                color: "var(--muted)",
-                marginBottom: 12,
-              }}
-            >
-              Tap a flavour to adjust. Fill your {selectedBox.count}-piece box.
-            </p>
-
-            {/* Progress bar */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                marginBottom: 16,
-              }}
-            >
-              <div
-                style={{
-                  flex: 1,
-                  height: 3,
-                  background: "var(--surface3)",
-                  borderRadius: 2,
-                  overflow: "hidden",
-                }}
-              >
-                <div
-                  style={{
-                    height: "100%",
-                    width: `${(totalPicked / selectedBox.count) * 100}%`,
-                    background: boxFull
-                      ? "var(--gold)"
-                      : "linear-gradient(90deg, var(--gold-dim), var(--gold))",
-                    borderRadius: 2,
-                    transition: "width 0.3s ease",
-                  }}
-                />
-              </div>
-              <p
-                style={{
-                  fontSize: "0.72rem",
-                  color: boxFull ? "var(--gold)" : "var(--muted)",
-                  whiteSpace: "nowrap",
-                  minWidth: 80,
-                }}
-              >
-                {boxFull ? "Box full ✓" : `${remaining} left`}
-              </p>
-            </div>
-
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {products.map((p) => {
                 const qty = flavours[p.id] || 0;
@@ -1097,8 +948,8 @@ export default function Home() {
                       gap: 12,
                       padding: "10px 12px",
                       borderRadius: 6,
-                      opacity: boxFull && qty === 0 ? 0.4 : 1,
-                      transition: "opacity 0.2s",
+                      border: `1px solid ${qty > 0 ? "var(--gold)" : "var(--border2)"}`,
+                      transition: "border-color 0.2s",
                     }}
                   >
                     <img
@@ -1148,7 +999,8 @@ export default function Home() {
                           fontSize: "0.9rem",
                           minWidth: 18,
                           textAlign: "center",
-                          color: qty > 0 ? "var(--cream)" : "var(--muted)",
+                          color: qty > 0 ? "var(--gold)" : "var(--cream-dim)",
+                          fontWeight: qty > 0 ? 600 : 400,
                         }}
                       >
                         {qty}
@@ -1156,7 +1008,6 @@ export default function Home() {
                       <button
                         className="qty-btn"
                         onClick={() => adjustFlavour(p.id, 1)}
-                        disabled={boxFull}
                       >
                         +
                       </button>
@@ -1165,24 +1016,154 @@ export default function Home() {
                 );
               })}
             </div>
+          )}
 
-            {boxFull && (
+          {/* Auto-box summary */}
+          {totalPicked > 0 && autoBox && (
+            <div
+              style={{
+                marginTop: 14,
+                padding: "12px 16px",
+                background: "rgba(184,134,11,0.08)",
+                border: "1px solid rgba(184,134,11,0.3)",
+                borderRadius: 8,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: 6,
+                }}
+              >
+                <div>
+                  <p
+                    style={{
+                      fontSize: "0.78rem",
+                      color: "var(--gold)",
+                      fontWeight: 500,
+                    }}
+                  >
+                    ✓ {autoBox.label} — ₹{autoBox.price}
+                  </p>
+                  <p
+                    style={{
+                      fontSize: "0.68rem",
+                      color: "var(--muted)",
+                      marginTop: 2,
+                    }}
+                  >
+                    {totalPicked} of {autoBox.count} pieces ·{" "}
+                    {autoBox.count - totalPicked === 0
+                      ? "Box full!"
+                      : `${autoBox.count - totalPicked} spot${autoBox.count - totalPicked === 1 ? "" : "s"} remaining`}
+                  </p>
+                </div>
+                {needsOneMore && (
+                  <span
+                    style={{
+                      fontSize: "0.68rem",
+                      background: "rgba(184,134,11,0.2)",
+                      color: "var(--gold)",
+                      padding: "4px 10px",
+                      borderRadius: 20,
+                    }}
+                  >
+                    Add 1 more to fill ✨
+                  </span>
+                )}
+              </div>
+
+              {/* Box size breakdown */}
+              <div
+                style={{
+                  marginTop: 10,
+                  display: "flex",
+                  gap: 6,
+                  flexWrap: "wrap",
+                }}
+              >
+                {[...boxes]
+                  .sort((a, b) => a.count - b.count)
+                  .map((box) => (
+                    <div
+                      key={box.id}
+                      style={{
+                        fontSize: "0.65rem",
+                        padding: "3px 8px",
+                        borderRadius: 4,
+                        border: `1px solid ${autoBox.id === box.id ? "var(--gold)" : "var(--border2)"}`,
+                        color:
+                          autoBox.id === box.id
+                            ? "var(--gold)"
+                            : "var(--muted)",
+                        background:
+                          autoBox.id === box.id
+                            ? "rgba(184,134,11,0.12)"
+                            : "transparent",
+                        transition: "all 0.2s",
+                      }}
+                    >
+                      {box.count}pc · ₹{box.price}
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+
+          {error && step === 1 && (
+            <p
+              style={{
+                fontSize: "0.82rem", // bump from 0.78rem
+                color: "#e57373", // brighter red, readable on dark bg
+                marginTop: 10,
+                textAlign: "center",
+                fontWeight: 500,
+                padding: "8px 12px",
+                background: "rgba(220,50,50,0.1)",
+                borderRadius: 6,
+                border: "1px solid rgba(220,50,50,0.25)",
+              }}
+            >
+              {error}
+            </p>
+          )}
+
+          {totalPicked > 0 && (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "center",
+                marginTop: 16,
+              }}
+            >
               <button
                 className="btn-gold"
-                style={{ marginTop: 16 }}
+                style={{
+                  maxWidth: 260,
+                  opacity: autoBox && totalPicked < autoBox.count ? 0.45 : 1,
+                  cursor:
+                    autoBox && totalPicked < autoBox.count
+                      ? "not-allowed"
+                      : "pointer",
+                }}
                 onClick={proceedToSlot}
               >
-                Choose Delivery Slot →
+                {autoBox && totalPicked < autoBox.count
+                  ? `Add ${autoBox.count - totalPicked} more to unlock →`
+                  : "Choose Delivery Slot →"}
               </button>
-            )}
-          </div>
-        )}
+            </div>
+          )}
+        </div>
 
-        {/* ── STEP 3: Time slot ─────────────────────────────────── */}
-        {step >= 3 && (
-          <div ref={slotRef} style={{ marginBottom: 28 }}>
+        {/* ── STEP 2: Time slot ─────────────────────────────────── */}
+        {step >= 2 && (
+          <div ref={slotRef} style={{ marginBottom: 28, textAlign: "left" }}>
             <div className="divider" style={{ marginBottom: 24 }} />
-            <p className="step-label">Step 3 — Choose delivery time</p>
+            <p className="step-label">Step 2 — Choose delivery time</p>
 
             {slots.length === 0 ? (
               <div
@@ -1283,12 +1264,11 @@ export default function Home() {
           </div>
         )}
 
-        {/* ── STEP 4: Customer details ──────────────────────────── */}
-        {step >= 4 && (
-          <div ref={formRef}>
+        {/* ── STEP 3: Customer details ──────────────────────────── */}
+        {step >= 3 && (
+          <div ref={formRef} style={{ textAlign: "left" }}>
             <div className="divider" style={{ marginBottom: 24 }} />
 
-            {/* Back button */}
             <button
               onClick={goBackToSlot}
               style={{
@@ -1307,7 +1287,7 @@ export default function Home() {
               ← Back to time slots
             </button>
 
-            <p className="step-label">Step 4 — Your details</p>
+            <p className="step-label">Step 3 — Your details</p>
 
             <div
               style={{
@@ -1440,11 +1420,9 @@ export default function Home() {
                   <span
                     style={{ fontSize: "0.82rem", color: "var(--cream-dim)" }}
                   >
-                    {selectedBox?.label}
+                    {autoBox?.label}
                   </span>
-                  <span style={{ fontSize: "0.82rem" }}>
-                    ₹{selectedBox?.price}
-                  </span>
+                  <span style={{ fontSize: "0.82rem" }}>₹{autoBox?.price}</span>
                 </div>
                 {Object.entries(flavours).map(([id, qty]) => {
                   const prod = products.find((p) => p.id === id);
@@ -1484,7 +1462,7 @@ export default function Home() {
                       fontFamily: "Cormorant Garamond, serif",
                     }}
                   >
-                    ₹{selectedBox?.price}
+                    ₹{autoBox?.price}
                   </span>
                 </div>
               </div>
@@ -1503,13 +1481,16 @@ export default function Home() {
               </p>
             )}
 
-            <button
-              className="btn-gold"
-              disabled={placing || !form.name.trim() || !form.phone.trim()}
-              onClick={placeOrder}
-            >
-              {placing ? "Placing order…" : "Place Order"}
-            </button>
+            <div style={{ display: "flex", justifyContent: "center" }}>
+              <button
+                className="btn-gold"
+                disabled={placing || !form.name.trim() || !form.phone.trim()}
+                onClick={placeOrder}
+                style={{ maxWidth: 300 }}
+              >
+                {placing ? "Placing order…" : "Place Order"}
+              </button>
+            </div>
 
             <p
               style={{
@@ -1528,7 +1509,11 @@ export default function Home() {
 
       {/* ══ FAQ ════════════════════════════════════════════════════ */}
       <section
-        style={{ padding: "36px 24px", borderTop: "1px solid var(--border2)" }}
+        style={{
+          padding: "36px 24px",
+          borderTop: "1px solid var(--border2)",
+          textAlign: "center",
+        }}
       >
         <SectionLabel text="FAQ" />
         <h2
@@ -1567,7 +1552,7 @@ export default function Home() {
           ],
           [
             "What are the box sizes?",
-            "We offer Box of 4, 6, 8, 12, and 16. All flavours can be mixed and matched freely.",
+            "We offer Box of 4, 6, 8, 12, and 16. All flavours can be mixed and matched freely. The right box is picked automatically based on what you choose.",
           ],
           [
             "What's coming next?",
@@ -1580,6 +1565,7 @@ export default function Home() {
               marginBottom: 20,
               paddingBottom: 20,
               borderBottom: "1px solid var(--border2)",
+              textAlign: "left",
             }}
           >
             <p
@@ -1599,14 +1585,17 @@ export default function Home() {
           </div>
         ))}
 
-        {/* Final CTA */}
-        <button
-          className="btn-gold"
-          style={{ maxWidth: 240, margin: "8px auto 0" }}
-          onClick={scrollToOrder}
+        <div
+          style={{ display: "flex", justifyContent: "center", marginTop: 8 }}
         >
-          Order Fresh Mochi →
-        </button>
+          <button
+            className="btn-gold"
+            style={{ maxWidth: 240 }}
+            onClick={scrollToOrder}
+          >
+            Order Fresh Mochi →
+          </button>
+        </div>
       </section>
 
       {/* ══ FOOTER ═════════════════════════════════════════════════ */}
@@ -1658,6 +1647,122 @@ export default function Home() {
           © {new Date().getFullYear()} Eversweet Company
         </p>
       </footer>
+      {/* ══ STICKY BOX PROGRESS BAR ══════════════════════════════════ */}
+      {totalPicked > 0 && step === 1 && autoBox && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 0,
+            left: "50%",
+            transform: "translateX(-50%)",
+            width: "100%",
+            maxWidth: 480,
+            background: "rgba(18, 10, 5, 0.96)",
+            borderTop: "1px solid rgba(184,134,11,0.4)",
+            backdropFilter: "blur(12px)",
+            padding: "14px 20px 20px",
+            zIndex: 100,
+          }}
+        >
+          {/* Label row */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "baseline",
+              marginBottom: 8,
+            }}
+          >
+            <span
+              style={{
+                fontSize: "0.72rem",
+                color: "var(--gold)",
+                fontWeight: 600,
+                letterSpacing: "0.08em",
+              }}
+            >
+              {autoBox.label} · ₹{autoBox.price}
+            </span>
+            <span
+              style={{
+                fontSize: "0.72rem",
+                color:
+                  autoBox.count - totalPicked === 0
+                    ? "var(--gold)"
+                    : "var(--cream-dim)",
+              }}
+            >
+              {autoBox.count - totalPicked === 0
+                ? "✓ Box full!"
+                : `${autoBox.count - totalPicked} more piece${autoBox.count - totalPicked === 1 ? "" : "s"} to fill`}
+            </span>
+          </div>
+
+          {/* Progress bar */}
+          <div
+            style={{
+              width: "100%",
+              height: 6,
+              background: "rgba(184,134,11,0.18)",
+              borderRadius: 99,
+              marginBottom: 12,
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                height: "100%",
+                width: `${Math.min((totalPicked / autoBox.count) * 100, 100)}%`,
+                background:
+                  autoBox.count - totalPicked === 0
+                    ? "var(--gold)"
+                    : "linear-gradient(90deg, rgba(184,134,11,0.6), var(--gold))",
+                borderRadius: 99,
+                transition: "width 0.3s ease",
+              }}
+            />
+          </div>
+
+          {/* Dot indicators */}
+          <div
+            style={{
+              display: "flex",
+              gap: 4,
+              marginBottom: 14,
+              justifyContent: "center",
+            }}
+          >
+            {Array.from({ length: autoBox.count }).map((_, i) => (
+              <div
+                key={i}
+                style={{
+                  width: Math.max(6, Math.min(14, 320 / autoBox.count - 4)),
+                  height: 6,
+                  borderRadius: 99,
+                  background:
+                    i < totalPicked ? "var(--gold)" : "rgba(184,134,11,0.2)",
+                  transition: "background 0.2s ease",
+                }}
+              />
+            ))}
+          </div>
+
+          <button
+            className="btn-gold"
+            style={{
+              width: "100%",
+              opacity: autoBox.count - totalPicked === 0 ? 1 : 0.45,
+              cursor:
+                autoBox.count - totalPicked === 0 ? "pointer" : "not-allowed",
+            }}
+            onClick={proceedToSlot}
+          >
+            {autoBox.count - totalPicked === 0
+              ? "Continue to delivery slot →"
+              : `Fill ${autoBox.count - totalPicked} more piece${autoBox.count - totalPicked === 1 ? "" : "s"} to unlock slot`}
+          </button>
+        </div>
+      )}
     </main>
   );
 }
