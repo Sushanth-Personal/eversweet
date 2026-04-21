@@ -1345,7 +1345,7 @@ function BulkImportJSON({
 export default function AdminPage() {
   const [authed, setAuthed] = useState(() => {
     if (typeof window === "undefined") return false;
-    return sessionStorage.getItem("es_admin") === "true";
+    return localStorage.getItem("es_admin") === "true";
   });
   const [pw, setPw] = useState("");
   const [pwError, setPwError] = useState(false);
@@ -1709,7 +1709,7 @@ export default function AdminPage() {
           <button
             onClick={() => {
               if (pw === process.env.NEXT_PUBLIC_ADMIN_PASSWORD) {
-                sessionStorage.setItem("es_admin", "true");
+                localStorage.setItem("es_admin", "true");
                 setAuthed(true);
                 setPwError(false);
               } else setPwError(true);
