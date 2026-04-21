@@ -431,15 +431,14 @@ export default function Home() {
           }}
         />
 
-        {products.filter((p) => p.image_url).slice(0, 4).length > 0 && (
+        {products.filter((p) => p.image_url).length > 0 && (
           <div
             style={{
-              display: "flex",
-              gap: 6,
+              position: "relative",
               marginBottom: 28,
-              borderRadius: 10,
+              borderRadius: 12,
               overflow: "hidden",
-              height: 190,
+              height: 260,
             }}
           >
             {products
@@ -451,14 +450,40 @@ export default function Home() {
                   src={p.image_url!}
                   alt={p.name}
                   style={{
-                    flex: i === 0 ? 2 : 1,
-                    objectFit: "cover",
+                    position: "absolute",
+                    inset: 0,
+                    width: "100%",
                     height: "100%",
+                    objectFit: "cover",
+                    opacity: 0,
+                    animation: `heroFade ${products.filter((x) => x.image_url).slice(0, 4).length * 3}s ease-in-out ${i * 3}s infinite`,
                   }}
                 />
               ))}
+            {/* Bottom gradient so text below doesn't clash */}
+            <div
+              style={{
+                position: "absolute",
+                bottom: 0,
+                left: 0,
+                right: 0,
+                height: 60,
+                background:
+                  "linear-gradient(to bottom, transparent, var(--bg))",
+              }}
+            />
           </div>
         )}
+
+        <style>{`
+  @keyframes heroFade {
+    0% { opacity: 0; }
+    8% { opacity: 1; }
+    33% { opacity: 1; }
+    41% { opacity: 0; }
+    100% { opacity: 0; }
+  }
+`}</style>
 
         <p
           style={{
