@@ -198,6 +198,21 @@ async function sendPaymentAlert(payload: {
   }
 }
 
+// ── Validation ────────────────────────────────────────────────────
+function validateForm(form: { name: string; phone: string }): string {
+  const nameRegex = /^[a-zA-Z\s.'-]{2,}$/;
+  const phoneRegex = /^[6-9]\d{9}$/;
+
+  if (!form.name.trim()) return "Please enter your name.";
+  if (!nameRegex.test(form.name.trim()))
+    return "Please enter a valid name (letters only).";
+  if (!form.phone.trim()) return "Please enter your phone number.";
+  const cleanPhone = form.phone.replace(/\s+/g, "").replace(/^(\+91|91)/, "");
+  if (!phoneRegex.test(cleanPhone))
+    return "Please enter a valid 10-digit Indian mobile number.";
+  return "";
+}
+
 export default function Home() {
   const [products, setProducts] = useState<Product[]>([]);
   const [boxes, setBoxes] = useState<BoxSize[]>([]);
@@ -220,12 +235,9 @@ export default function Home() {
     name: "",
     phone: "",
     address: "",
-    dob: "",
-    notes: "",
   });
-  const [payMethod, setPayMethod] = useState<"qr" | "phone">("qr");
+
   const [orderDone, setOrderDone] = useState(false);
-  // NEW: track if customer has tapped "Pay via UPI"
   const [hasTappedPay, setHasTappedPay] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
 
@@ -278,7 +290,7 @@ export default function Home() {
 
   function proceedToSlot() {
     if (totalPicked === 0) {
-      setError("Please choose at least one flavour.");
+      setError("Please choose at least 4 pieces to place an order.");
       return;
     }
     if (autoBox && totalPicked < autoBox.count) {
@@ -307,8 +319,13 @@ export default function Home() {
   }
 
   async function placeOrder() {
-    if (!autoBox || !form.name.trim() || !form.phone.trim() || !selectedBatch) {
-      setError("Please fill in your name and phone number.");
+    if (!autoBox || !selectedBatch) {
+      setError("Something went wrong. Please refresh and try again.");
+      return;
+    }
+    const validationError = validateForm(form);
+    if (validationError) {
+      setError(validationError);
       return;
     }
     setPlacing(true);
@@ -322,13 +339,10 @@ export default function Home() {
           customer_name: form.name.trim(),
           phone: form.phone.trim(),
           address: form.address.trim(),
-          dob: form.dob.trim(),
-          notes: form.notes.trim(),
           box_size_id: autoBox.id,
           flavours,
           delivery_date: selectedDate,
           batch_label: batch.label,
-          payment_method: payMethod,
           total_price: autoBox.price,
         }),
       });
@@ -368,7 +382,6 @@ export default function Home() {
   if (orderDone) {
     const batch = BATCHES.find((b) => b.id === selectedBatch)!;
 
-    // Build flavour summary for WhatsApp message
     const flavourSummary = Object.entries(flavours)
       .filter(([, qty]) => qty > 0)
       .map(([id, qty]) => {
@@ -500,7 +513,6 @@ export default function Home() {
             Your slot is reserved. Pay now to confirm it.
           </p>
 
-          {/* UPI App Buttons */}
           <p
             style={{
               fontSize: "0.78rem",
@@ -665,7 +677,6 @@ export default function Home() {
           {/* WhatsApp Screenshot Button */}
           <button
             onClick={async () => {
-              // Fire alert email to admin (only once)
               if (!emailSent) {
                 setEmailSent(true);
                 await sendPaymentAlert({
@@ -679,7 +690,6 @@ export default function Home() {
                   total_price: autoBox?.price || 0,
                 });
               }
-              // Open WhatsApp
               window.open(whatsappUrl, "_blank");
             }}
             style={{
@@ -749,14 +759,8 @@ export default function Home() {
           )}
         </div>
 
-        {/* QR fallback (small, secondary) */}
-        <details
-          style={{
-            width: "100%",
-            marginBottom: 24,
-            cursor: "pointer",
-          }}
-        >
+        {/* QR fallback */}
+        <details style={{ width: "100%", marginBottom: 24, cursor: "pointer" }}>
           <summary
             style={{
               fontSize: "0.72rem",
@@ -929,28 +933,30 @@ export default function Home() {
 `}</style>
 
         <p
+          className="font-display"
           style={{
-            color: "var(--cream-dim)",
-            fontSize: "1.05rem",
-            lineHeight: 1.65,
+            fontSize: "1.5rem",
+            fontWeight: 300,
+            lineHeight: 1.3,
             maxWidth: 320,
-            margin: "0 auto 10px",
-            fontStyle: "italic",
+            margin: "0 auto 12px",
+            color: "var(--cream)",
           }}
         >
-          "The mochi you've been imagining — soft, fresh, made today."
+          Mochi. Made the way it was meant to be.
         </p>
         <p
           style={{
-            color: "var(--muted)",
+            color: "var(--cream-dim)",
             fontSize: "0.82rem",
             lineHeight: 1.75,
             maxWidth: 300,
             margin: "0 auto 28px",
           }}
         >
-          No freezers. No preservatives. Each piece made on the day of your
-          delivery — because that&apos;s the only way mochi should be eaten.
+          Soft rice flour on the outside. Cold, creamy fruit filling inside.
+          Made fresh the morning it reaches you — because that&apos;s the only
+          way mochi should be eaten.
         </p>
 
         <div style={{ display: "flex", justifyContent: "center" }}>
@@ -963,7 +969,11 @@ export default function Home() {
           </button>
         </div>
         <p
-          style={{ fontSize: "0.68rem", color: "var(--muted)", marginTop: 14 }}
+          style={{
+            fontSize: "0.68rem",
+            color: "var(--cream-dim)",
+            marginTop: 14,
+          }}
         >
           Brookie &amp; Tiramisu coming soon ✦
         </p>
@@ -1055,6 +1065,16 @@ export default function Home() {
           Choose what you love
         </h2>
         <GoldLine />
+        <p
+          style={{
+            fontSize: "0.78rem",
+            color: "var(--cream-dim)",
+            marginBottom: 16,
+            lineHeight: 1.6,
+          }}
+        >
+          Minimum order is 4 pieces. Mix and match any flavours you like.
+        </p>
 
         {loading ? (
           <div
@@ -1139,7 +1159,7 @@ export default function Home() {
                     <p
                       style={{
                         fontSize: "0.68rem",
-                        color: "var(--muted)",
+                        color: "var(--cream-dim)",
                         lineHeight: 1.5,
                         marginBottom: 10,
                       }}
@@ -1250,7 +1270,7 @@ export default function Home() {
               <p
                 style={{
                   fontSize: "0.68rem",
-                  color: "var(--muted)",
+                  color: "var(--cream-dim)",
                   marginTop: 2,
                 }}
               >
@@ -1381,7 +1401,7 @@ export default function Home() {
                   <p style={{ fontSize: "0.75rem", fontWeight: 500 }}>
                     {t.name}
                   </p>
-                  <p style={{ fontSize: "0.65rem", color: "var(--muted)" }}>
+                  <p style={{ fontSize: "0.65rem", color: "var(--cream-dim)" }}>
                     {t.handle}
                   </p>
                 </div>
@@ -1439,7 +1459,7 @@ export default function Home() {
           <p
             style={{
               fontSize: "0.72rem",
-              color: "var(--muted)",
+              color: "var(--cream-dim)",
               marginBottom: 14,
             }}
           >
@@ -1448,7 +1468,7 @@ export default function Home() {
           </p>
 
           {loading ? (
-            <p style={{ color: "var(--muted)", fontSize: "0.8rem" }}>
+            <p style={{ color: "var(--cream-dim)", fontSize: "0.8rem" }}>
               Loading…
             </p>
           ) : (
@@ -1568,7 +1588,7 @@ export default function Home() {
                   <p
                     style={{
                       fontSize: "0.68rem",
-                      color: "var(--muted)",
+                      color: "var(--cream-dim)",
                       marginTop: 2,
                     }}
                   >
@@ -1614,7 +1634,7 @@ export default function Home() {
                         color:
                           autoBox.id === box.id
                             ? "var(--gold)"
-                            : "var(--muted)",
+                            : "var(--cream-dim)",
                         background:
                           autoBox.id === box.id
                             ? "rgba(184,134,11,0.12)"
@@ -1685,7 +1705,7 @@ export default function Home() {
             <p
               style={{
                 fontSize: "0.72rem",
-                color: "var(--muted)",
+                color: "var(--cream-dim)",
                 marginBottom: 16,
               }}
             >
@@ -1746,7 +1766,7 @@ export default function Home() {
                       color:
                         selectedDate === chip.val
                           ? "var(--gold)"
-                          : "var(--muted)",
+                          : "var(--cream-dim)",
                       fontSize: "0.78rem",
                       fontWeight: selectedDate === chip.val ? 700 : 400,
                       cursor: "pointer",
@@ -1842,7 +1862,7 @@ export default function Home() {
                             fontSize: "0.75rem",
                             color: isSelected
                               ? "rgba(184,134,11,0.7)"
-                              : "var(--muted)",
+                              : "var(--cream-dim)",
                           }}
                         >
                           {batch.timeRange}
@@ -1890,7 +1910,7 @@ export default function Home() {
               style={{
                 background: "transparent",
                 border: "none",
-                color: "var(--muted)",
+                color: "var(--cream-dim)",
                 fontSize: "0.78rem",
                 cursor: "pointer",
                 padding: "0 0 16px",
@@ -1941,24 +1961,6 @@ export default function Home() {
                 }
                 autoComplete="street-address"
               />
-              <input
-                className="field"
-                placeholder="Date of Birth (DD/MM/YYYY)"
-                value={form.dob}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, dob: e.target.value }))
-                }
-              />
-              <textarea
-                className="field"
-                placeholder="Any notes or special requests? (optional)"
-                value={form.notes}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, notes: e.target.value }))
-                }
-                rows={3}
-                style={{ resize: "none" }}
-              />
             </div>
 
             {/* Order summary */}
@@ -1973,7 +1975,7 @@ export default function Home() {
               <p
                 style={{
                   fontSize: "0.65rem",
-                  color: "var(--muted)",
+                  color: "var(--cream-dim)",
                   letterSpacing: "0.15em",
                   textTransform: "uppercase",
                   marginBottom: 10,
@@ -2004,7 +2006,10 @@ export default function Home() {
                       }}
                     >
                       <span
-                        style={{ fontSize: "0.75rem", color: "var(--muted)" }}
+                        style={{
+                          fontSize: "0.75rem",
+                          color: "var(--cream-dim)",
+                        }}
                       >
                         {prod.name} × {qty}
                       </span>
@@ -2023,12 +2028,18 @@ export default function Home() {
                         }}
                       >
                         <span
-                          style={{ fontSize: "0.75rem", color: "var(--muted)" }}
+                          style={{
+                            fontSize: "0.75rem",
+                            color: "var(--cream-dim)",
+                          }}
                         >
                           {batch.icon} {batch.label} · {batch.timeRange}
                         </span>
                         <span
-                          style={{ fontSize: "0.75rem", color: "var(--muted)" }}
+                          style={{
+                            fontSize: "0.75rem",
+                            color: "var(--cream-dim)",
+                          }}
                         >
                           {new Date(
                             selectedDate + "T00:00:00",
@@ -2063,10 +2074,15 @@ export default function Home() {
             {error && (
               <p
                 style={{
-                  fontSize: "0.78rem",
-                  color: "var(--red)",
+                  fontSize: "0.82rem",
+                  color: "#e57373",
                   marginBottom: 12,
                   textAlign: "center",
+                  fontWeight: 500,
+                  padding: "8px 12px",
+                  background: "rgba(220,50,50,0.1)",
+                  borderRadius: 6,
+                  border: "1px solid rgba(220,50,50,0.25)",
                 }}
               >
                 {error}
@@ -2076,7 +2092,7 @@ export default function Home() {
             <div style={{ display: "flex", justifyContent: "center" }}>
               <button
                 className="btn-gold"
-                disabled={placing || !form.name.trim() || !form.phone.trim()}
+                disabled={placing}
                 onClick={placeOrder}
                 style={{ maxWidth: 300 }}
               >
@@ -2087,7 +2103,7 @@ export default function Home() {
             <p
               style={{
                 fontSize: "0.68rem",
-                color: "var(--muted)",
+                color: "var(--cream-dim)",
                 marginTop: 10,
                 textAlign: "center",
                 lineHeight: 1.7,
@@ -2168,7 +2184,7 @@ export default function Home() {
             <p
               style={{
                 fontSize: "0.8rem",
-                color: "var(--muted)",
+                color: "var(--cream-dim)",
                 lineHeight: 1.7,
               }}
             >
@@ -2211,7 +2227,11 @@ export default function Home() {
           Eversweet
         </p>
         <p
-          style={{ fontSize: "0.7rem", color: "var(--muted)", marginBottom: 4 }}
+          style={{
+            fontSize: "0.7rem",
+            color: "var(--cream-dim)",
+            marginBottom: 4,
+          }}
         >
           Cloud Kitchen · Kochi, Kerala
         </p>
@@ -2231,7 +2251,7 @@ export default function Home() {
         <p
           style={{
             fontSize: "0.62rem",
-            color: "var(--muted)",
+            color: "var(--cream-dim)",
             marginTop: 16,
             opacity: 0.5,
           }}
@@ -2286,7 +2306,7 @@ export default function Home() {
             >
               {autoBox.count - totalPicked === 0
                 ? "✓ Box full!"
-                : `${autoBox.count - totalPicked} more piece${autoBox.count - totalPicked === 1 ? "" : "s"} to fill`}
+                : `${autoBox.count - totalPicked} more piece${autoBox.count - totalPicked === 1 ? "" : "s"} to fill ( Min ${autoBox.count} mochi's in a box )`}
             </span>
           </div>
 
