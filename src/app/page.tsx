@@ -15,8 +15,8 @@ const IMG: Record<string, string> = {
 };
 
 // ── Your payment details ───────────────────────────────────────────
-const UPI_ID = "YOUR_UPI_ID_HERE"; // e.g. "yourname@okicici" — replace this!
-const WHATSAPP_NUMBER = "917907044368"; // already in your code
+const UPI_ID = "thinkwide9-1@okicici";
+const WHATSAPP_NUMBER = "917907044368";
 
 function getImg(name: string, url: string | null): string {
   if (url) return url;
@@ -136,16 +136,19 @@ function GoldLine() {
   );
 }
 
-// ── Build UPI intent URL ──────────────────────────────────────────
-function buildUpiUrl(amount: number, name: string): string {
-  const params = new URLSearchParams({
-    pa: UPI_ID,
-    pn: "Eversweet",
-    am: String(amount),
-    cu: "INR",
-    tn: `Eversweet order for ${name}`,
-  });
-  return `upi://pay?${params.toString()}`;
+// ── Build per-app UPI deep links ─────────────────────────────────
+function buildUpiLinks(amount: number, name: string) {
+  const note = encodeURIComponent(`Eversweet order for ${name}`);
+  const pa = encodeURIComponent(UPI_ID);
+  const pn = encodeURIComponent("Eversweet");
+  const am = encodeURIComponent(String(amount));
+  const base = `pa=${pa}&pn=${pn}&am=${am}&cu=INR&tn=${note}`;
+  return {
+    gpay: `gpay://upi/pay?${base}`,
+    phonepe: `phonepe://pay?${base}`,
+    paytm: `paytmmp://pay?${base}`,
+    generic: `upi://pay?${base}`,
+  };
 }
 
 // ── Build WhatsApp pre-filled message ─────────────────────────────
@@ -352,7 +355,7 @@ export default function Home() {
       .filter(Boolean)
       .join(", ");
 
-    const upiUrl = buildUpiUrl(autoBox?.price || 0, form.name);
+    const upiLinks = buildUpiLinks(autoBox?.price || 0, form.name);
     const whatsappUrl = buildWhatsAppUrl(
       form.name,
       autoBox?.price || 0,
@@ -471,45 +474,121 @@ export default function Home() {
             Your slot is reserved. Pay now to confirm it.
           </p>
 
-          {/* UPI Pay Button */}
-          <a
-            href={upiUrl}
-            onClick={() => setHasTappedPay(true)}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 10,
-              width: "100%",
-              padding: "14px 20px",
-              borderRadius: 10,
-              background: "linear-gradient(135deg, #1a73e8 0%, #0d47a1 100%)",
-              color: "#fff",
-              fontSize: "1rem",
-              fontWeight: 700,
-              textDecoration: "none",
-              marginBottom: 10,
-              boxSizing: "border-box" as const,
-              boxShadow: "0 4px 16px rgba(26,115,232,0.35)",
-              letterSpacing: "0.01em",
-            }}
-          >
-            <span style={{ fontSize: "1.3rem" }}>💳</span>
-            Pay ₹{autoBox?.price} via UPI
-          </a>
-
+          {/* UPI App Buttons */}
           <p
             style={{
-              fontSize: "0.68rem",
+              fontSize: "0.72rem",
               color: "var(--muted)",
-              marginBottom: 16,
+              marginBottom: 12,
               lineHeight: 1.6,
             }}
           >
-            Opens Google Pay, PhonePe, Paytm or any UPI app
-            <br />
-            with your amount pre-filled ✓
+            Tap your payment app — amount is pre-filled ✓
           </p>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column" as const,
+              gap: 10,
+              marginBottom: 4,
+            }}
+          >
+            {/* Google Pay */}
+            <a
+              href={upiLinks.gpay}
+              onClick={() => setHasTappedPay(true)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 10,
+                width: "100%",
+                padding: "13px 20px",
+                borderRadius: 10,
+                background: "linear-gradient(135deg, #1a73e8 0%, #0d47a1 100%)",
+                color: "#fff",
+                fontSize: "0.95rem",
+                fontWeight: 700,
+                textDecoration: "none",
+                boxSizing: "border-box" as const,
+                boxShadow: "0 3px 12px rgba(26,115,232,0.35)",
+              }}
+            >
+              <span style={{ fontSize: "1.2rem" }}>G</span>
+              Google Pay — ₹{autoBox?.price}
+            </a>
+            {/* PhonePe */}
+            <a
+              href={upiLinks.phonepe}
+              onClick={() => setHasTappedPay(true)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 10,
+                width: "100%",
+                padding: "13px 20px",
+                borderRadius: 10,
+                background: "linear-gradient(135deg, #5f259f 0%, #3d1a6e 100%)",
+                color: "#fff",
+                fontSize: "0.95rem",
+                fontWeight: 700,
+                textDecoration: "none",
+                boxSizing: "border-box" as const,
+                boxShadow: "0 3px 12px rgba(95,37,159,0.35)",
+              }}
+            >
+              <span style={{ fontSize: "1.2rem" }}>📱</span>
+              PhonePe — ₹{autoBox?.price}
+            </a>
+            {/* Paytm */}
+            <a
+              href={upiLinks.paytm}
+              onClick={() => setHasTappedPay(true)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 10,
+                width: "100%",
+                padding: "13px 20px",
+                borderRadius: 10,
+                background: "linear-gradient(135deg, #00baf2 0%, #0073b7 100%)",
+                color: "#fff",
+                fontSize: "0.95rem",
+                fontWeight: 700,
+                textDecoration: "none",
+                boxSizing: "border-box" as const,
+                boxShadow: "0 3px 12px rgba(0,115,183,0.35)",
+              }}
+            >
+              <span style={{ fontSize: "1.2rem" }}>💙</span>
+              Paytm — ₹{autoBox?.price}
+            </a>
+            {/* Any UPI app fallback */}
+            <a
+              href={upiLinks.generic}
+              onClick={() => setHasTappedPay(true)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 10,
+                width: "100%",
+                padding: "11px 20px",
+                borderRadius: 10,
+                background: "transparent",
+                border: "1px solid rgba(184,134,11,0.35)",
+                color: "var(--muted)",
+                fontSize: "0.8rem",
+                fontWeight: 500,
+                textDecoration: "none",
+                boxSizing: "border-box" as const,
+              }}
+            >
+              Other UPI App
+            </a>
+          </div>
 
           {/* Divider */}
           <div
