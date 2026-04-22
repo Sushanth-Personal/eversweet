@@ -1,17 +1,3 @@
-// Key changes from original:
-// 1. Removed time_slots fetching — batches are now static
-// 2. getSlotLabel() reads order.delivery_date + order.batch_label directly
-// 3. Removed "Batches" tab from admin nav
-// 4. ManualOrderForm uses a date picker + static batch dropdown instead of DB slots
-// 5. Orders API should store delivery_date + batch_label columns (add via Supabase migration)
-//
-// SUPABASE MIGRATION needed — run this in your Supabase SQL editor:
-//
-//   ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_date date;
-//   ALTER TABLE orders ADD COLUMN IF NOT EXISTS batch_label text;
-//
-// That's it. time_slots table can stay for old orders, just unused going forward.
-
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
@@ -19,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import type { Product, BoxSize, Order } from "@/lib/types";
 
 type Tab =
+  | "pending_payment"
   | "orders"
   | "dispatched"
   | "customers"
@@ -58,7 +45,6 @@ const STATUS_FLOW = [
   "porter_booked",
   "dispatched",
 ] as const;
-
 const STATUS_LABELS: Record<string, string> = {
   pending: "Payment Pending",
   confirmed: "Order Confirmed",
@@ -68,7 +54,6 @@ const STATUS_LABELS: Record<string, string> = {
   dispatched: "Dispatched",
   cancelled: "Cancelled",
 };
-
 const STATUS_COLORS: Record<
   string,
   { bg: string; text: string; border: string }
@@ -81,7 +66,6 @@ const STATUS_COLORS: Record<
   dispatched: { bg: "#e8f5e9", text: "#1b5e20", border: "#43a047" },
   cancelled: { bg: "#ffebee", text: "#b71c1c", border: "#ef5350" },
 };
-
 function nextStatus(s: string): string | null {
   const i = STATUS_FLOW.indexOf(s as (typeof STATUS_FLOW)[number]);
   return i === -1 || i === STATUS_FLOW.length - 1 ? null : STATUS_FLOW[i + 1];
@@ -130,7 +114,6 @@ const T = {
   blue: "#1565c0",
   blueBg: "#e3f2fd",
 };
-
 const TRACKING_START_DATE = "2026-04-21";
 
 type Expense = {
@@ -142,14 +125,13 @@ type Expense = {
   note?: string;
   created_at: string;
 };
-
 type ExtOrder = Order & {
   insta_id?: string;
   remarks?: string;
   source?: string;
   order_date?: string;
-  delivery_date?: string; // ← new
-  batch_label?: string; // ← new
+  delivery_date?: string;
+  batch_label?: string;
 };
 
 // ── Shared components ──────────────────────────────────────────────
@@ -321,9 +303,7 @@ function StatCard({
   );
 }
 
-// ── Slot label from order fields ───────────────────────────────────
 function getOrderBatchLabel(order: ExtOrder): string {
-  // New orders: use delivery_date + batch_label
   if (order.delivery_date && order.batch_label) {
     const icon = getBatchIcon(order.batch_label);
     const dateObj = new Date(order.delivery_date + "T00:00:00");
@@ -333,7 +313,6 @@ function getOrderBatchLabel(order: ExtOrder): string {
     });
     return `${icon} ${order.batch_label} · ${dateStr}`;
   }
-  // Legacy orders: fall back to order_date or created_at date
   const dateStr = order.order_date || order.created_at?.split("T")[0] || "";
   return dateStr ? `📦 DM Order · ${dateStr}` : "📦 DM Order";
 }
@@ -564,8 +543,8 @@ function OrderCard({
             >
               {updating
                 ? emailing
-                  ? "📧 Sending…"
-                  : "…"
+                  ? "📧 Sending..."
+                  : "..."
                 : order.status === "pending"
                   ? "→ Confirm Order"
                   : order.status === "confirmed"
@@ -754,7 +733,6 @@ function ManualOrderForm({
           ✕
         </button>
       </div>
-
       <div
         style={{
           display: "grid",
@@ -783,7 +761,6 @@ function ManualOrderForm({
               marginBottom: 8,
               outline: "none",
               fontFamily: "system-ui, sans-serif",
-              boxShadow: "inset 0 1px 2px rgba(0,0,0,0.06)",
               boxSizing: "border-box" as const,
             }}
           />
@@ -857,14 +834,11 @@ function ManualOrderForm({
           onChange={f("dob")}
         />
       </div>
-
       <Input
         placeholder="Address"
         value={form.address}
         onChange={f("address")}
       />
-
-      {/* Delivery date + batch */}
       <div
         style={{
           display: "grid",
@@ -903,8 +877,6 @@ function ManualOrderForm({
           ))}
         </select>
       </div>
-
-      {/* Box rows */}
       <p
         style={{
           fontSize: "0.8rem",
@@ -1022,8 +994,6 @@ function ManualOrderForm({
           </p>
         )}
       </div>
-
-      {/* Flavours */}
       {products.filter((p) => p.is_available).length > 0 && (
         <>
           <p
@@ -1134,7 +1104,6 @@ function ManualOrderForm({
           </div>
         </>
       )}
-
       <div
         style={{
           display: "grid",
@@ -1179,7 +1148,6 @@ function ManualOrderForm({
         value={form.notes}
         onChange={f("notes")}
       />
-
       <button
         disabled={saving || !form.customer_name || totalPrice === 0}
         onClick={handleSave}
@@ -1200,14 +1168,14 @@ function ManualOrderForm({
         }}
       >
         {saving
-          ? "Saving…"
+          ? "Saving..."
           : `Save ${boxRows.filter((r) => r.price).length > 1 ? `${boxRows.filter((r) => r.price).length} Orders` : "Order"} · ₹${totalPrice}`}
       </button>
     </div>
   );
 }
 
-// ── Bulk import ────────────────────────────────────────────────────
+// ── Bulk import orders ─────────────────────────────────────────────
 function BulkOrderImport({
   onImport,
 }: {
@@ -1231,7 +1199,7 @@ function BulkOrderImport({
           fontFamily: "system-ui, sans-serif",
         }}
       >
-        📂 Bulk Import Orders (JSON / Excel export)
+        📂 Bulk Import Orders (JSON)
       </button>
     );
   return (
@@ -1248,7 +1216,6 @@ function BulkOrderImport({
         style={{
           display: "flex",
           justifyContent: "space-between",
-          alignItems: "center",
           marginBottom: 10,
         }}
       >
@@ -1270,10 +1237,10 @@ function BulkOrderImport({
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder="Paste JSON here..."
+        placeholder='[{ "customer_name":"Name", "phone":"", "box_size_label":"Box of 4", "total_price":499, "order_date":"2026-04-20", "status":"dispatched" }]'
         style={{
           width: "100%",
-          minHeight: 100,
+          minHeight: 80,
           background: "#f8f8f8",
           border: `1px solid ${T.border}`,
           borderRadius: 6,
@@ -1308,8 +1275,218 @@ function BulkOrderImport({
           fontFamily: "system-ui, sans-serif",
         }}
       >
-        {importing ? "Importing…" : "Import Orders"}
+        {importing ? "Importing..." : "Import Orders"}
       </button>
+    </div>
+  );
+}
+
+// ── Expense JSON importer (paste + upload) ─────────────────────────
+function ExpenseImporter({
+  onImport,
+}: {
+  onImport: (text: string) => Promise<void>;
+}) {
+  const [mode, setMode] = useState<"paste" | "upload">("paste");
+  const [text, setText] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [error, setError] = useState("");
+
+  async function run() {
+    setError("");
+    if (!text.trim()) {
+      setError("Paste some JSON first");
+      return;
+    }
+    try {
+      JSON.parse(text.trim());
+    } catch {
+      setError("Invalid JSON — check for typos");
+      return;
+    }
+    setImporting(true);
+    await onImport(text.trim());
+    setImporting(false);
+    setText("");
+  }
+
+  return (
+    <div
+      style={{
+        marginTop: 14,
+        paddingTop: 14,
+        borderTop: `1px solid ${T.border}`,
+      }}
+    >
+      <p
+        style={{
+          fontSize: "0.78rem",
+          fontWeight: 600,
+          color: T.sub,
+          marginBottom: 10,
+        }}
+      >
+        Bulk import expenses (JSON)
+      </p>
+
+      {/* Mode toggle */}
+      <div
+        style={{
+          display: "flex",
+          gap: 0,
+          marginBottom: 12,
+          border: `1px solid ${T.border}`,
+          borderRadius: 6,
+          overflow: "hidden",
+          width: "fit-content",
+        }}
+      >
+        {(["paste", "upload"] as const).map((m) => (
+          <button
+            key={m}
+            onClick={() => setMode(m)}
+            style={{
+              padding: "7px 18px",
+              border: "none",
+              fontFamily: "system-ui, sans-serif",
+              background: mode === m ? "#1976d2" : T.white,
+              color: mode === m ? "#fff" : T.sub,
+              fontSize: "0.8rem",
+              fontWeight: mode === m ? 600 : 400,
+              cursor: "pointer",
+              transition: "all 0.15s",
+            }}
+          >
+            {m === "paste" ? "Paste JSON" : "Upload File"}
+          </button>
+        ))}
+      </div>
+
+      {mode === "paste" ? (
+        <div>
+          <pre
+            style={{
+              background: "#f8f8f8",
+              border: `1px solid ${T.border}`,
+              borderRadius: 6,
+              padding: "8px 10px",
+              fontSize: "0.68rem",
+              color: T.sub,
+              marginBottom: 8,
+              overflowX: "auto" as const,
+            }}
+          >
+            {`[
+  { "description": "Mango pulp 1kg", "amount": 120, "category": "ingredient", "date": "2026-04-21" },
+  { "description": "Gift boxes x20", "amount": 300, "category": "packaging", "date": "2026-04-21" }
+]`}
+          </pre>
+          <textarea
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              setError("");
+            }}
+            placeholder="Paste your JSON here..."
+            style={{
+              width: "100%",
+              minHeight: 120,
+              background: "#f8f8f8",
+              border: `1px solid ${error ? T.red : T.border}`,
+              borderRadius: 6,
+              padding: "10px 12px",
+              fontSize: "0.78rem",
+              color: T.text,
+              fontFamily: "monospace",
+              resize: "vertical" as const,
+              outline: "none",
+              marginBottom: 6,
+              boxSizing: "border-box" as const,
+              lineHeight: 1.5,
+            }}
+          />
+          {error && (
+            <p style={{ fontSize: "0.75rem", color: T.red, marginBottom: 8 }}>
+              ⚠ {error}
+            </p>
+          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              disabled={importing || !text.trim()}
+              onClick={run}
+              style={{
+                padding: "9px 20px",
+                borderRadius: 6,
+                border: "none",
+                background: importing || !text.trim() ? "#ccc" : "#1976d2",
+                color: "#fff",
+                fontSize: "0.85rem",
+                fontWeight: 600,
+                cursor: importing || !text.trim() ? "not-allowed" : "pointer",
+                fontFamily: "system-ui, sans-serif",
+              }}
+            >
+              {importing ? "Importing..." : "Import JSON"}
+            </button>
+            {text && !importing && (
+              <button
+                onClick={() => {
+                  setText("");
+                  setError("");
+                }}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: T.muted,
+                  fontSize: "0.8rem",
+                  cursor: "pointer",
+                  fontFamily: "system-ui, sans-serif",
+                }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          <p style={{ fontSize: "0.7rem", color: T.muted, marginTop: 6 }}>
+            Categories: ingredient / packaging / fixed / delivery / equipment /
+            other
+          </p>
+        </div>
+      ) : (
+        <div>
+          <label
+            style={{
+              display: "inline-block",
+              padding: "9px 18px",
+              borderRadius: 6,
+              border: `1px solid #1976d2`,
+              background: T.blueBg,
+              color: "#1976d2",
+              fontSize: "0.85rem",
+              fontWeight: 600,
+              cursor: importing ? "not-allowed" : "pointer",
+              fontFamily: "system-ui, sans-serif",
+            }}
+          >
+            {importing ? "Importing..." : "📂 Choose JSON File"}
+            <input
+              type="file"
+              accept=".json"
+              style={{ display: "none" }}
+              disabled={importing}
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                if (!f) return;
+                setImporting(true);
+                const text = await f.text();
+                await onImport(text);
+                setImporting(false);
+                (e.target as HTMLInputElement).value = "";
+              }}
+            />
+          </label>
+        </div>
+      )}
     </div>
   );
 }
@@ -1319,7 +1496,7 @@ export default function AdminPage() {
   const [authed, setAuthed] = useState(false);
   const [pw, setPw] = useState("");
   const [pwError, setPwError] = useState(false);
-  const [tab, setTab] = useState<Tab>("orders");
+  const [tab, setTab] = useState<Tab>("pending_payment");
 
   const [orders, setOrders] = useState<ExtOrder[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -1504,6 +1681,306 @@ export default function AdminPage() {
     }
   }
 
+  // ── Order grouping helper ──────────────────────────────────────
+  function groupOrders(orderList: ExtOrder[]) {
+    const groups: { key: string; orders: ExtOrder[] }[] = [];
+    const seen = new Map<string, ExtOrder[]>();
+    orderList.forEach((o) => {
+      const slotOrDate =
+        o.delivery_date || o.order_date || o.created_at?.split("T")[0];
+      const identity = o.phone?.trim() || o.customer_name?.trim().toLowerCase();
+      const key = `${identity}__${slotOrDate}`;
+      if (!seen.has(key)) {
+        seen.set(key, []);
+        groups.push({ key, orders: seen.get(key)! });
+      }
+      seen.get(key)!.push(o);
+    });
+    return groups;
+  }
+
+  function renderOrderGroups(orderList: ExtOrder[]) {
+    const groups = groupOrders(orderList);
+    return groups.map(({ key, orders: grp }) => {
+      if (grp.length === 1) {
+        return (
+          <OrderCard
+            key={grp[0].id}
+            order={grp[0]}
+            isRepeat={repeatPhones.has(grp[0].phone)}
+            productMap={productMap}
+            onStatusChange={handleStatusChange}
+            onCancel={handleCancel}
+            onPorterEmail={handlePorterEmail}
+          />
+        );
+      }
+      const first = grp[0];
+      const combinedTotal = grp.reduce((s, o) => s + (o.total_price || 0), 0);
+      const sc = STATUS_COLORS[first.status] || STATUS_COLORS.pending;
+      const allSameStatus = grp.every((o) => o.status === first.status);
+      const mergedFlavours: Record<string, number> = {};
+      grp.forEach((o) => {
+        if (!o.flavours) return;
+        Object.entries(o.flavours as Record<string, number>).forEach(
+          ([id, qty]) => {
+            mergedFlavours[id] = (mergedFlavours[id] || 0) + qty;
+          },
+        );
+      });
+      const flavourList = Object.entries(mergedFlavours)
+        .filter(([, q]) => q > 0)
+        .map(([id, q]) => `${productMap[id] || "Unknown"} ×${q}`)
+        .join(", ");
+
+      return (
+        <div
+          key={key}
+          style={{
+            background: T.white,
+            border: `1px solid ${sc.border}`,
+            borderLeft: `4px solid ${sc.border}`,
+            borderRadius: 8,
+            padding: "14px 16px",
+            marginBottom: 10,
+            boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 8,
+              flexWrap: "wrap" as const,
+            }}
+          >
+            <span style={{ fontSize: "1rem", fontWeight: 700, color: T.text }}>
+              {first.customer_name}
+            </span>
+            <CopyBtn value={first.customer_name} label="Name" />
+            {repeatPhones.has(first.phone) && (
+              <span
+                style={{
+                  fontSize: "0.65rem",
+                  padding: "2px 8px",
+                  borderRadius: 10,
+                  background: T.blueBg,
+                  color: T.blue,
+                  fontWeight: 600,
+                }}
+              >
+                🔄 REPEAT
+              </span>
+            )}
+            <span
+              style={{
+                fontSize: "0.65rem",
+                padding: "2px 8px",
+                borderRadius: 10,
+                background: T.goldBg,
+                color: T.gold,
+                fontWeight: 600,
+              }}
+            >
+              📦 {grp.length} boxes
+            </span>
+            <span
+              style={{
+                marginLeft: "auto",
+                fontSize: "0.7rem",
+                padding: "3px 10px",
+                borderRadius: 12,
+                background: sc.bg,
+                color: sc.text,
+                fontWeight: 700,
+              }}
+            >
+              {allSameStatus
+                ? STATUS_LABELS[first.status]
+                : grp.map((o) => STATUS_LABELS[o.status]).join(" / ")}
+            </span>
+          </div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 5,
+            }}
+          >
+            <span
+              style={{ fontSize: "0.9rem", color: T.text, fontWeight: 500 }}
+            >
+              📞 {first.phone || "—"}
+            </span>
+            {first.phone && <CopyBtn value={first.phone} label="Phone" />}
+          </div>
+          {first.address && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 8,
+                marginBottom: 5,
+              }}
+            >
+              <span style={{ fontSize: "0.85rem", color: T.sub, flex: 1 }}>
+                📍 {first.address}
+              </span>
+              <CopyBtn value={first.address} label="Address" />
+            </div>
+          )}
+          <p style={{ fontSize: "0.85rem", color: T.sub, marginBottom: 6 }}>
+            🕐 {getOrderBatchLabel(first)} ·{" "}
+            <span style={{ color: T.gold, fontWeight: 600 }}>
+              ₹{combinedTotal}
+            </span>{" "}
+            · {first.payment_method}
+          </p>
+          <div
+            style={{
+              background: "#fafafa",
+              border: `1px solid ${T.border}`,
+              borderRadius: 6,
+              padding: "8px 10px",
+              marginBottom: 6,
+            }}
+          >
+            {grp.map((o) => {
+              const boxLabel =
+                boxes.find((b) => b.id === o.box_size_id)?.label ||
+                "Unknown box";
+              return (
+                <div
+                  key={o.id}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    padding: "3px 0",
+                  }}
+                >
+                  <span style={{ fontSize: "0.82rem", color: T.sub }}>
+                    📦 {boxLabel}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: "0.82rem",
+                      fontWeight: 600,
+                      color: T.gold,
+                    }}
+                  >
+                    ₹{o.total_price}
+                  </span>
+                </div>
+              );
+            })}
+            <div
+              style={{
+                borderTop: `1px solid ${T.border}`,
+                marginTop: 4,
+                paddingTop: 4,
+                display: "flex",
+                justifyContent: "space-between",
+              }}
+            >
+              <span style={{ fontSize: "0.78rem", color: T.muted }}>
+                Combined
+              </span>
+              <span
+                style={{ fontSize: "0.85rem", fontWeight: 700, color: T.gold }}
+              >
+                ₹{combinedTotal}
+              </span>
+            </div>
+          </div>
+          {flavourList && (
+            <p style={{ fontSize: "0.82rem", color: T.muted, marginBottom: 4 }}>
+              🍡 {flavourList}
+            </p>
+          )}
+          {grp.every(
+            (o) => o.status !== "dispatched" && o.status !== "cancelled",
+          ) && (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" as const }}>
+              {nextStatus(first.status) && (
+                <button
+                  onClick={async () => {
+                    for (const o of grp) {
+                      const next = nextStatus(o.status);
+                      if (next === "porter_booked") await handlePorterEmail(o);
+                      if (next) await handleStatusChange(o.id, next);
+                    }
+                  }}
+                  style={{
+                    padding: "8px 18px",
+                    borderRadius: 5,
+                    fontSize: "0.85rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    border: "1px solid",
+                    fontFamily: "system-ui, sans-serif",
+                    transition: "all 0.15s",
+                    ...(first.status === "pending"
+                      ? {
+                          background: "#e3f2fd",
+                          color: "#1565c0",
+                          borderColor: "#42a5f5",
+                        }
+                      : first.status === "confirmed"
+                        ? {
+                            background: "#fff3e0",
+                            color: "#e65100",
+                            borderColor: "#ffa726",
+                          }
+                        : first.status === "cooking"
+                          ? {
+                              background: "#e8f5e9",
+                              color: "#2e7d32",
+                              borderColor: "#66bb6a",
+                            }
+                          : first.status === "cooked"
+                            ? {
+                                background: "#f3e5f5",
+                                color: "#6a1b9a",
+                                borderColor: "#ab47bc",
+                              }
+                            : {
+                                background: "#e8f5e9",
+                                color: "#1b5e20",
+                                borderColor: "#43a047",
+                              }),
+                  }}
+                >
+                  {first.status === "pending"
+                    ? "→ Confirm Order"
+                    : first.status === "confirmed"
+                      ? "→ Start Cooking"
+                      : first.status === "cooking"
+                        ? "✓ Cooking Done"
+                        : first.status === "cooked"
+                          ? "📦 Book Porter"
+                          : "→ Mark Dispatched"}
+                </button>
+              )}
+              <Btn
+                variant="danger"
+                onClick={async () => {
+                  if (!confirm(`Cancel all orders for ${first.customer_name}?`))
+                    return;
+                  for (const o of grp) await handleCancel(o.id);
+                }}
+              >
+                Cancel All
+              </Btn>
+            </div>
+          )}
+        </div>
+      );
+    });
+  }
+
   // ── Customer grouping ──────────────────────────────────────────
   const customerMap: Record<
     string,
@@ -1523,8 +2000,8 @@ export default function AdminPage() {
       customerMap[key] = {
         name: o.customer_name,
         phone: o.phone || "",
-        insta_id: (o as ExtOrder).insta_id || "",
-        remarks: (o as ExtOrder).remarks || "",
+        insta_id: o.insta_id || "",
+        remarks: o.remarks || "",
         orders: [],
         total: 0,
         latest_id: o.id,
@@ -1536,10 +2013,8 @@ export default function AdminPage() {
       new Date(customerMap[key].orders[0]?.created_at || 0)
     ) {
       customerMap[key].latest_id = o.id;
-      customerMap[key].insta_id =
-        (o as ExtOrder).insta_id || customerMap[key].insta_id;
-      customerMap[key].remarks =
-        (o as ExtOrder).remarks || customerMap[key].remarks;
+      customerMap[key].insta_id = o.insta_id || customerMap[key].insta_id;
+      customerMap[key].remarks = o.remarks || customerMap[key].remarks;
     }
   });
   const customers = Object.entries(customerMap)
@@ -1553,6 +2028,7 @@ export default function AdminPage() {
       (c.insta_id || "").toLowerCase().includes(customerSearch.toLowerCase()),
   );
 
+  // ── Dashboard ──────────────────────────────────────────────────
   const PAID_STATUSES = [
     "confirmed",
     "cooking",
@@ -1651,13 +2127,19 @@ export default function AdminPage() {
     boxRevenue[label].revenue += o.total_price || 0;
   });
 
+  // ── Order buckets ──────────────────────────────────────────────
+  const pendingPaymentOrders = orders.filter((o) => o.status === "pending");
+  // Active = confirmed and beyond (not dispatched, not cancelled, not pending)
   const activeOrders = orders.filter(
-    (o) => o.status !== "dispatched" && o.status !== "cancelled",
+    (o) =>
+      o.status !== "dispatched" &&
+      o.status !== "cancelled" &&
+      o.status !== "pending",
   );
   const dispatchedOrders = orders.filter((o) => o.status === "dispatched");
-  const pendingCount = orders.filter((o) => o.status === "pending").length;
+  const pendingCount = pendingPaymentOrders.length;
 
-  function periodLabel(p: string): string {
+  function periodLabel(p: string) {
     if (p === "from_start") return "📌 From Start";
     if (p === "today") return "Today";
     if (p === "week") return "This Week";
@@ -1665,6 +2147,7 @@ export default function AdminPage() {
     return "All Time";
   }
 
+  // ── Login ──────────────────────────────────────────────────────
   if (!authed) {
     return (
       <main
@@ -1740,6 +2223,7 @@ export default function AdminPage() {
     );
   }
 
+  // ── Dashboard ──────────────────────────────────────────────────
   return (
     <main
       style={{
@@ -1786,7 +2270,7 @@ export default function AdminPage() {
                   fontWeight: 700,
                 }}
               >
-                {pendingCount} new
+                {pendingCount} unpaid
               </span>
             )}
           </div>
@@ -1835,6 +2319,7 @@ export default function AdminPage() {
         >
           {(
             [
+              { id: "pending_payment", label: `💳 Awaiting Payment` },
               { id: "orders", label: `Orders (${activeOrders.length})` },
               {
                 id: "dispatched",
@@ -1864,14 +2349,14 @@ export default function AdminPage() {
               }}
             >
               {t.label}
-              {t.id === "orders" && pendingCount > 0 && (
+              {t.id === "pending_payment" && pendingCount > 0 && (
                 <span
                   style={{
                     marginLeft: 5,
                     background: "#f44336",
                     color: "#fff",
                     borderRadius: 10,
-                    padding: "1px 5px",
+                    padding: "1px 6px",
                     fontSize: "0.6rem",
                   }}
                 >
@@ -1903,7 +2388,54 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* ── ORDERS ─────────────────────────────────────────── */}
+        {/* ── PAYMENT PENDING ────────────────────────────────── */}
+        {tab === "pending_payment" && (
+          <div>
+            <div
+              style={{
+                background: "#fff8e6",
+                border: "1px solid #f5c842",
+                borderRadius: 8,
+                padding: "12px 16px",
+                marginBottom: 16,
+              }}
+            >
+              <p
+                style={{
+                  fontSize: "0.85rem",
+                  fontWeight: 600,
+                  color: "#92640a",
+                }}
+              >
+                💳 These orders are waiting for payment confirmation
+              </p>
+              <p
+                style={{ fontSize: "0.78rem", color: "#b8860b", marginTop: 4 }}
+              >
+                Once you receive payment (UPI notification), click "→ Confirm
+                Order" to move it to the Orders queue.
+              </p>
+            </div>
+            {pendingPaymentOrders.length === 0 ? (
+              <div
+                style={{
+                  background: T.white,
+                  borderRadius: 8,
+                  padding: 48,
+                  textAlign: "center" as const,
+                  border: `1px solid ${T.border}`,
+                }}
+              >
+                <p style={{ fontSize: "2rem", marginBottom: 8 }}>✓</p>
+                <p style={{ color: T.muted }}>No pending payments</p>
+              </div>
+            ) : (
+              renderOrderGroups(pendingPaymentOrders)
+            )}
+          </div>
+        )}
+
+        {/* ── ACTIVE ORDERS (confirmed+) ─────────────────────── */}
         {tab === "orders" && (
           <div>
             <div
@@ -1914,7 +2446,7 @@ export default function AdminPage() {
                 overflowX: "auto" as const,
               }}
             >
-              {STATUS_FLOW.map((s, i) => (
+              {STATUS_FLOW.filter((s) => s !== "pending").map((s, i, arr) => (
                 <div
                   key={s}
                   style={{
@@ -1937,7 +2469,7 @@ export default function AdminPage() {
                   >
                     {STATUS_LABELS[s]}
                   </span>
-                  {i < STATUS_FLOW.length - 1 && (
+                  {i < arr.length - 1 && (
                     <span style={{ color: T.muted, fontSize: "0.7rem" }}>
                       →
                     </span>
@@ -1945,7 +2477,6 @@ export default function AdminPage() {
                 </div>
               ))}
             </div>
-
             <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
               <button
                 onClick={() => setShowManualForm((f) => !f)}
@@ -1964,7 +2495,6 @@ export default function AdminPage() {
                 + Add Manual Order
               </button>
             </div>
-
             {showManualForm && (
               <ManualOrderForm
                 boxes={boxes}
@@ -1984,7 +2514,6 @@ export default function AdminPage() {
               />
             )}
             <BulkOrderImport onImport={handleBulkOrderImport} />
-
             {activeOrders.length === 0 ? (
               <div
                 style={{
@@ -1999,361 +2528,7 @@ export default function AdminPage() {
                 <p style={{ color: T.muted }}>No active orders</p>
               </div>
             ) : (
-              (() => {
-                const groups: { key: string; orders: ExtOrder[] }[] = [];
-                const seen = new Map<string, ExtOrder[]>();
-                activeOrders.forEach((o) => {
-                  const slotOrDate =
-                    o.delivery_date ||
-                    (o as ExtOrder).order_date ||
-                    o.created_at?.split("T")[0];
-                  const identity =
-                    o.phone?.trim() || o.customer_name?.trim().toLowerCase();
-                  const key = `${identity}__${slotOrDate}`;
-                  if (!seen.has(key)) {
-                    seen.set(key, []);
-                    groups.push({ key, orders: seen.get(key)! });
-                  }
-                  seen.get(key)!.push(o);
-                });
-
-                return groups.map(({ key, orders: grp }) => {
-                  if (grp.length === 1) {
-                    return (
-                      <OrderCard
-                        key={grp[0].id}
-                        order={grp[0]}
-                        isRepeat={repeatPhones.has(grp[0].phone)}
-                        productMap={productMap}
-                        onStatusChange={handleStatusChange}
-                        onCancel={handleCancel}
-                        onPorterEmail={handlePorterEmail}
-                      />
-                    );
-                  }
-
-                  const first = grp[0];
-                  const combinedTotal = grp.reduce(
-                    (s, o) => s + (o.total_price || 0),
-                    0,
-                  );
-                  const sc =
-                    STATUS_COLORS[first.status] || STATUS_COLORS.pending;
-                  const allSameStatus = grp.every(
-                    (o) => o.status === first.status,
-                  );
-                  const mergedFlavours: Record<string, number> = {};
-                  grp.forEach((o) => {
-                    if (!o.flavours) return;
-                    Object.entries(
-                      o.flavours as Record<string, number>,
-                    ).forEach(([id, qty]) => {
-                      mergedFlavours[id] = (mergedFlavours[id] || 0) + qty;
-                    });
-                  });
-                  const flavourList = Object.entries(mergedFlavours)
-                    .filter(([, q]) => q > 0)
-                    .map(([id, q]) => `${productMap[id] || "Unknown"} ×${q}`)
-                    .join(", ");
-
-                  return (
-                    <div
-                      key={key}
-                      style={{
-                        background: T.white,
-                        border: `1px solid ${sc.border}`,
-                        borderLeft: `4px solid ${sc.border}`,
-                        borderRadius: 8,
-                        padding: "14px 16px",
-                        marginBottom: 10,
-                        boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                          marginBottom: 8,
-                          flexWrap: "wrap" as const,
-                        }}
-                      >
-                        <span
-                          style={{
-                            fontSize: "1rem",
-                            fontWeight: 700,
-                            color: T.text,
-                          }}
-                        >
-                          {first.customer_name}
-                        </span>
-                        <CopyBtn value={first.customer_name} label="Name" />
-                        {repeatPhones.has(first.phone) && (
-                          <span
-                            style={{
-                              fontSize: "0.65rem",
-                              padding: "2px 8px",
-                              borderRadius: 10,
-                              background: T.blueBg,
-                              color: T.blue,
-                              fontWeight: 600,
-                            }}
-                          >
-                            🔄 REPEAT
-                          </span>
-                        )}
-                        <span
-                          style={{
-                            fontSize: "0.65rem",
-                            padding: "2px 8px",
-                            borderRadius: 10,
-                            background: T.goldBg,
-                            color: T.gold,
-                            fontWeight: 600,
-                          }}
-                        >
-                          📦 {grp.length} boxes
-                        </span>
-                        <span
-                          style={{
-                            marginLeft: "auto",
-                            fontSize: "0.7rem",
-                            padding: "3px 10px",
-                            borderRadius: 12,
-                            background: sc.bg,
-                            color: sc.text,
-                            fontWeight: 700,
-                          }}
-                        >
-                          {allSameStatus
-                            ? STATUS_LABELS[first.status]
-                            : grp
-                                .map((o) => STATUS_LABELS[o.status])
-                                .join(" / ")}
-                        </span>
-                      </div>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                          marginBottom: 5,
-                        }}
-                      >
-                        <span
-                          style={{
-                            fontSize: "0.9rem",
-                            color: T.text,
-                            fontWeight: 500,
-                          }}
-                        >
-                          📞 {first.phone || "—"}
-                        </span>
-                        {first.phone && (
-                          <CopyBtn value={first.phone} label="Phone" />
-                        )}
-                      </div>
-                      {first.address && (
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "flex-start",
-                            gap: 8,
-                            marginBottom: 5,
-                          }}
-                        >
-                          <span
-                            style={{
-                              fontSize: "0.85rem",
-                              color: T.sub,
-                              flex: 1,
-                            }}
-                          >
-                            📍 {first.address}
-                          </span>
-                          <CopyBtn value={first.address} label="Address" />
-                        </div>
-                      )}
-                      <p
-                        style={{
-                          fontSize: "0.85rem",
-                          color: T.sub,
-                          marginBottom: 6,
-                        }}
-                      >
-                        🕐 {getOrderBatchLabel(first)} ·{" "}
-                        <span style={{ color: T.gold, fontWeight: 600 }}>
-                          ₹{combinedTotal}
-                        </span>{" "}
-                        · {first.payment_method}
-                      </p>
-                      <div
-                        style={{
-                          background: "#fafafa",
-                          border: `1px solid ${T.border}`,
-                          borderRadius: 6,
-                          padding: "8px 10px",
-                          marginBottom: 6,
-                        }}
-                      >
-                        {grp.map((o) => {
-                          const boxLabel =
-                            boxes.find((b) => b.id === o.box_size_id)?.label ||
-                            "Unknown box";
-                          return (
-                            <div
-                              key={o.id}
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                                padding: "3px 0",
-                              }}
-                            >
-                              <span
-                                style={{ fontSize: "0.82rem", color: T.sub }}
-                              >
-                                📦 {boxLabel}
-                              </span>
-                              <span
-                                style={{
-                                  fontSize: "0.82rem",
-                                  fontWeight: 600,
-                                  color: T.gold,
-                                }}
-                              >
-                                ₹{o.total_price}
-                              </span>
-                            </div>
-                          );
-                        })}
-                        <div
-                          style={{
-                            borderTop: `1px solid ${T.border}`,
-                            marginTop: 4,
-                            paddingTop: 4,
-                            display: "flex",
-                            justifyContent: "space-between",
-                          }}
-                        >
-                          <span style={{ fontSize: "0.78rem", color: T.muted }}>
-                            Combined
-                          </span>
-                          <span
-                            style={{
-                              fontSize: "0.85rem",
-                              fontWeight: 700,
-                              color: T.gold,
-                            }}
-                          >
-                            ₹{combinedTotal}
-                          </span>
-                        </div>
-                      </div>
-                      {flavourList && (
-                        <p
-                          style={{
-                            fontSize: "0.82rem",
-                            color: T.muted,
-                            marginBottom: 4,
-                          }}
-                        >
-                          🍡 {flavourList}
-                        </p>
-                      )}
-                      {grp.every(
-                        (o) =>
-                          o.status !== "dispatched" && o.status !== "cancelled",
-                      ) && (
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: 8,
-                            flexWrap: "wrap" as const,
-                          }}
-                        >
-                          {nextStatus(first.status) && (
-                            <button
-                              onClick={async () => {
-                                for (const o of grp) {
-                                  const next = nextStatus(o.status);
-                                  if (next === "porter_booked")
-                                    await handlePorterEmail(o);
-                                  if (next)
-                                    await handleStatusChange(o.id, next);
-                                }
-                              }}
-                              style={{
-                                padding: "8px 18px",
-                                borderRadius: 5,
-                                fontSize: "0.85rem",
-                                fontWeight: 600,
-                                cursor: "pointer",
-                                border: "1px solid",
-                                fontFamily: "system-ui, sans-serif",
-                                transition: "all 0.15s",
-                                ...(first.status === "pending"
-                                  ? {
-                                      background: "#e3f2fd",
-                                      color: "#1565c0",
-                                      borderColor: "#42a5f5",
-                                    }
-                                  : first.status === "confirmed"
-                                    ? {
-                                        background: "#fff3e0",
-                                        color: "#e65100",
-                                        borderColor: "#ffa726",
-                                      }
-                                    : first.status === "cooking"
-                                      ? {
-                                          background: "#e8f5e9",
-                                          color: "#2e7d32",
-                                          borderColor: "#66bb6a",
-                                        }
-                                      : first.status === "cooked"
-                                        ? {
-                                            background: "#f3e5f5",
-                                            color: "#6a1b9a",
-                                            borderColor: "#ab47bc",
-                                          }
-                                        : {
-                                            background: "#e8f5e9",
-                                            color: "#1b5e20",
-                                            borderColor: "#43a047",
-                                          }),
-                              }}
-                            >
-                              {first.status === "pending"
-                                ? "→ Confirm Order"
-                                : first.status === "confirmed"
-                                  ? "→ Start Cooking"
-                                  : first.status === "cooking"
-                                    ? "✓ Cooking Done"
-                                    : first.status === "cooked"
-                                      ? "📦 Book Porter"
-                                      : "→ Mark Dispatched"}
-                            </button>
-                          )}
-                          <Btn
-                            variant="danger"
-                            onClick={async () => {
-                              if (
-                                !confirm(
-                                  `Cancel all orders for ${first.customer_name}?`,
-                                )
-                              )
-                                return;
-                              for (const o of grp) await handleCancel(o.id);
-                            }}
-                          >
-                            Cancel All
-                          </Btn>
-                        </div>
-                      )}
-                    </div>
-                  );
-                });
-              })()
+              renderOrderGroups(activeOrders)
             )}
           </div>
         )}
@@ -2408,7 +2583,7 @@ export default function AdminPage() {
                           🔄
                         </span>
                       )}
-                      {(o as ExtOrder).source === "dm" && (
+                      {o.source === "dm" && (
                         <span
                           style={{
                             fontSize: "0.65rem",
@@ -2433,7 +2608,7 @@ export default function AdminPage() {
                         📍 {o.address}
                       </p>
                     )}
-                    {(o as ExtOrder).remarks && (
+                    {o.remarks && (
                       <p
                         style={{
                           fontSize: "0.78rem",
@@ -2441,7 +2616,7 @@ export default function AdminPage() {
                           fontStyle: "italic" as const,
                         }}
                       >
-                        💬 {(o as ExtOrder).remarks}
+                        💬 {o.remarks}
                       </p>
                     )}
                     <p
@@ -2568,102 +2743,100 @@ export default function AdminPage() {
                     </div>
                   </div>
                 ) : (
-                  <div>
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "flex-start",
-                      }}
-                    >
-                      <div style={{ flex: 1 }}>
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                            marginBottom: 5,
-                            flexWrap: "wrap" as const,
-                          }}
-                        >
-                          <p style={{ fontSize: "0.95rem", fontWeight: 700 }}>
-                            {c.name}
-                          </p>
-                          {c.orders.length > 1 && (
-                            <span
-                              style={{
-                                fontSize: "0.65rem",
-                                padding: "2px 8px",
-                                borderRadius: 10,
-                                background: T.blueBg,
-                                color: T.blue,
-                                fontWeight: 600,
-                              }}
-                            >
-                              🔄 {c.orders.length}x customer
-                            </span>
-                          )}
-                        </div>
-                        {c.phone && (
-                          <p
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "flex-start",
+                    }}
+                  >
+                    <div style={{ flex: 1 }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          marginBottom: 5,
+                          flexWrap: "wrap" as const,
+                        }}
+                      >
+                        <p style={{ fontSize: "0.95rem", fontWeight: 700 }}>
+                          {c.name}
+                        </p>
+                        {c.orders.length > 1 && (
+                          <span
                             style={{
-                              fontSize: "0.85rem",
-                              color: T.sub,
-                              marginBottom: 3,
+                              fontSize: "0.65rem",
+                              padding: "2px 8px",
+                              borderRadius: 10,
+                              background: T.blueBg,
+                              color: T.blue,
+                              fontWeight: 600,
                             }}
                           >
-                            📞 {c.phone}
-                          </p>
+                            🔄 {c.orders.length}x customer
+                          </span>
                         )}
-                        {c.insta_id && (
-                          <p
-                            style={{
-                              fontSize: "0.82rem",
-                              color: "#c2185b",
-                              marginBottom: 3,
-                            }}
-                          >
-                            📸 @{c.insta_id}
-                          </p>
-                        )}
+                      </div>
+                      {c.phone && (
                         <p
                           style={{
-                            fontSize: "0.82rem",
-                            color: T.muted,
+                            fontSize: "0.85rem",
+                            color: T.sub,
                             marginBottom: 3,
                           }}
                         >
-                          {c.orders.length} order
-                          {c.orders.length > 1 ? "s" : ""} ·{" "}
-                          <span style={{ color: T.gold, fontWeight: 700 }}>
-                            ₹{c.total.toLocaleString()}
-                          </span>{" "}
-                          total
+                          📞 {c.phone}
                         </p>
-                        {c.remarks && (
-                          <p
-                            style={{
-                              fontSize: "0.8rem",
-                              color: "#558b2f",
-                              fontStyle: "italic" as const,
-                              marginTop: 6,
-                            }}
-                          >
-                            💬 {c.remarks}
-                          </p>
-                        )}
-                      </div>
-                      <Btn
-                        variant="primary"
-                        onClick={() => {
-                          setEditingCustomer(c.key);
-                          setEditInsta(c.insta_id || "");
-                          setEditRemarks(c.remarks || "");
+                      )}
+                      {c.insta_id && (
+                        <p
+                          style={{
+                            fontSize: "0.82rem",
+                            color: "#c2185b",
+                            marginBottom: 3,
+                          }}
+                        >
+                          📸 @{c.insta_id}
+                        </p>
+                      )}
+                      <p
+                        style={{
+                          fontSize: "0.82rem",
+                          color: T.muted,
+                          marginBottom: 3,
                         }}
                       >
-                        Edit
-                      </Btn>
+                        {c.orders.length} order{c.orders.length > 1 ? "s" : ""}{" "}
+                        ·{" "}
+                        <span style={{ color: T.gold, fontWeight: 700 }}>
+                          ₹{c.total.toLocaleString()}
+                        </span>{" "}
+                        total
+                      </p>
+                      {c.remarks && (
+                        <p
+                          style={{
+                            fontSize: "0.8rem",
+                            color: "#558b2f",
+                            fontStyle: "italic" as const,
+                            marginTop: 6,
+                          }}
+                        >
+                          💬 {c.remarks}
+                        </p>
+                      )}
                     </div>
+                    <Btn
+                      variant="primary"
+                      onClick={() => {
+                        setEditingCustomer(c.key);
+                        setEditInsta(c.insta_id || "");
+                        setEditRemarks(c.remarks || "");
+                      }}
+                    >
+                      Edit
+                    </Btn>
                   </div>
                 )}
               </div>
@@ -2711,7 +2884,6 @@ export default function AdminPage() {
               * Revenue = confirmed orders only. Pending &amp; cancelled
               excluded.
             </p>
-
             <div
               style={{
                 display: "grid",
@@ -2748,7 +2920,6 @@ export default function AdminPage() {
                 sub="per order"
               />
             </div>
-
             <div
               style={{
                 display: "grid",
@@ -2805,13 +2976,13 @@ export default function AdminPage() {
                     {totalExpenses > 0
                       ? Math.round((val / totalExpenses) * 100)
                       : 0}
-                    % of expenses
+                    %
                   </p>
                 </div>
               ))}
             </div>
 
-            {/* Expenses log */}
+            {/* Expense log + add + paste import */}
             <div
               style={{
                 background: T.white,
@@ -2919,7 +3090,7 @@ export default function AdminPage() {
                 })
               )}
 
-              {/* Add expense */}
+              {/* Add single expense */}
               <div
                 style={{
                   marginTop: 16,
@@ -3031,8 +3202,11 @@ export default function AdminPage() {
                     fontFamily: "system-ui, sans-serif",
                   }}
                 >
-                  {saving ? "Adding…" : "Add Expense"}
+                  {saving ? "Adding..." : "Add Expense"}
                 </button>
+
+                {/* Paste or upload JSON */}
+                <ExpenseImporter onImport={handleExpenseImport} />
               </div>
             </div>
 
@@ -3100,6 +3274,63 @@ export default function AdminPage() {
                 ))}
               </div>
             )}
+
+            {/* Box revenue */}
+            {Object.keys(boxRevenue).length > 0 && (
+              <div
+                style={{
+                  background: T.white,
+                  border: `1px solid ${T.border}`,
+                  borderRadius: 8,
+                  padding: "16px 18px",
+                  marginBottom: 14,
+                }}
+              >
+                <p
+                  style={{
+                    fontSize: "0.75rem",
+                    color: T.muted,
+                    letterSpacing: "0.1em",
+                    textTransform: "uppercase" as const,
+                    marginBottom: 14,
+                  }}
+                >
+                  Sales by Box Size
+                </p>
+                {Object.entries(boxRevenue)
+                  .sort(([, a], [, b]) => b.revenue - a.revenue)
+                  .map(([label, data]) => (
+                    <div
+                      key={label}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        padding: "8px 0",
+                        borderBottom: `1px solid ${T.border}`,
+                      }}
+                    >
+                      <span style={{ fontSize: "0.88rem", fontWeight: 500 }}>
+                        {label}
+                      </span>
+                      <div style={{ textAlign: "right" as const }}>
+                        <p
+                          style={{
+                            fontSize: "0.9rem",
+                            fontWeight: 700,
+                            color: "#1976d2",
+                          }}
+                        >
+                          ₹{data.revenue.toLocaleString()}
+                        </p>
+                        <p style={{ fontSize: "0.72rem", color: T.muted }}>
+                          {data.count} orders
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -3148,6 +3379,23 @@ export default function AdminPage() {
                       value={ep.image_url}
                       onChange={(v) => setEp((p) => ({ ...p, image_url: v }))}
                     />
+                    {ep.image_url && (
+                      <img
+                        src={ep.image_url}
+                        alt="preview"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = "none";
+                        }}
+                        style={{
+                          width: 80,
+                          height: 80,
+                          objectFit: "cover",
+                          borderRadius: 6,
+                          marginBottom: 10,
+                          border: `1px solid ${T.border}`,
+                        }}
+                      />
+                    )}
                     <label
                       style={{
                         display: "flex",
@@ -3200,7 +3448,7 @@ export default function AdminPage() {
                           fontFamily: "system-ui, sans-serif",
                         }}
                       >
-                        {saving ? "Saving…" : "Save Changes"}
+                        {saving ? "Saving..." : "Save Changes"}
                       </button>
                       <Btn onClick={() => setEditingProduct(null)}>Cancel</Btn>
                     </div>
@@ -3247,6 +3495,16 @@ export default function AdminPage() {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{ fontSize: "0.92rem", fontWeight: 700 }}>
                         {prod.name}
+                      </p>
+                      <p
+                        style={{
+                          fontSize: "0.78rem",
+                          color: T.muted,
+                          lineHeight: 1.4,
+                          marginBottom: 3,
+                        }}
+                      >
+                        {prod.description || <em>No description</em>}
                       </p>
                       <p style={{ fontSize: "0.75rem" }}>
                         {prod.is_premium ? (
@@ -3408,7 +3666,7 @@ export default function AdminPage() {
                   fontFamily: "system-ui, sans-serif",
                 }}
               >
-                {saving ? "Adding…" : "Add Product"}
+                {saving ? "Adding..." : "Add Product"}
               </button>
             </div>
           </div>
@@ -3523,10 +3781,7 @@ export default function AdminPage() {
                   padding: "10px",
                   borderRadius: 6,
                   border: "none",
-                  background:
-                    saving || !nb.label || !nb.count || !nb.price
-                      ? "#ccc"
-                      : "#1976d2",
+                  background: "#1976d2",
                   color: "#fff",
                   fontSize: "0.88rem",
                   fontWeight: 600,
@@ -3534,7 +3789,7 @@ export default function AdminPage() {
                   fontFamily: "system-ui, sans-serif",
                 }}
               >
-                {saving ? "Adding…" : "Add Box Size"}
+                {saving ? "Adding..." : "Add Box Size"}
               </button>
             </div>
           </div>
