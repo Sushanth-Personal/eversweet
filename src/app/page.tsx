@@ -14,6 +14,10 @@ const IMG: Record<string, string> = {
     "https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/products/mochi-strawberry.webp",
 };
 
+// ── Your payment details ───────────────────────────────────────────
+const UPI_ID = "YOUR_UPI_ID_HERE"; // e.g. "yourname@okicici" — replace this!
+const WHATSAPP_NUMBER = "917907044368"; // already in your code
+
 function getImg(name: string, url: string | null): string {
   if (url) return url;
   const n = name.toLowerCase();
@@ -83,7 +87,6 @@ const TESTIMONIALS = [
 ];
 
 function toDateString(date: Date): string {
-  // Use local date, not UTC
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
@@ -133,6 +136,43 @@ function GoldLine() {
   );
 }
 
+// ── Build UPI intent URL ──────────────────────────────────────────
+function buildUpiUrl(amount: number, name: string): string {
+  const params = new URLSearchParams({
+    pa: UPI_ID,
+    pn: "Eversweet",
+    am: String(amount),
+    cu: "INR",
+    tn: `Eversweet order for ${name}`,
+  });
+  return `upi://pay?${params.toString()}`;
+}
+
+// ── Build WhatsApp pre-filled message ─────────────────────────────
+function buildWhatsAppUrl(
+  customerName: string,
+  amount: number,
+  boxLabel: string,
+  flavourSummary: string,
+  batchLabel: string,
+  batchIcon: string,
+  deliveryDate: string,
+): string {
+  const message = [
+    `Hi! I just paid ₹${amount} for my Eversweet order 🍡`,
+    ``,
+    `📦 ${boxLabel}`,
+    flavourSummary ? `🍡 ${flavourSummary}` : null,
+    `${batchIcon} ${batchLabel} · ${deliveryDate}`,
+    ``,
+    `Please confirm my slot!`,
+  ]
+    .filter((l) => l !== null)
+    .join("\n");
+
+  return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+}
+
 export default function Home() {
   const [products, setProducts] = useState<Product[]>([]);
   const [boxes, setBoxes] = useState<BoxSize[]>([]);
@@ -160,6 +200,8 @@ export default function Home() {
   });
   const [payMethod, setPayMethod] = useState<"qr" | "phone">("qr");
   const [orderDone, setOrderDone] = useState(false);
+  // NEW: track if customer has tapped "Pay via UPI"
+  const [hasTappedPay, setHasTappedPay] = useState(false);
 
   const orderRef = useRef<HTMLElement>(null);
   const slotRef = useRef<HTMLDivElement>(null);
@@ -258,7 +300,6 @@ export default function Home() {
           notes: form.notes.trim(),
           box_size_id: autoBox.id,
           flavours,
-          // Store date + batch directly — no time_slot_id needed
           delivery_date: selectedDate,
           batch_label: batch.label,
           payment_method: payMethod,
@@ -284,7 +325,6 @@ export default function Home() {
     orderRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  // ── Date helpers ────────────────────────────────────────────────
   const todayStr = toDateString(new Date());
   const tomorrowStr = toDateString(new Date(Date.now() + 86400000));
 
@@ -301,6 +341,28 @@ export default function Home() {
   // ── Order confirmed ─────────────────────────────────────────────
   if (orderDone) {
     const batch = BATCHES.find((b) => b.id === selectedBatch)!;
+
+    // Build flavour summary for WhatsApp message
+    const flavourSummary = Object.entries(flavours)
+      .filter(([, qty]) => qty > 0)
+      .map(([id, qty]) => {
+        const prod = products.find((p) => p.id === id);
+        return prod ? `${prod.name} ×${qty}` : null;
+      })
+      .filter(Boolean)
+      .join(", ");
+
+    const upiUrl = buildUpiUrl(autoBox?.price || 0, form.name);
+    const whatsappUrl = buildWhatsAppUrl(
+      form.name,
+      autoBox?.price || 0,
+      autoBox?.label || "",
+      flavourSummary,
+      batch.label,
+      batch.icon,
+      friendlyDate(selectedDate),
+    );
+
     return (
       <main
         style={{
@@ -331,87 +393,295 @@ export default function Home() {
           <em>{form.name.split(" ")[0]}</em>
         </h1>
         <GoldLine />
-        <p
-          style={{
-            color: "var(--cream-dim)",
-            fontSize: "0.875rem",
-            lineHeight: 1.75,
-            marginBottom: 4,
-          }}
-        >
-          Your order has been placed for{" "}
-          <strong style={{ color: "var(--gold)" }}>
-            {batch.icon} {batch.label}
-          </strong>{" "}
-          on{" "}
-          <strong style={{ color: "var(--gold)" }}>
-            {friendlyDate(selectedDate)}
-          </strong>
-          .
-        </p>
-        <p
-          style={{
-            color: "var(--cream-dim)",
-            fontSize: "0.875rem",
-            lineHeight: 1.75,
-            marginBottom: 8,
-          }}
-        >
-          We'll confirm once payment is received.
-        </p>
-        <p
-          style={{
-            color: "var(--muted)",
-            fontSize: "0.8rem",
-            lineHeight: 1.75,
-            marginBottom: 32,
-          }}
-        >
-          Pay via{" "}
-          {payMethod === "qr" ? "the QR code below" : "phone call / UPI"} to
-          lock in your slot.
-        </p>
 
-        {payMethod === "qr" && (
-          <div
+        {/* Order summary pill */}
+        <div
+          style={{
+            background: "rgba(184,134,11,0.08)",
+            border: "1px solid rgba(184,134,11,0.25)",
+            borderRadius: 10,
+            padding: "14px 18px",
+            marginBottom: 28,
+            width: "100%",
+          }}
+        >
+          <p
             style={{
-              background: "white",
-              borderRadius: 8,
-              padding: 16,
-              marginBottom: 32,
-              display: "inline-block",
+              fontSize: "0.82rem",
+              color: "var(--cream-dim)",
+              lineHeight: 1.8,
             }}
           >
-            <img
-              src="/upi-qr.png"
-              alt="UPI QR Code"
-              style={{ width: 160, height: 160, display: "block" }}
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = "none";
+            <strong style={{ color: "var(--gold)" }}>
+              {batch.icon} {batch.label}
+            </strong>{" "}
+            on{" "}
+            <strong style={{ color: "var(--gold)" }}>
+              {friendlyDate(selectedDate)}
+            </strong>
+            <br />
+            <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+              {autoBox?.label} · {flavourSummary}
+            </span>
+          </p>
+        </div>
+
+        {/* ── PAYMENT SECTION ── */}
+        <div
+          style={{
+            width: "100%",
+            background: "rgba(255,255,255,0.04)",
+            border: "1px solid rgba(184,134,11,0.3)",
+            borderRadius: 12,
+            padding: "20px 18px",
+            marginBottom: 24,
+          }}
+        >
+          <p
+            style={{
+              fontSize: "0.62rem",
+              letterSpacing: "0.2em",
+              textTransform: "uppercase" as const,
+              color: "var(--gold)",
+              marginBottom: 6,
+              opacity: 0.85,
+            }}
+          >
+            Complete Your Payment
+          </p>
+          <p
+            style={{
+              fontSize: "1.6rem",
+              fontWeight: 700,
+              color: "var(--gold)",
+              marginBottom: 4,
+              fontFamily: "Cormorant Garamond, serif",
+            }}
+          >
+            ₹{autoBox?.price}
+          </p>
+          <p
+            style={{
+              fontSize: "0.75rem",
+              color: "var(--muted)",
+              marginBottom: 18,
+              lineHeight: 1.6,
+            }}
+          >
+            Your slot is reserved. Pay now to confirm it.
+          </p>
+
+          {/* UPI Pay Button */}
+          <a
+            href={upiUrl}
+            onClick={() => setHasTappedPay(true)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 10,
+              width: "100%",
+              padding: "14px 20px",
+              borderRadius: 10,
+              background: "linear-gradient(135deg, #1a73e8 0%, #0d47a1 100%)",
+              color: "#fff",
+              fontSize: "1rem",
+              fontWeight: 700,
+              textDecoration: "none",
+              marginBottom: 10,
+              boxSizing: "border-box" as const,
+              boxShadow: "0 4px 16px rgba(26,115,232,0.35)",
+              letterSpacing: "0.01em",
+            }}
+          >
+            <span style={{ fontSize: "1.3rem" }}>💳</span>
+            Pay ₹{autoBox?.price} via UPI
+          </a>
+
+          <p
+            style={{
+              fontSize: "0.68rem",
+              color: "var(--muted)",
+              marginBottom: 16,
+              lineHeight: 1.6,
+            }}
+          >
+            Opens Google Pay, PhonePe, Paytm or any UPI app
+            <br />
+            with your amount pre-filled ✓
+          </p>
+
+          {/* Divider */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              marginBottom: 16,
+            }}
+          >
+            <div
+              style={{
+                flex: 1,
+                height: 1,
+                background: "rgba(255,255,255,0.1)",
               }}
             />
-            <p
+            <span
               style={{
-                color: "#555",
-                fontSize: "0.7rem",
-                marginTop: 8,
-                textAlign: "center",
+                fontSize: "0.65rem",
+                color: "var(--muted)",
+                letterSpacing: "0.1em",
               }}
             >
-              Scan to pay ₹{autoBox?.price}
+              AFTER PAYING
+            </span>
+            <div
+              style={{
+                flex: 1,
+                height: 1,
+                background: "rgba(255,255,255,0.1)",
+              }}
+            />
+          </div>
+
+          {/* WhatsApp Screenshot Button */}
+          <a
+            href={whatsappUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 10,
+              width: "100%",
+              padding: "13px 20px",
+              borderRadius: 10,
+              background: hasTappedPay
+                ? "linear-gradient(135deg, #25d366 0%, #128c4a 100%)"
+                : "rgba(37,211,102,0.12)",
+              border: hasTappedPay
+                ? "none"
+                : "1.5px solid rgba(37,211,102,0.4)",
+              color: hasTappedPay ? "#fff" : "#25d366",
+              fontSize: hasTappedPay ? "1rem" : "0.9rem",
+              fontWeight: 700,
+              textDecoration: "none",
+              boxSizing: "border-box" as const,
+              transition: "all 0.3s ease",
+              boxShadow: hasTappedPay
+                ? "0 4px 16px rgba(37,211,102,0.35)"
+                : "none",
+              letterSpacing: "0.01em",
+            }}
+          >
+            <span style={{ fontSize: "1.3rem" }}>
+              {hasTappedPay ? "✅" : "📲"}
+            </span>
+            {hasTappedPay
+              ? "Send Payment Screenshot on WhatsApp"
+              : "Send Screenshot on WhatsApp"}
+          </a>
+
+          {hasTappedPay && (
+            <p
+              style={{
+                fontSize: "0.7rem",
+                color: "#25d366",
+                marginTop: 8,
+                lineHeight: 1.6,
+                opacity: 0.9,
+              }}
+            >
+              Opens WhatsApp with your order details pre-filled.
+              <br />
+              Just attach your payment screenshot and send! 🍡
+            </p>
+          )}
+
+          {!hasTappedPay && (
+            <p
+              style={{
+                fontSize: "0.68rem",
+                color: "var(--muted)",
+                marginTop: 8,
+                lineHeight: 1.6,
+              }}
+            >
+              Pay first, then send us the screenshot to lock your slot.
+            </p>
+          )}
+        </div>
+
+        {/* QR fallback (small, secondary) */}
+        <details
+          style={{
+            width: "100%",
+            marginBottom: 24,
+            cursor: "pointer",
+          }}
+        >
+          <summary
+            style={{
+              fontSize: "0.72rem",
+              color: "var(--muted)",
+              letterSpacing: "0.08em",
+              listStyle: "none",
+              textAlign: "center",
+              padding: "8px 0",
+              cursor: "pointer",
+            }}
+          >
+            ▾ Pay via QR code instead
+          </summary>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column" as const,
+              alignItems: "center",
+              paddingTop: 16,
+            }}
+          >
+            <div
+              style={{
+                background: "white",
+                borderRadius: 8,
+                padding: 16,
+                display: "inline-block",
+              }}
+            >
+              <img
+                src="/upi-qr.png"
+                alt="UPI QR Code"
+                style={{ width: 160, height: 160, display: "block" }}
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = "none";
+                }}
+              />
+              <p
+                style={{
+                  color: "#555",
+                  fontSize: "0.7rem",
+                  marginTop: 8,
+                  textAlign: "center",
+                }}
+              >
+                Scan to pay ₹{autoBox?.price}
+              </p>
+            </div>
+            <p
+              style={{
+                fontSize: "0.68rem",
+                color: "var(--muted)",
+                marginTop: 10,
+              }}
+            >
+              UPI ID:{" "}
+              <strong style={{ color: "var(--cream)" }}>{UPI_ID}</strong>
             </p>
           </div>
-        )}
-
-        {payMethod === "phone" && (
-          <a
-            href="tel:+917907044368"
-            className="btn-gold"
-            style={{ marginBottom: 24, maxWidth: 260 }}
-          >
-            📞 Call to Confirm Payment
-          </a>
-        )}
+        </details>
 
         <div className="divider" style={{ width: "100%", marginBottom: 24 }} />
         <a
@@ -422,7 +692,7 @@ export default function Home() {
             color: "var(--gold)",
             fontSize: "0.7rem",
             letterSpacing: "0.15em",
-            textTransform: "uppercase",
+            textTransform: "uppercase" as const,
             textDecoration: "none",
           }}
         >
@@ -1302,7 +1572,6 @@ export default function Home() {
                 Delivery Date
               </p>
 
-              {/* Quick date chips */}
               <div
                 style={{
                   display: "flex",
@@ -1354,7 +1623,6 @@ export default function Home() {
                 ))}
               </div>
 
-              {/* Full date picker for any future date */}
               <input
                 type="date"
                 min={todayStr}
@@ -1379,7 +1647,6 @@ export default function Home() {
               />
             </div>
 
-            {/* Batch cards — always 3, always available */}
             <p
               style={{
                 fontSize: "0.68rem",
@@ -1557,54 +1824,6 @@ export default function Home() {
                 rows={3}
                 style={{ resize: "none" }}
               />
-            </div>
-
-            <p className="step-label" style={{ marginBottom: 10 }}>
-              Payment method
-            </p>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 8,
-                marginBottom: 20,
-              }}
-            >
-              {(
-                [
-                  { id: "qr", label: "📱 QR / UPI", sub: "Scan & pay" },
-                  {
-                    id: "phone",
-                    label: "📞 Call / UPI",
-                    sub: "Confirm by call",
-                  },
-                ] as const
-              ).map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => setPayMethod(m.id)}
-                  className={`card${payMethod === m.id ? " selected" : ""}`}
-                  style={{
-                    padding: "12px",
-                    cursor: "pointer",
-                    textAlign: "center",
-                    background: "none",
-                    color: "var(--cream)",
-                    transition: "all 0.2s",
-                  }}
-                >
-                  <p style={{ fontSize: "0.82rem" }}>{m.label}</p>
-                  <p
-                    style={{
-                      fontSize: "0.68rem",
-                      color: "var(--muted)",
-                      marginTop: 3,
-                    }}
-                  >
-                    {m.sub}
-                  </p>
-                </button>
-              ))}
             </div>
 
             {/* Order summary */}
@@ -1786,7 +2005,7 @@ export default function Home() {
           ],
           [
             "How do I pay?",
-            "UPI via QR code, or call us to confirm by phone. We lock in your order once payment is received.",
+            "Tap the 'Pay via UPI' button on the confirmation screen — it opens Google Pay, PhonePe, or Paytm with your amount pre-filled. Then send us the screenshot on WhatsApp to confirm your slot.",
           ],
           [
             "What are the box sizes?",
