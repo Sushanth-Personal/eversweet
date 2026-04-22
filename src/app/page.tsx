@@ -404,7 +404,6 @@ export default function Home() {
         }}
       >
         <div style={{ fontSize: 52, marginBottom: 20 }}>🍡</div>
-        <SectionLabel text="Order Received" />
         <h1
           className="font-display"
           style={{
@@ -414,10 +413,12 @@ export default function Home() {
             lineHeight: 1.1,
           }}
         >
-          Thank you,
+          Just one more step <br />
           <br />
           <em>{form.name.split(" ")[0]}</em>
         </h1>
+        <SectionLabel text="Please make payment to confirm your order" />
+
         <GoldLine />
 
         {/* Order summary pill */}
@@ -431,7 +432,13 @@ export default function Home() {
             width: "100%",
           }}
         >
-          <p style={{ fontSize: "0.82rem", color: "var(--cream-dim)", lineHeight: 1.8 }}>
+          <p
+            style={{
+              fontSize: "0.82rem",
+              color: "var(--cream-dim)",
+              lineHeight: 1.8,
+            }}
+          >
             <strong style={{ color: "var(--gold)" }}>
               {batch.icon} {batch.label}
             </strong>{" "}
@@ -440,7 +447,9 @@ export default function Home() {
               {friendlyDate(selectedDate)}
             </strong>
             <br />
-<span style={{ fontSize: "0.75rem", color: "rgba(255,248,230,0.6)" }}>
+            <span
+              style={{ fontSize: "0.75rem", color: "rgba(255,248,230,0.6)" }}
+            >
               {autoBox?.label} · {flavourSummary}
             </span>
           </p>
@@ -492,24 +501,50 @@ export default function Home() {
           </p>
 
           {/* UPI App Buttons */}
-          <p style={{ fontSize: "0.78rem", color: "var(--cream-dim)", marginBottom: 12, lineHeight: 1.6 }}>
+          <p
+            style={{
+              fontSize: "0.78rem",
+              color: "var(--cream-dim)",
+              marginBottom: 12,
+              lineHeight: 1.6,
+            }}
+          >
             Tap your payment app — amount is pre-filled ✓
           </p>
-          <div style={{ display: "flex", flexDirection: "column" as const, gap: 10, marginBottom: 4 }}>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column" as const,
+              gap: 10,
+              marginBottom: 4,
+            }}
+          >
             {/* Google Pay */}
             <a
               href={upiLinks.gpay}
               onClick={() => setHasTappedPay(true)}
               style={{
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
-                width: "100%", padding: "13px 20px", borderRadius: 10,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 10,
+                width: "100%",
+                padding: "13px 20px",
+                borderRadius: 10,
                 background: "linear-gradient(135deg, #1a73e8 0%, #0d47a1 100%)",
-                color: "#fff", fontSize: "0.95rem", fontWeight: 700,
-                textDecoration: "none", boxSizing: "border-box" as const,
+                color: "#fff",
+                fontSize: "0.95rem",
+                fontWeight: 700,
+                textDecoration: "none",
+                boxSizing: "border-box" as const,
                 boxShadow: "0 3px 12px rgba(26,115,232,0.35)",
               }}
             >
-              <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/f/f2/Google_Pay_Logo.svg/512px-Google_Pay_Logo.svg.png" alt="GPay" style={{ width: 28, height: 28, objectFit: "contain" }} />
+              <img
+                src="https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/Payment/img.icons8.com.png"
+                alt="GPay"
+                style={{ width: 28, height: 28, objectFit: "contain" }}
+              />
               Google Pay — ₹{autoBox?.price}
             </a>
             {/* PhonePe */}
@@ -517,15 +552,27 @@ export default function Home() {
               href={upiLinks.phonepe}
               onClick={() => setHasTappedPay(true)}
               style={{
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
-                width: "100%", padding: "13px 20px", borderRadius: 10,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 10,
+                width: "100%",
+                padding: "13px 20px",
+                borderRadius: 10,
                 background: "linear-gradient(135deg, #5f259f 0%, #3d1a6e 100%)",
-                color: "#fff", fontSize: "0.95rem", fontWeight: 700,
-                textDecoration: "none", boxSizing: "border-box" as const,
+                color: "#fff",
+                fontSize: "0.95rem",
+                fontWeight: 700,
+                textDecoration: "none",
+                boxSizing: "border-box" as const,
                 boxShadow: "0 3px 12px rgba(95,37,159,0.35)",
               }}
             >
-              <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/5/5f/PhonePe_Logo.svg/512px-PhonePe_Logo.svg.png" alt="PhonePe" style={{ width: 28, height: 28, objectFit: "contain" }} />
+              <img
+                src="https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/Payment/icons8-phone-pe-48.png"
+                alt="PhonePe"
+                style={{ width: 28, height: 28, objectFit: "contain" }}
+              />
               PhonePe — ₹{autoBox?.price}
             </a>
             {/* Paytm */}
@@ -533,15 +580,27 @@ export default function Home() {
               href={upiLinks.paytm}
               onClick={() => setHasTappedPay(true)}
               style={{
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
-                width: "100%", padding: "13px 20px", borderRadius: 10,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 10,
+                width: "100%",
+                padding: "13px 20px",
+                borderRadius: 10,
                 background: "linear-gradient(135deg, #00baf2 0%, #0073b7 100%)",
-                color: "#fff", fontSize: "0.95rem", fontWeight: 700,
-                textDecoration: "none", boxSizing: "border-box" as const,
+                color: "#fff",
+                fontSize: "0.95rem",
+                fontWeight: 700,
+                textDecoration: "none",
+                boxSizing: "border-box" as const,
                 boxShadow: "0 3px 12px rgba(0,115,183,0.35)",
               }}
             >
-              <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/2/24/Paytm_Logo_%28standalone%29.svg/512px-Paytm_Logo_%28standalone%29.svg.png" alt="Paytm" style={{ width: 28, height: 28, objectFit: "contain" }} />
+              <img
+                src="https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/Payment/icons8-paytm-48.png"
+                alt="Paytm"
+                style={{ width: 28, height: 28, objectFit: "contain" }}
+              />
               Paytm — ₹{autoBox?.price}
             </a>
             {/* Any UPI app fallback */}
@@ -549,12 +608,20 @@ export default function Home() {
               href={upiLinks.generic}
               onClick={() => setHasTappedPay(true)}
               style={{
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
-                width: "100%", padding: "11px 20px", borderRadius: 10,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 10,
+                width: "100%",
+                padding: "11px 20px",
+                borderRadius: 10,
                 background: "transparent",
                 border: "1px solid rgba(184,134,11,0.35)",
-                color: "var(--cream-dim)", fontSize: "0.8rem", fontWeight: 500,
-                textDecoration: "none", boxSizing: "border-box" as const,
+                color: "var(--cream-dim)",
+                fontSize: "0.8rem",
+                fontWeight: 500,
+                textDecoration: "none",
+                boxSizing: "border-box" as const,
               }}
             >
               Other UPI App
@@ -570,11 +637,29 @@ export default function Home() {
               marginBottom: 16,
             }}
           >
-            <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.1)" }} />
-            <span style={{ fontSize: "0.65rem", color: "rgba(255,248,230,0.5)", letterSpacing: "0.1em" }}>
+            <div
+              style={{
+                flex: 1,
+                height: 1,
+                background: "rgba(255,255,255,0.1)",
+              }}
+            />
+            <span
+              style={{
+                fontSize: "0.65rem",
+                color: "rgba(255,248,230,0.5)",
+                letterSpacing: "0.1em",
+              }}
+            >
               AFTER PAYING
             </span>
-            <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.1)" }} />
+            <div
+              style={{
+                flex: 1,
+                height: 1,
+                background: "rgba(255,255,255,0.1)",
+              }}
+            />
           </div>
 
           {/* WhatsApp Screenshot Button */}
@@ -630,8 +715,8 @@ export default function Home() {
             {emailSent
               ? "Screenshot Sent — Slot Confirmed!"
               : hasTappedPay
-              ? "Send Payment Screenshot on WhatsApp"
-              : "Send Screenshot on WhatsApp"}
+                ? "Send Payment Screenshot on WhatsApp"
+                : "Send Screenshot on WhatsApp"}
           </button>
 
           {hasTappedPay && (
@@ -709,12 +794,26 @@ export default function Home() {
                   (e.target as HTMLImageElement).style.display = "none";
                 }}
               />
-              <p style={{ color: "#555", fontSize: "0.7rem", marginTop: 8, textAlign: "center" }}>
+              <p
+                style={{
+                  color: "#555",
+                  fontSize: "0.7rem",
+                  marginTop: 8,
+                  textAlign: "center",
+                }}
+              >
                 Scan to pay ₹{autoBox?.price}
               </p>
             </div>
-            <p style={{ fontSize: "0.68rem", color: "rgba(255,248,230,0.6)", marginTop: 10 }}>
-              UPI ID: <strong style={{ color: "var(--cream-dim)" }}>{UPI_ID}</strong>
+            <p
+              style={{
+                fontSize: "0.68rem",
+                color: "rgba(255,248,230,0.6)",
+                marginTop: 10,
+              }}
+            >
+              UPI ID:{" "}
+              <strong style={{ color: "var(--cream-dim)" }}>{UPI_ID}</strong>
             </p>
           </div>
         </details>
