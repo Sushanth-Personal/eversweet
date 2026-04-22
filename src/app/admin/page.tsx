@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import type { Product, BoxSize, Order } from "@/lib/types";
 
@@ -303,6 +303,319 @@ function StatCard({
   );
 }
 
+// --- ADD THIS BELOW StatCard Component ---
+
+function ExpenseScanner({
+  onDataExtracted,
+}: {
+  onDataExtracted: (data: any[]) => void;
+}) {
+  const [scanning, setScanning] = useState(false);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [results, setResults] = useState<any[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Show image preview
+    const objectUrl = URL.createObjectURL(file);
+    setPreview(objectUrl);
+    setResults(null);
+    setError(null);
+    setScanning(true);
+
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = async () => {
+      const base64 = (reader.result as string).split(",")[1];
+      try {
+        const res = await fetch("/api/extract-bill", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            imageBase64: base64,
+            mimeType: file.type,
+          }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || "API error");
+        }
+
+        const data = await res.json();
+
+        if (!Array.isArray(data) || data.length === 0) {
+          setError("No ingredients or packaging items found in this bill.");
+          setScanning(false);
+          return;
+        }
+
+        setResults(data);
+      } catch (err: any) {
+        setError(err.message || "Something went wrong");
+      } finally {
+        setScanning(false);
+        // Reset input so same file can be re-uploaded
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
+    };
+    reader.onerror = () => {
+      setError("Failed to read file");
+      setScanning(false);
+    };
+  };
+
+  function handleConfirm() {
+    if (results && results.length > 0) {
+      onDataExtracted(results); // ← this passes array
+      setResults(null);
+      setPreview(null);
+      setError(null);
+    }
+  }
+  function handleDiscard() {
+    setResults(null);
+    setPreview(null);
+    setError(null);
+  }
+
+  const CATEGORY_COLORS: Record<
+    string,
+    { bg: string; color: string; icon: string }
+  > = {
+    ingredient: { bg: "#e8f5e9", color: "#2e7d32", icon: "🧪" },
+    packaging: { bg: "#e3f2fd", color: "#1565c0", icon: "📦" },
+  };
+
+  return (
+    <div
+      style={{
+        background: T.white,
+        border: `1px solid ${T.border}`,
+        borderRadius: 8,
+        padding: "16px",
+        marginBottom: "20px",
+      }}
+    >
+      <p
+        style={{
+          fontSize: "0.75rem",
+          color: T.muted,
+          letterSpacing: "0.1em",
+          textTransform: "uppercase",
+          marginBottom: 12,
+          fontWeight: 700,
+        }}
+      >
+        ✨ AI Bill Scanner
+      </p>
+
+      {/* Upload button */}
+      {!results && (
+        <div
+          onClick={() => !scanning && fileInputRef.current?.click()}
+          style={{
+            border: `2px dashed ${scanning ? T.gold : T.border}`,
+            borderRadius: 8,
+            padding: "24px 16px",
+            textAlign: "center",
+            cursor: scanning ? "not-allowed" : "pointer",
+            background: scanning ? T.goldBg : "#fafafa",
+            transition: "all 0.2s",
+          }}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={handleFileChange}
+            disabled={scanning}
+          />
+          {preview && !scanning && (
+            <img
+              src={preview}
+              alt="Bill preview"
+              style={{
+                maxHeight: 140,
+                maxWidth: "100%",
+                borderRadius: 6,
+                marginBottom: 10,
+                objectFit: "contain",
+                border: `1px solid ${T.border}`,
+              }}
+            />
+          )}
+          <p
+            style={{ fontSize: scanning ? "0.9rem" : "2rem", marginBottom: 6 }}
+          >
+            {scanning ? "⏳" : "📸"}
+          </p>
+          <p
+            style={{
+              fontSize: "0.88rem",
+              fontWeight: 600,
+              color: scanning ? T.gold : T.sub,
+            }}
+          >
+            {scanning
+              ? "Analyzing bill with AI..."
+              : "Tap to upload bill photo"}
+          </p>
+          <p style={{ fontSize: "0.72rem", color: T.muted, marginTop: 4 }}>
+            {scanning
+              ? "Identifying ingredients & packaging items"
+              : "JPG, PNG, HEIC supported"}
+          </p>
+        </div>
+      )}
+
+      {/* Error */}
+      {error && (
+        <div
+          style={{
+            background: T.redBg,
+            border: `1px solid #ef9a9a`,
+            borderRadius: 6,
+            padding: "10px 12px",
+            marginTop: 10,
+          }}
+        >
+          <p style={{ fontSize: "0.82rem", color: T.red }}>⚠ {error}</p>
+          <button
+            onClick={() => {
+              setError(null);
+              setPreview(null);
+            }}
+            style={{
+              marginTop: 6,
+              fontSize: "0.78rem",
+              color: T.red,
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              textDecoration: "underline",
+            }}
+          >
+            Try again
+          </button>
+        </div>
+      )}
+
+      {/* Results preview */}
+      {results && (
+        <div>
+          <p
+            style={{
+              fontSize: "0.82rem",
+              fontWeight: 700,
+              color: T.green,
+              marginBottom: 10,
+            }}
+          >
+            ✓ Found {results.length} item{results.length !== 1 ? "s" : ""}
+          </p>
+          <div style={{ marginBottom: 12 }}>
+            {results.map((item, i) => {
+              const cat =
+                CATEGORY_COLORS[item.category] || CATEGORY_COLORS.ingredient;
+              return (
+                <div
+                  key={i}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    padding: "8px 10px",
+                    borderRadius: 6,
+                    marginBottom: 5,
+                    background: cat.bg,
+                    border: `1px solid ${cat.color}22`,
+                  }}
+                >
+                  <div>
+                    <span style={{ fontSize: "0.72rem", marginRight: 6 }}>
+                      {cat.icon}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: "0.85rem",
+                        fontWeight: 500,
+                        color: T.text,
+                      }}
+                    >
+                      {item.description}
+                    </span>
+                    <span
+                      style={{
+                        marginLeft: 8,
+                        fontSize: "0.65rem",
+                        padding: "1px 6px",
+                        borderRadius: 8,
+                        background: "white",
+                        color: cat.color,
+                        fontWeight: 600,
+                      }}
+                    >
+                      {item.category}
+                    </span>
+                  </div>
+                  <span
+                    style={{
+                      fontSize: "0.88rem",
+                      fontWeight: 700,
+                      color: T.red,
+                    }}
+                  >
+                    ₹{item.amount}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              onClick={handleConfirm}
+              style={{
+                flex: 1,
+                padding: "10px",
+                borderRadius: 6,
+                border: "none",
+                background: "#1976d2",
+                color: "#fff",
+                fontSize: "0.88rem",
+                fontWeight: 600,
+                cursor: "pointer",
+                fontFamily: "system-ui, sans-serif",
+              }}
+            >
+              ✓ Save All to Expenses
+            </button>
+            <button
+              onClick={handleDiscard}
+              style={{
+                padding: "10px 16px",
+                borderRadius: 6,
+                border: `1px solid ${T.border}`,
+                background: T.white,
+                color: T.sub,
+                fontSize: "0.88rem",
+                cursor: "pointer",
+                fontFamily: "system-ui, sans-serif",
+              }}
+            >
+              Discard
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 function getOrderBatchLabel(order: ExtOrder): string {
   if (order.delivery_date && order.batch_label) {
     const icon = getBatchIcon(order.batch_label);
@@ -1659,20 +1972,30 @@ export default function AdminPage() {
       const data = JSON.parse(text);
       const items = Array.isArray(data) ? data : data.expenses;
       if (!Array.isArray(items)) throw new Error("Expected array");
+
+      // Get current IST date (YYYY-MM-DD) correctly even after midnight
+      const now = new Date();
+      const ISTOffset = 5.5 * 60 * 60 * 1000; // IST is UTC + 5:30
+      const istDate = new Date(now.getTime() + ISTOffset);
+      const uploadedDate = istDate.toISOString().split("T")[0];
+
       const valid = items
         .filter((e) => e.description && Number(e.amount) > 0)
         .map((e) => ({
           description: String(e.description).trim(),
           amount: Number(e.amount),
           category: e.category || "ingredient",
-          date: e.date || new Date().toISOString().split("T")[0],
-          note: e.note || "",
+          date: uploadedDate, // Always use the upload date
+          note: e.note || "AI Scanned Bill",
         }));
+
       if (valid.length === 0) throw new Error("No valid entries");
+
       const { error } = await supabase.from("expenses").insert(valid);
       if (error) throw error;
+
       await load();
-      flash(`${valid.length} expenses imported ✓`);
+      flash(`${valid.length} expenses added for ${uploadedDate} ✓`);
     } catch (err: unknown) {
       flash(
         `Import failed: ${err instanceof Error ? err.message : "Invalid JSON"}`,
@@ -2039,50 +2362,75 @@ export default function AdminPage() {
 
   function filterByPeriod<T extends { created_at: string }>(items: T[]): T[] {
     const now = new Date();
+
+    // Set up local strings (YYYY-MM-DD)
+    // Since it's currently Kochi midnight, we ensure we use IST
+    const offset = 5.5 * 60 * 60 * 1000;
+    const localNow = new Date(now.getTime() + offset);
+    const todayStr = localNow.toISOString().split("T")[0];
+
     return items.filter((item) => {
-      const dateStr =
-        (item as Record<string, string>).order_date || item.created_at;
-      const d = new Date(dateStr);
+      const dateStr = (item as any).order_date || item.created_at.split("T")[0];
+
+      // 1. PINNED START (April 21st)
       if (dashPeriod === "from_start") {
-        const start = new Date(TRACKING_START_DATE);
-        start.setHours(0, 0, 0, 0);
-        return d >= start;
+        return dateStr >= TRACKING_START_DATE;
       }
-      if (dashPeriod === "today")
-        return d.toDateString() === now.toDateString();
-      if (dashPeriod === "week")
-        return now.getTime() - d.getTime() < 7 * 86400000;
-      if (dashPeriod === "month")
-        return (
-          d.getMonth() === now.getMonth() &&
-          d.getFullYear() === now.getFullYear()
-        );
-      return true;
+
+      // 2. TODAY ONLY
+      if (dashPeriod === "today") {
+        return dateStr === todayStr;
+      }
+
+      // 3. THIS WEEK (Strictly from Monday)
+      if (dashPeriod === "week") {
+        const day = localNow.getDay(); // 0 is Sun, 1 is Mon... 4 is Thu
+        const diffToMonday = day === 0 ? 6 : day - 1; // Days to subtract to get to Mon
+
+        const monday = new Date(localNow);
+        monday.setDate(localNow.getDate() - diffToMonday);
+        const mondayStr = monday.toISOString().split("T")[0];
+
+        return dateStr >= mondayStr && dateStr <= todayStr;
+      }
+
+      // 4. THIS MONTH (Strictly from the 1st)
+      if (dashPeriod === "month") {
+        const firstOfMonth = todayStr.substring(0, 8) + "01"; // "2026-04-01"
+        return dateStr >= firstOfMonth && dateStr <= todayStr;
+      }
+
+      return true; // "all"
     });
   }
 
   function filterExpByPeriod(items: Expense[]): Expense[] {
     const now = new Date();
+    const offset = 5.5 * 60 * 60 * 1000;
+    const localNow = new Date(now.getTime() + offset);
+    const todayStr = localNow.toISOString().split("T")[0];
+
     return items.filter((item) => {
-      const d = new Date(item.date);
-      if (dashPeriod === "from_start") {
-        const start = new Date(TRACKING_START_DATE);
-        start.setHours(0, 0, 0, 0);
-        return d >= start;
+      const dateStr = item.date;
+
+      if (dashPeriod === "from_start") return dateStr >= TRACKING_START_DATE;
+      if (dashPeriod === "today") return dateStr === todayStr;
+
+      if (dashPeriod === "week") {
+        const day = localNow.getDay();
+        const diffToMonday = day === 0 ? 6 : day - 1;
+        const monday = new Date(localNow);
+        monday.setDate(localNow.getDate() - diffToMonday);
+        return dateStr >= monday.toISOString().split("T")[0];
       }
-      if (dashPeriod === "today")
-        return d.toDateString() === now.toDateString();
-      if (dashPeriod === "week")
-        return now.getTime() - d.getTime() < 7 * 86400000;
-      if (dashPeriod === "month")
-        return (
-          d.getMonth() === now.getMonth() &&
-          d.getFullYear() === now.getFullYear()
-        );
+
+      if (dashPeriod === "month") {
+        return dateStr.startsWith(todayStr.substring(0, 7));
+      }
+
       return true;
     });
   }
-
   const paidOrders = filterByPeriod(
     orders.filter((o) => PAID_STATUSES.includes(o.status)),
   ) as ExtOrder[];
@@ -2878,6 +3226,11 @@ export default function AdminPage() {
                 ),
               )}
             </div>
+            <ExpenseScanner
+              onDataExtracted={async (data) => {
+                await handleExpenseImport(JSON.stringify(data));
+              }}
+            />
             <p
               style={{ fontSize: "0.72rem", color: T.muted, marginBottom: 14 }}
             >
@@ -3166,15 +3519,13 @@ export default function AdminPage() {
                   disabled={saving || !ne.description || !ne.amount}
                   onClick={async () => {
                     setSaving(true);
-                    await supabase
-                      .from("expenses")
-                      .insert({
-                        description: ne.description,
-                        amount: Number(ne.amount),
-                        category: ne.category,
-                        date: ne.date,
-                        note: ne.note,
-                      });
+                    await supabase.from("expenses").insert({
+                      description: ne.description,
+                      amount: Number(ne.amount),
+                      category: ne.category,
+                      date: ne.date,
+                      note: ne.note,
+                    });
                     setNe({
                       description: "",
                       amount: "",
@@ -3633,16 +3984,14 @@ export default function AdminPage() {
                 disabled={saving || !np.name}
                 onClick={async () => {
                   setSaving(true);
-                  await supabase
-                    .from("products")
-                    .insert({
-                      name: np.name,
-                      description: np.description,
-                      price: 0,
-                      is_premium: np.is_premium,
-                      image_url: np.image_url || null,
-                      sort_order: products.length + 1,
-                    });
+                  await supabase.from("products").insert({
+                    name: np.name,
+                    description: np.description,
+                    price: 0,
+                    is_premium: np.is_premium,
+                    image_url: np.image_url || null,
+                    sort_order: products.length + 1,
+                  });
                   setNp({
                     name: "",
                     description: "",
@@ -3762,15 +4111,13 @@ export default function AdminPage() {
                 disabled={saving || !nb.label || !nb.count || !nb.price}
                 onClick={async () => {
                   setSaving(true);
-                  await supabase
-                    .from("box_sizes")
-                    .insert({
-                      label: nb.label,
-                      count: Number(nb.count),
-                      price: Number(nb.price),
-                      is_active: true,
-                      sort_order: boxes.length + 1,
-                    });
+                  await supabase.from("box_sizes").insert({
+                    label: nb.label,
+                    count: Number(nb.count),
+                    price: Number(nb.price),
+                    is_active: true,
+                    sort_order: boxes.length + 1,
+                  });
                   setNb({ label: "", count: "", price: "" });
                   await load();
                   setSaving(false);
