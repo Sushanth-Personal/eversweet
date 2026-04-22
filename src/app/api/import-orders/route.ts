@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 
-// POST /api/import-orders
-// Accepts array of orders to bulk insert (for past DM orders, Excel imports)
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -39,7 +37,6 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      // Try to match box size
       const boxLabel = (item.box_size_label || "").toLowerCase().trim();
       const box = boxMap[boxLabel];
 
@@ -52,7 +49,8 @@ export async function POST(req: NextRequest) {
         remarks: String(item.remarks || "").trim(),
         box_size_id: box?.id || null,
         flavours: item.flavours || {},
-        time_slot_id: null,
+        delivery_date: item.order_date || item.delivery_date || null,
+        delivery_batch: item.delivery_batch || null,
         payment_method: item.payment_method || "upi",
         total_price: Number(item.total_price) || box?.price || 0,
         status: item.status || "dispatched",

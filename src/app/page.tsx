@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import type { Product, BoxSize, TimeSlot, CustomerForm } from "@/lib/types";
+import type { Product, BoxSize, CustomerForm } from "@/lib/types";
 
 const IMG: Record<string, string> = {
   matcha:
@@ -23,6 +23,30 @@ function getImg(name: string, url: string | null): string {
     return "https://images.unsplash.com/photo-1541167760496-162955ed8a9f?w=600&q=80";
   return IMG.default;
 }
+
+// ── Static batch definitions — no DB needed ────────────────────────
+const BATCHES = [
+  {
+    id: "morning",
+    label: "Morning Batch",
+    icon: "🌅",
+    timeRange: "9AM – 12PM",
+  },
+  {
+    id: "afternoon",
+    label: "Afternoon Batch",
+    icon: "☀️",
+    timeRange: "12PM – 4PM",
+  },
+  {
+    id: "evening",
+    label: "Evening Batch",
+    icon: "🌙",
+    timeRange: "5PM – 8PM",
+  },
+] as const;
+
+type BatchId = (typeof BATCHES)[number]["id"];
 
 // ── Real testimonials from customer DMs ───────────────────────────
 const TESTIMONIALS = [
@@ -58,12 +82,16 @@ const TESTIMONIALS = [
   },
 ];
 
-// ── Box sizes sorted by count — used for auto-selection ───────────
-const BOX_COUNTS = [4, 6, 8, 12, 16];
+function toDateString(date: Date): string {
+  // Use local date, not UTC
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
 
 function getAutoBox(boxes: BoxSize[], totalPicked: number): BoxSize | null {
   if (totalPicked === 0) return null;
-  // find the smallest box that fits totalPicked
   const sorted = [...boxes].sort((a, b) => a.count - b.count);
   return (
     sorted.find((b) => b.count >= totalPicked) || sorted[sorted.length - 1]
@@ -108,18 +136,18 @@ function GoldLine() {
 export default function Home() {
   const [products, setProducts] = useState<Product[]>([]);
   const [boxes, setBoxes] = useState<BoxSize[]>([]);
-  const [slots, setSlots] = useState<TimeSlot[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // New simplified flow: customer picks flavours freely
   const [flavours, setFlavours] = useState<Record<string, number>>({});
-  const [slotId, setSlotId] = useState("");
+  const [selectedBatch, setSelectedBatch] = useState<BatchId | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string>(
+    toDateString(new Date()),
+  );
 
-  // Auto-box state
   const [autoBox, setAutoBox] = useState<BoxSize | null>(null);
-  const [needsOneMore, setNeedsOneMore] = useState(false); // prompt user to add 1 more
+  const [needsOneMore, setNeedsOneMore] = useState(false);
 
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
   const [placing, setPlacing] = useState(false);
   const [error, setError] = useState("");
 
@@ -134,13 +162,12 @@ export default function Home() {
   const [orderDone, setOrderDone] = useState(false);
 
   const orderRef = useRef<HTMLElement>(null);
-  const flavourRef = useRef<HTMLDivElement>(null);
   const slotRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     async function load() {
-      const [{ data: p }, { data: b }, { data: s }] = await Promise.all([
+      const [{ data: p }, { data: b }] = await Promise.all([
         supabase
           .from("products")
           .select("*")
@@ -151,16 +178,9 @@ export default function Home() {
           .select("*")
           .eq("is_active", true)
           .order("sort_order"),
-        supabase
-          .from("time_slots")
-          .select("*")
-          .eq("is_active", true)
-          .order("date")
-          .order("label"),
       ]);
       if (p) setProducts(p);
       if (b) setBoxes(b);
-      if (s) setSlots(s);
       setLoading(false);
     }
     load();
@@ -168,16 +188,10 @@ export default function Home() {
 
   const totalPicked = Object.values(flavours).reduce((a, b) => a + b, 0);
 
-  // Recompute auto-box whenever flavours change
   useEffect(() => {
     const box = getAutoBox(boxes, totalPicked);
     setAutoBox(box);
-    // Check if user is just 1 short of filling the current box
-    if (box && box.count - totalPicked === 1) {
-      setNeedsOneMore(true);
-    } else {
-      setNeedsOneMore(false);
-    }
+    setNeedsOneMore(!!(box && box.count - totalPicked === 1));
   }, [flavours, boxes]);
 
   function adjustFlavour(id: string, delta: number) {
@@ -185,7 +199,6 @@ export default function Home() {
       const cur = prev[id] || 0;
       const next = cur + delta;
       if (next < 0) return prev;
-      // cap at the largest box size
       const maxBox = [...boxes].sort((a, b) => b.count - a.count)[0];
       const maxAllowed = maxBox ? maxBox.count : 16;
       if (totalPicked + delta > maxAllowed) return prev;
@@ -215,8 +228,8 @@ export default function Home() {
     );
   }
 
-  function pickSlot(id: string) {
-    setSlotId(id);
+  function pickBatch(id: BatchId) {
+    setSelectedBatch(id);
     setStep(3);
     setTimeout(
       () =>
@@ -225,22 +238,14 @@ export default function Home() {
     );
   }
 
-  function goBackToSlot() {
-    setStep(2);
-    setTimeout(
-      () =>
-        slotRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
-      80,
-    );
-  }
-
   async function placeOrder() {
-    if (!autoBox || !form.name.trim() || !form.phone.trim() || !slotId) {
+    if (!autoBox || !form.name.trim() || !form.phone.trim() || !selectedBatch) {
       setError("Please fill in your name and phone number.");
       return;
     }
     setPlacing(true);
     setError("");
+    const batch = BATCHES.find((b) => b.id === selectedBatch)!;
     try {
       const res = await fetch("/api/orders", {
         method: "POST",
@@ -253,7 +258,9 @@ export default function Home() {
           notes: form.notes.trim(),
           box_size_id: autoBox.id,
           flavours,
-          time_slot_id: slotId,
+          // Store date + batch directly — no time_slot_id needed
+          delivery_date: selectedDate,
+          batch_label: batch.label,
           payment_method: payMethod,
           total_price: autoBox.price,
         }),
@@ -277,8 +284,23 @@ export default function Home() {
     orderRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  // ── Date helpers ────────────────────────────────────────────────
+  const todayStr = toDateString(new Date());
+  const tomorrowStr = toDateString(new Date(Date.now() + 86400000));
+
+  function friendlyDate(dateStr: string) {
+    if (dateStr === todayStr) return "Today";
+    if (dateStr === tomorrowStr) return "Tomorrow";
+    return new Date(dateStr + "T00:00:00").toLocaleDateString("en-IN", {
+      weekday: "long",
+      day: "numeric",
+      month: "short",
+    });
+  }
+
   // ── Order confirmed ─────────────────────────────────────────────
   if (orderDone) {
+    const batch = BATCHES.find((b) => b.id === selectedBatch)!;
     return (
       <main
         style={{
@@ -314,11 +336,28 @@ export default function Home() {
             color: "var(--cream-dim)",
             fontSize: "0.875rem",
             lineHeight: 1.75,
+            marginBottom: 4,
+          }}
+        >
+          Your order has been placed for{" "}
+          <strong style={{ color: "var(--gold)" }}>
+            {batch.icon} {batch.label}
+          </strong>{" "}
+          on{" "}
+          <strong style={{ color: "var(--gold)" }}>
+            {friendlyDate(selectedDate)}
+          </strong>
+          .
+        </p>
+        <p
+          style={{
+            color: "var(--cream-dim)",
+            fontSize: "0.875rem",
+            lineHeight: 1.75,
             marginBottom: 8,
           }}
         >
-          Your order has been placed. We&apos;ll confirm once payment is
-          received.
+          We'll confirm once payment is received.
         </p>
         <p
           style={{
@@ -460,7 +499,6 @@ export default function Home() {
                   }}
                 />
               ))}
-            {/* Bottom gradient so text below doesn't clash */}
             <div
               style={{
                 position: "absolute",
@@ -591,7 +629,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ══ PRODUCTS (browse only, no box logic here) ══════════════ */}
+      {/* ══ PRODUCTS ══════════════════════════════════════════════ */}
       <section
         style={{
           padding: "36px 24px",
@@ -660,7 +698,6 @@ export default function Home() {
                     {p.is_premium && (
                       <span className="badge-premium">Premium</span>
                     )}
-                    {/* Qty badge on image */}
                     {qty > 0 && (
                       <div
                         style={{
@@ -780,7 +817,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* Live auto-box indicator */}
         {totalPicked > 0 && autoBox && (
           <div
             style={{
@@ -837,17 +873,6 @@ export default function Home() {
                   }}
                 >
                   ✨ Add 1 more piece to fill your box!
-                </p>
-                <p
-                  style={{
-                    fontSize: "0.68rem",
-                    color: "var(--muted)",
-                    marginTop: 3,
-                    marginBottom: 0,
-                  }}
-                >
-                  You're {autoBox!.count - totalPicked} away from a full{" "}
-                  {autoBox!.label}
                 </p>
               </div>
             )}
@@ -1003,8 +1028,8 @@ export default function Home() {
         </h2>
         <GoldLine />
 
-        {/* ── STEP 1: Pick flavours (no box selection needed) ──── */}
-        <div ref={flavourRef} style={{ marginBottom: 28, textAlign: "left" }}>
+        {/* ── STEP 1: Pick flavours ──────────────────────────────── */}
+        <div style={{ marginBottom: 28, textAlign: "left" }}>
           <p className="step-label">Step 1 — Pick your flavours</p>
           <p
             style={{
@@ -1163,7 +1188,6 @@ export default function Home() {
                 )}
               </div>
 
-              {/* Box size breakdown */}
               <div
                 style={{
                   marginTop: 10,
@@ -1203,8 +1227,8 @@ export default function Home() {
           {error && step === 1 && (
             <p
               style={{
-                fontSize: "0.82rem", // bump from 0.78rem
-                color: "#e57373", // brighter red, readable on dark bg
+                fontSize: "0.82rem",
+                color: "#e57373",
                 marginTop: 10,
                 textAlign: "center",
                 fontWeight: 500,
@@ -1240,114 +1264,207 @@ export default function Home() {
               >
                 {autoBox && totalPicked < autoBox.count
                   ? `Add ${autoBox.count - totalPicked} more to unlock →`
-                  : "Choose Delivery Slot →"}
+                  : "Choose Delivery Date & Batch →"}
               </button>
             </div>
           )}
         </div>
 
-        {/* ── STEP 2: Time slot ─────────────────────────────────── */}
+        {/* ── STEP 2: Date + Batch selection ───────────────────── */}
         {step >= 2 && (
-          <div ref={slotRef} style={{ marginBottom: 28, textAlign: "left" }}>
+          <div ref={slotRef} style={{ marginTop: 40, textAlign: "left" }}>
             <div className="divider" style={{ marginBottom: 24 }} />
-            <p className="step-label">Step 2 — Choose delivery time</p>
+            <p className="step-label">
+              Step 2 — Choose your delivery date & batch
+            </p>
+            <p
+              style={{
+                fontSize: "0.72rem",
+                color: "var(--muted)",
+                marginBottom: 16,
+              }}
+            >
+              Pick any date. All three batches are always available.
+            </p>
 
-            {slots.length === 0 ? (
-              <div
-                className="card"
-                style={{ padding: 16, borderRadius: 6, textAlign: "center" }}
+            {/* Date picker */}
+            <div style={{ marginBottom: 20 }}>
+              <p
+                style={{
+                  fontSize: "0.68rem",
+                  color: "var(--gold)",
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  marginBottom: 8,
+                  fontWeight: 600,
+                }}
               >
-                <p style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
-                  No slots available right now.
-                </p>
-                <p
-                  style={{
-                    color: "var(--muted)",
-                    fontSize: "0.75rem",
-                    marginTop: 6,
-                  }}
-                >
-                  DM us on Instagram to book.
-                </p>
+                Delivery Date
+              </p>
+
+              {/* Quick date chips */}
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  marginBottom: 10,
+                  flexWrap: "wrap",
+                }}
+              >
+                {[
+                  { label: "Today", val: todayStr },
+                  { label: "Tomorrow", val: tomorrowStr },
+                  {
+                    label: new Date(
+                      Date.now() + 2 * 86400000,
+                    ).toLocaleDateString("en-IN", {
+                      weekday: "short",
+                      day: "numeric",
+                      month: "short",
+                    }),
+                    val: toDateString(new Date(Date.now() + 2 * 86400000)),
+                  },
+                ].map((chip) => (
+                  <button
+                    key={chip.val}
+                    onClick={() => {
+                      setSelectedDate(chip.val);
+                      setSelectedBatch(null);
+                    }}
+                    style={{
+                      padding: "7px 14px",
+                      borderRadius: 20,
+                      border: `1px solid ${selectedDate === chip.val ? "var(--gold)" : "var(--border2)"}`,
+                      background:
+                        selectedDate === chip.val
+                          ? "rgba(184,134,11,0.12)"
+                          : "transparent",
+                      color:
+                        selectedDate === chip.val
+                          ? "var(--gold)"
+                          : "var(--muted)",
+                      fontSize: "0.78rem",
+                      fontWeight: selectedDate === chip.val ? 700 : 400,
+                      cursor: "pointer",
+                      fontFamily: "system-ui, sans-serif",
+                    }}
+                  >
+                    {chip.label}
+                  </button>
+                ))}
               </div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {slots.map((slot) => {
-                  const full = slot.current_orders >= slot.max_orders;
-                  const spotsLeft = slot.max_orders - slot.current_orders;
-                  const isSelected = slotId === slot.id;
-                  return (
-                    <button
-                      key={slot.id}
-                      disabled={full}
-                      onClick={() => pickSlot(slot.id)}
-                      className={`card${isSelected ? " selected" : ""}`}
-                      style={{
-                        padding: "14px 16px",
-                        cursor: full ? "not-allowed" : "pointer",
-                        textAlign: "left",
-                        opacity: full ? 0.4 : 1,
-                        background: "none",
-                        color: "var(--cream)",
-                        width: "100%",
-                        transition: "all 0.2s",
-                      }}
+
+              {/* Full date picker for any future date */}
+              <input
+                type="date"
+                min={todayStr}
+                value={selectedDate}
+                onChange={(e) => {
+                  setSelectedDate(e.target.value);
+                  setSelectedBatch(null);
+                }}
+                style={{
+                  width: "100%",
+                  background: "var(--surface)",
+                  border: "1px solid rgba(184,134,11,0.4)",
+                  color: "var(--cream)",
+                  padding: "10px 14px",
+                  borderRadius: 8,
+                  fontSize: "0.9rem",
+                  fontFamily: "system-ui, sans-serif",
+                  outline: "none",
+                  colorScheme: "dark",
+                  boxSizing: "border-box" as const,
+                }}
+              />
+            </div>
+
+            {/* Batch cards — always 3, always available */}
+            <p
+              style={{
+                fontSize: "0.68rem",
+                color: "var(--gold)",
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                marginBottom: 10,
+                fontWeight: 600,
+              }}
+            >
+              {friendlyDate(selectedDate)} — Choose a batch
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {BATCHES.map((batch) => {
+                const isSelected = selectedBatch === batch.id;
+                return (
+                  <button
+                    key={batch.id}
+                    onClick={() => pickBatch(batch.id)}
+                    style={{
+                      padding: "16px 18px",
+                      textAlign: "left",
+                      width: "100%",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      border: isSelected
+                        ? "1px solid var(--gold)"
+                        : "1px solid var(--border2)",
+                      background: isSelected
+                        ? "rgba(184,134,11,0.06)"
+                        : "var(--surface)",
+                      borderRadius: 8,
+                      transition: "all 0.2s ease",
+                      cursor: "pointer",
+                      fontFamily: "system-ui, sans-serif",
+                    }}
+                  >
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 12 }}
                     >
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                        }}
-                      >
-                        <div>
-                          <p style={{ fontSize: "0.87rem", fontWeight: 500 }}>
-                            {slot.label}
-                          </p>
-                          <p
-                            style={{
-                              fontSize: "0.72rem",
-                              color: "var(--muted)",
-                              marginTop: 2,
-                            }}
-                          >
-                            {new Date(slot.date).toLocaleDateString("en-IN", {
-                              weekday: "short",
-                              day: "numeric",
-                              month: "short",
-                            })}
-                          </p>
-                        </div>
-                        <span
+                      <span style={{ fontSize: "1.8rem", lineHeight: 1 }}>
+                        {batch.icon}
+                      </span>
+                      <div>
+                        <p
                           style={{
-                            fontSize: "0.65rem",
-                            padding: "3px 8px",
-                            borderRadius: 3,
-                            background: full
-                              ? "rgba(192,64,64,0.15)"
-                              : spotsLeft <= 3
-                                ? "rgba(180,120,0,0.15)"
-                                : "rgba(74,138,90,0.15)",
-                            color: full
-                              ? "var(--red)"
-                              : spotsLeft <= 3
-                                ? "var(--gold)"
-                                : "var(--green)",
-                            letterSpacing: "0.08em",
+                            fontSize: "0.95rem",
+                            fontWeight: 700,
+                            marginBottom: 3,
+                            color: isSelected ? "var(--gold)" : "var(--cream)",
                           }}
                         >
-                          {full
-                            ? "Sold out"
-                            : spotsLeft <= 3
-                              ? `${spotsLeft} left`
-                              : "Available"}
-                        </span>
+                          {batch.label}
+                        </p>
+                        <p
+                          style={{
+                            fontSize: "0.75rem",
+                            color: isSelected
+                              ? "rgba(184,134,11,0.7)"
+                              : "var(--muted)",
+                          }}
+                        >
+                          {batch.timeRange}
+                        </p>
                       </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+                    </div>
+                    {isSelected && (
+                      <span
+                        style={{
+                          fontSize: "0.7rem",
+                          padding: "4px 10px",
+                          borderRadius: 4,
+                          background: "rgba(184,134,11,0.2)",
+                          color: "var(--gold)",
+                          fontWeight: 700,
+                        }}
+                      >
+                        ✓ SELECTED
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -1357,7 +1474,17 @@ export default function Home() {
             <div className="divider" style={{ marginBottom: 24 }} />
 
             <button
-              onClick={goBackToSlot}
+              onClick={() => {
+                setStep(2);
+                setTimeout(
+                  () =>
+                    slotRef.current?.scrollIntoView({
+                      behavior: "smooth",
+                      block: "start",
+                    }),
+                  80,
+                );
+              }}
               style={{
                 background: "transparent",
                 border: "none",
@@ -1371,7 +1498,7 @@ export default function Home() {
                 fontFamily: "system-ui, sans-serif",
               }}
             >
-              ← Back to time slots
+              ← Back to batches
             </button>
 
             <p className="step-label">Step 3 — Your details</p>
@@ -1527,14 +1654,38 @@ export default function Home() {
                       >
                         {prod.name} × {qty}
                       </span>
-                      <span
-                        style={{ fontSize: "0.75rem", color: "var(--muted)" }}
-                      >
-                        ₹{prod.price * qty}
-                      </span>
                     </div>
                   );
                 })}
+                {selectedBatch &&
+                  (() => {
+                    const batch = BATCHES.find((b) => b.id === selectedBatch)!;
+                    return (
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          marginTop: 2,
+                        }}
+                      >
+                        <span
+                          style={{ fontSize: "0.75rem", color: "var(--muted)" }}
+                        >
+                          {batch.icon} {batch.label} · {batch.timeRange}
+                        </span>
+                        <span
+                          style={{ fontSize: "0.75rem", color: "var(--muted)" }}
+                        >
+                          {new Date(
+                            selectedDate + "T00:00:00",
+                          ).toLocaleDateString("en-IN", {
+                            day: "numeric",
+                            month: "short",
+                          })}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 <div className="divider" style={{ margin: "6px 0" }} />
                 <div
                   style={{ display: "flex", justifyContent: "space-between" }}
@@ -1623,15 +1774,15 @@ export default function Home() {
           ],
           [
             "How fresh is the mochi?",
-            "Made fresh on the day of your delivery slot. Best enjoyed within 24 hours. This is what separates Eversweet from the frozen mochi you've had before.",
+            "Made fresh on the day of your delivery batch. Best enjoyed within 24 hours. This is what separates Eversweet from the frozen mochi you've had before.",
           ],
           [
-            "Why does freshness matter so much?",
-            "Mochi rice flour skin becomes tough and rubbery when frozen. Fresh mochi has a completely different texture — cloud-soft, yielding, never stiff. Once you taste it fresh you'll understand.",
+            "What are the delivery batches?",
+            "We deliver in three batches — Morning (9AM–12PM), Afternoon (12PM–4PM), and Evening (5PM–8PM). You can book for any date you like, for any of the 3 batches.",
           ],
           [
-            "Can I do advance booking?",
-            "Yes! Select a future date time slot while ordering. We accept orders up to 3 days in advance.",
+            "Can I order in advance?",
+            "Yes! Just pick any future date when choosing your batch. There's no limit on how far ahead you can book.",
           ],
           [
             "How do I pay?",
@@ -1734,6 +1885,7 @@ export default function Home() {
           © {new Date().getFullYear()} Eversweet Company
         </p>
       </footer>
+
       {/* ══ STICKY BOX PROGRESS BAR ══════════════════════════════════ */}
       {totalPicked > 0 && step === 1 && autoBox && (
         <div
@@ -1751,7 +1903,6 @@ export default function Home() {
             zIndex: 100,
           }}
         >
-          {/* Label row */}
           <div
             style={{
               display: "flex",
@@ -1785,7 +1936,6 @@ export default function Home() {
             </span>
           </div>
 
-          {/* Progress bar */}
           <div
             style={{
               width: "100%",
@@ -1810,7 +1960,6 @@ export default function Home() {
             />
           </div>
 
-          {/* Dot indicators */}
           <div
             style={{
               display: "flex",
@@ -1845,8 +1994,8 @@ export default function Home() {
             onClick={proceedToSlot}
           >
             {autoBox.count - totalPicked === 0
-              ? "Continue to delivery slot →"
-              : `Fill ${autoBox.count - totalPicked} more piece${autoBox.count - totalPicked === 1 ? "" : "s"} to unlock slot`}
+              ? "Continue to delivery date →"
+              : `Fill ${autoBox.count - totalPicked} more piece${autoBox.count - totalPicked === 1 ? "" : "s"} to unlock`}
           </button>
         </div>
       )}

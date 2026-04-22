@@ -1,8 +1,22 @@
+// Key changes from original:
+// 1. Removed time_slots fetching — batches are now static
+// 2. getSlotLabel() reads order.delivery_date + order.batch_label directly
+// 3. Removed "Batches" tab from admin nav
+// 4. ManualOrderForm uses a date picker + static batch dropdown instead of DB slots
+// 5. Orders API should store delivery_date + batch_label columns (add via Supabase migration)
+//
+// SUPABASE MIGRATION needed — run this in your Supabase SQL editor:
+//
+//   ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_date date;
+//   ALTER TABLE orders ADD COLUMN IF NOT EXISTS batch_label text;
+//
+// That's it. time_slots table can stay for old orders, just unused going forward.
+
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
-import type { Product, BoxSize, TimeSlot, Order } from "@/lib/types";
+import type { Product, BoxSize, Order } from "@/lib/types";
 
 type Tab =
   | "orders"
@@ -10,8 +24,31 @@ type Tab =
   | "customers"
   | "dashboard"
   | "products"
-  | "slots"
   | "boxes";
+
+const BATCHES = [
+  {
+    id: "morning",
+    label: "Morning Batch",
+    icon: "🌅",
+    timeRange: "9AM – 12PM",
+  },
+  {
+    id: "afternoon",
+    label: "Afternoon Batch",
+    icon: "☀️",
+    timeRange: "12PM – 4PM",
+  },
+  { id: "evening", label: "Evening Batch", icon: "🌙", timeRange: "5PM – 8PM" },
+] as const;
+
+function getBatchIcon(label: string): string {
+  const l = label.toLowerCase();
+  if (l.includes("morning")) return "🌅";
+  if (l.includes("afternoon")) return "☀️";
+  if (l.includes("evening")) return "🌙";
+  return "📦";
+}
 
 const STATUS_FLOW = [
   "pending",
@@ -21,6 +58,7 @@ const STATUS_FLOW = [
   "porter_booked",
   "dispatched",
 ] as const;
+
 const STATUS_LABELS: Record<string, string> = {
   pending: "Payment Pending",
   confirmed: "Order Confirmed",
@@ -30,6 +68,7 @@ const STATUS_LABELS: Record<string, string> = {
   dispatched: "Dispatched",
   cancelled: "Cancelled",
 };
+
 const STATUS_COLORS: Record<
   string,
   { bg: string; text: string; border: string }
@@ -42,6 +81,7 @@ const STATUS_COLORS: Record<
   dispatched: { bg: "#e8f5e9", text: "#1b5e20", border: "#43a047" },
   cancelled: { bg: "#ffebee", text: "#b71c1c", border: "#ef5350" },
 };
+
 function nextStatus(s: string): string | null {
   const i = STATUS_FLOW.indexOf(s as (typeof STATUS_FLOW)[number]);
   return i === -1 || i === STATUS_FLOW.length - 1 ? null : STATUS_FLOW[i + 1];
@@ -91,9 +131,6 @@ const T = {
   blueBg: "#e3f2fd",
 };
 
-// ── TRACKING START DATE — set once, never change ──────────────────
-// This is the date from which cost/revenue tracking begins.
-// All data before this date is ignored in the cost per mochi calculation.
 const TRACKING_START_DATE = "2026-04-21";
 
 type Expense = {
@@ -105,11 +142,14 @@ type Expense = {
   note?: string;
   created_at: string;
 };
+
 type ExtOrder = Order & {
   insta_id?: string;
   remarks?: string;
   source?: string;
   order_date?: string;
+  delivery_date?: string; // ← new
+  batch_label?: string; // ← new
 };
 
 // ── Shared components ──────────────────────────────────────────────
@@ -281,11 +321,27 @@ function StatCard({
   );
 }
 
+// ── Slot label from order fields ───────────────────────────────────
+function getOrderBatchLabel(order: ExtOrder): string {
+  // New orders: use delivery_date + batch_label
+  if (order.delivery_date && order.batch_label) {
+    const icon = getBatchIcon(order.batch_label);
+    const dateObj = new Date(order.delivery_date + "T00:00:00");
+    const dateStr = dateObj.toLocaleDateString("en-IN", {
+      day: "numeric",
+      month: "short",
+    });
+    return `${icon} ${order.batch_label} · ${dateStr}`;
+  }
+  // Legacy orders: fall back to order_date or created_at date
+  const dateStr = order.order_date || order.created_at?.split("T")[0] || "";
+  return dateStr ? `📦 DM Order · ${dateStr}` : "📦 DM Order";
+}
+
 // ── Order card ─────────────────────────────────────────────────────
 function OrderCard({
   order,
   isRepeat,
-  slotLabel,
   productMap,
   onStatusChange,
   onCancel,
@@ -293,11 +349,10 @@ function OrderCard({
 }: {
   order: ExtOrder;
   isRepeat: boolean;
-  slotLabel: string;
   productMap: Record<string, string>;
   onStatusChange: (id: string, status: string) => Promise<void>;
   onCancel: (id: string) => Promise<void>;
-  onPorterEmail: (order: ExtOrder, slotLabel: string) => Promise<void>;
+  onPorterEmail: (order: ExtOrder) => Promise<void>;
 }) {
   const [updating, setUpdating] = useState(false);
   const [emailing, setEmailing] = useState(false);
@@ -309,6 +364,7 @@ function OrderCard({
         .map(([id, q]) => `${productMap[id] || "Unknown"} ×${q}`)
         .join(", ")
     : "";
+  const batchLabel = getOrderBatchLabel(order);
 
   return (
     <div
@@ -411,7 +467,7 @@ function OrderCard({
         </div>
       )}
       <p style={{ fontSize: "0.85rem", color: T.sub, marginBottom: 4 }}>
-        🕐 {slotLabel} ·{" "}
+        🕐 {batchLabel} ·{" "}
         <span style={{ color: T.gold, fontWeight: 600 }}>
           ₹{order.total_price}
         </span>{" "}
@@ -459,7 +515,7 @@ function OrderCard({
                 setUpdating(true);
                 if (next === "porter_booked") {
                   setEmailing(true);
-                  await onPorterEmail(order, slotLabel);
+                  await onPorterEmail(order);
                   setEmailing(false);
                 }
                 await onStatusChange(order.id, next);
@@ -544,7 +600,6 @@ function ManualOrderForm({
   boxes,
   customers,
   products,
-  slots,
   onSave,
   onClose,
 }: {
@@ -556,7 +611,6 @@ function ManualOrderForm({
     remarks: string;
   }[];
   products: Product[];
-  slots: TimeSlot[];
   onSave: () => void;
   onClose: () => void;
 }) {
@@ -569,21 +623,19 @@ function ManualOrderForm({
     remarks: "",
     notes: "",
     order_date: new Date().toISOString().split("T")[0],
+    delivery_date: new Date().toISOString().split("T")[0],
+    batch_label: "Morning Batch",
     payment_method: "upi",
     status: "dispatched",
-    time_slot_id: "",
   });
-
   const [boxRows, setBoxRows] = useState<
     { box_size_label: string; price: string }[]
   >([{ box_size_label: "", price: "" }]);
-
   const [flavours, setFlavours] = useState<Record<string, number>>({});
   const [saving, setSaving] = useState(false);
   const [nameSuggestions, setNameSuggestions] = useState<typeof customers>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const f = (k: string) => (v: string) => setForm((p) => ({ ...p, [k]: v }));
-
   const totalPrice = boxRows.reduce(
     (sum, r) => sum + (Number(r.price) || 0),
     0,
@@ -597,9 +649,7 @@ function ManualOrderForm({
       );
       setNameSuggestions(matches.slice(0, 6));
       setShowSuggestions(matches.length > 0);
-    } else {
-      setShowSuggestions(false);
-    }
+    } else setShowSuggestions(false);
   }
 
   function selectCustomer(c: (typeof customers)[0]) {
@@ -626,9 +676,7 @@ function ManualOrderForm({
           box_size_label: value,
           price: box ? String(box.price) : updated[i].price,
         };
-      } else {
-        updated[i] = { ...updated[i], price: value };
-      }
+      } else updated[i] = { ...updated[i], price: value };
       return updated;
     });
   }
@@ -658,7 +706,8 @@ function ManualOrderForm({
         notes: form.notes.trim() || null,
         box_size_id: box?.id || null,
         flavours: isFirst && Object.keys(flavours).length > 0 ? flavours : {},
-        time_slot_id: form.time_slot_id || null,
+        delivery_date: form.delivery_date,
+        batch_label: form.batch_label,
         payment_method: form.payment_method,
         total_price: Number(row.price),
         status: form.status,
@@ -681,7 +730,6 @@ function ManualOrderForm({
         marginBottom: 16,
       }}
     >
-      {/* Header */}
       <div
         style={{
           display: "flex",
@@ -707,7 +755,6 @@ function ManualOrderForm({
         </button>
       </div>
 
-      {/* Customer name with autocomplete */}
       <div
         style={{
           display: "grid",
@@ -817,38 +864,45 @@ function ManualOrderForm({
         onChange={f("address")}
       />
 
-      {/* Time slot */}
-      <select
-        value={form.time_slot_id}
-        onChange={(e) =>
-          setForm((p) => ({ ...p, time_slot_id: e.target.value }))
-        }
+      {/* Delivery date + batch */}
+      <div
         style={{
-          width: "100%",
-          background: T.white,
-          border: `1px solid ${T.border}`,
-          color: form.time_slot_id ? T.text : T.muted,
-          padding: "10px 12px",
-          borderRadius: 6,
-          fontSize: "0.9rem",
-          marginBottom: 8,
-          fontFamily: "system-ui, sans-serif",
-          outline: "none",
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: "0 8px",
         }}
       >
-        <option value="">No slot (DM order)</option>
-        {slots
-          .filter((s) => s.is_active)
-          .map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.label} ·{" "}
-              {new Date(s.date).toLocaleDateString("en-IN", {
-                day: "numeric",
-                month: "short",
-              })}
+        <Input
+          type="date"
+          placeholder="Delivery Date"
+          value={form.delivery_date}
+          onChange={f("delivery_date")}
+        />
+        <select
+          value={form.batch_label}
+          onChange={(e) =>
+            setForm((p) => ({ ...p, batch_label: e.target.value }))
+          }
+          style={{
+            width: "100%",
+            background: T.white,
+            border: `1px solid ${T.border}`,
+            color: T.text,
+            padding: "10px 12px",
+            borderRadius: 6,
+            fontSize: "0.9rem",
+            marginBottom: 8,
+            fontFamily: "system-ui, sans-serif",
+            outline: "none",
+          }}
+        >
+          {BATCHES.map((b) => (
+            <option key={b.id} value={b.label}>
+              {b.icon} {b.label} · {b.timeRange}
             </option>
           ))}
-      </select>
+        </select>
+      </div>
 
       {/* Box rows */}
       <p
@@ -1036,7 +1090,6 @@ function ManualOrderForm({
                           color: T.sub,
                           cursor: qty === 0 ? "not-allowed" : "pointer",
                           fontSize: "1rem",
-                          lineHeight: "1",
                           opacity: qty === 0 ? 0.3 : 1,
                           display: "flex",
                           alignItems: "center",
@@ -1067,7 +1120,6 @@ function ManualOrderForm({
                           color: "#fff",
                           cursor: "pointer",
                           fontSize: "1rem",
-                          lineHeight: "1",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
@@ -1083,7 +1135,6 @@ function ManualOrderForm({
         </>
       )}
 
-      {/* Date / status / remarks */}
       <div
         style={{
           display: "grid",
@@ -1150,17 +1201,13 @@ function ManualOrderForm({
       >
         {saving
           ? "Saving…"
-          : `Save ${
-              boxRows.filter((r) => r.price).length > 1
-                ? `${boxRows.filter((r) => r.price).length} Orders`
-                : "Order"
-            } · ₹${totalPrice}`}
+          : `Save ${boxRows.filter((r) => r.price).length > 1 ? `${boxRows.filter((r) => r.price).length} Orders` : "Order"} · ₹${totalPrice}`}
       </button>
     </div>
   );
 }
 
-// ── Bulk import JSON for orders ────────────────────────────────────
+// ── Bulk import ────────────────────────────────────────────────────
 function BulkOrderImport({
   onImport,
 }: {
@@ -1169,7 +1216,6 @@ function BulkOrderImport({
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [importing, setImporting] = useState(false);
-
   if (!open)
     return (
       <button
@@ -1188,7 +1234,6 @@ function BulkOrderImport({
         📂 Bulk Import Orders (JSON / Excel export)
       </button>
     );
-
   return (
     <div
       style={{
@@ -1222,22 +1267,6 @@ function BulkOrderImport({
           ✕
         </button>
       </div>
-      <pre
-        style={{
-          background: "#f8f8f8",
-          borderRadius: 6,
-          padding: "8px 10px",
-          fontSize: "0.68rem",
-          color: T.sub,
-          marginBottom: 8,
-          overflowX: "auto" as const,
-        }}
-      >
-        {`[{ "customer_name":"Name", "phone":"", "insta_id":"",
-   "box_size_label":"Box of 4", "total_price":499,
-   "order_date":"2026-04-20", "status":"dispatched",
-   "remarks":"", "payment_method":"upi" }]`}
-      </pre>
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -1293,7 +1322,6 @@ export default function AdminPage() {
   const [tab, setTab] = useState<Tab>("orders");
 
   const [orders, setOrders] = useState<ExtOrder[]>([]);
-  const [slots, setSlots] = useState<TimeSlot[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [boxes, setBoxes] = useState<BoxSize[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -1318,7 +1346,6 @@ export default function AdminPage() {
     is_premium: false,
     image_url: "",
   });
-  const [ns, setNs] = useState({ label: "", date: "", max_orders: "10" });
   const [nb, setNb] = useState({ label: "", count: "", price: "" });
   const [ne, setNe] = useState({
     description: "",
@@ -1333,8 +1360,6 @@ export default function AdminPage() {
     text: "",
     type: "success",
   });
-
-  // ── Default to "from_start" so cost calc ignores all history ──
   const [dashPeriod, setDashPeriod] = useState<
     "from_start" | "today" | "week" | "month" | "all"
   >("from_start");
@@ -1349,14 +1374,13 @@ export default function AdminPage() {
   });
 
   const load = useCallback(async () => {
-    const [{ data: o }, { data: s }, { data: p }, { data: b }, { data: ex }] =
+    const [{ data: o }, { data: p }, { data: b }, { data: ex }] =
       await Promise.all([
         supabase
           .from("orders")
           .select("*")
           .order("created_at", { ascending: false })
           .limit(500),
-        supabase.from("time_slots").select("*").order("date").order("label"),
         supabase.from("products").select("*").order("sort_order"),
         supabase.from("box_sizes").select("*").order("sort_order"),
         supabase
@@ -1378,7 +1402,6 @@ export default function AdminPage() {
         ),
       );
     }
-    if (s) setSlots(s as TimeSlot[]);
     if (p) setProducts(p as Product[]);
     if (b) setBoxes(b as BoxSize[]);
     if (ex) setExpenses(ex as Expense[]);
@@ -1391,13 +1414,6 @@ export default function AdminPage() {
   function flash(text: string, type: "success" | "error" = "success") {
     setMsg({ text, type });
     setTimeout(() => setMsg({ text: "", type: "success" }), 3500);
-  }
-
-  function getSlotLabel(slotId: string) {
-    if (!slotId) return "DM Order";
-    const slot = slots.find((s) => s.id === slotId);
-    if (!slot) return "DM Order";
-    return `${slot.label} · ${new Date(slot.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`;
   }
 
   async function handleStatusChange(id: string, status: string) {
@@ -1419,7 +1435,7 @@ export default function AdminPage() {
     flash("Order cancelled");
   }
 
-  async function handlePorterEmail(order: ExtOrder, slotLabel: string) {
+  async function handlePorterEmail(order: ExtOrder) {
     try {
       const res = await fetch("/api/porter-email", {
         method: "POST",
@@ -1428,7 +1444,7 @@ export default function AdminPage() {
           customer_name: order.customer_name,
           phone: order.phone,
           address: order.address,
-          slot: slotLabel,
+          slot: getOrderBatchLabel(order),
           total_price: order.total_price,
         }),
       });
@@ -1503,7 +1519,7 @@ export default function AdminPage() {
   > = {};
   orders.forEach((o) => {
     const key = o.phone || o.customer_name;
-    if (!customerMap[key]) {
+    if (!customerMap[key])
       customerMap[key] = {
         name: o.customer_name,
         phone: o.phone || "",
@@ -1513,7 +1529,6 @@ export default function AdminPage() {
         total: 0,
         latest_id: o.id,
       };
-    }
     customerMap[key].orders.push(o);
     customerMap[key].total += o.total_price || 0;
     if (
@@ -1538,9 +1553,6 @@ export default function AdminPage() {
       (c.insta_id || "").toLowerCase().includes(customerSearch.toLowerCase()),
   );
 
-  // ── Dashboard period filtering ─────────────────────────────────
-  // FIX: from_start uses a fixed date so data accumulates correctly.
-  // Each filter function returns a filtered array (not nested filter).
   const PAID_STATUSES = [
     "confirmed",
     "cooking",
@@ -1591,7 +1603,7 @@ export default function AdminPage() {
           d.getMonth() === now.getMonth() &&
           d.getFullYear() === now.getFullYear()
         );
-      return true; // "all"
+      return true;
     });
   }
 
@@ -1645,7 +1657,6 @@ export default function AdminPage() {
   const dispatchedOrders = orders.filter((o) => o.status === "dispatched");
   const pendingCount = orders.filter((o) => o.status === "pending").length;
 
-  // ── Period button label helper ─────────────────────────────────
   function periodLabel(p: string): string {
     if (p === "from_start") return "📌 From Start";
     if (p === "today") return "Today";
@@ -1654,7 +1665,6 @@ export default function AdminPage() {
     return "All Time";
   }
 
-  // ── Login ──────────────────────────────────────────────────────
   if (!authed) {
     return (
       <main
@@ -1833,7 +1843,6 @@ export default function AdminPage() {
               { id: "customers", label: `Customers (${customers.length})` },
               { id: "dashboard", label: "📊 Dashboard" },
               { id: "products", label: "Products" },
-              { id: "slots", label: "Slots" },
               { id: "boxes", label: "Boxes" },
             ] as { id: Tab; label: string }[]
           ).map((t) => (
@@ -1957,10 +1966,8 @@ export default function AdminPage() {
             </div>
 
             {showManualForm && (
-              // In the tab === "orders" section, find ManualOrderForm and add customers prop:
               <ManualOrderForm
                 boxes={boxes}
-                slots={slots}
                 customers={customers.map((c) => ({
                   name: c.name,
                   phone: c.phone,
@@ -1993,19 +2000,16 @@ export default function AdminPage() {
               </div>
             ) : (
               (() => {
-                // Group by (phone or name) + (slot or date)
                 const groups: { key: string; orders: ExtOrder[] }[] = [];
                 const seen = new Map<string, ExtOrder[]>();
-
                 activeOrders.forEach((o) => {
                   const slotOrDate =
-                    o.time_slot_id ||
+                    o.delivery_date ||
                     (o as ExtOrder).order_date ||
                     o.created_at?.split("T")[0];
                   const identity =
                     o.phone?.trim() || o.customer_name?.trim().toLowerCase();
                   const key = `${identity}__${slotOrDate}`;
-
                   if (!seen.has(key)) {
                     seen.set(key, []);
                     groups.push({ key, orders: seen.get(key)! });
@@ -2014,14 +2018,12 @@ export default function AdminPage() {
                 });
 
                 return groups.map(({ key, orders: grp }) => {
-                  // Single order — render normal OrderCard
                   if (grp.length === 1) {
                     return (
                       <OrderCard
                         key={grp[0].id}
                         order={grp[0]}
                         isRepeat={repeatPhones.has(grp[0].phone)}
-                        slotLabel={getSlotLabel(grp[0].time_slot_id)}
                         productMap={productMap}
                         onStatusChange={handleStatusChange}
                         onCancel={handleCancel}
@@ -2030,7 +2032,6 @@ export default function AdminPage() {
                     );
                   }
 
-                  // Grouped card
                   const first = grp[0];
                   const combinedTotal = grp.reduce(
                     (s, o) => s + (o.total_price || 0),
@@ -2041,8 +2042,6 @@ export default function AdminPage() {
                   const allSameStatus = grp.every(
                     (o) => o.status === first.status,
                   );
-
-                  // Merge flavours across all orders in group
                   const mergedFlavours: Record<string, number> = {};
                   grp.forEach((o) => {
                     if (!o.flavours) return;
@@ -2070,7 +2069,6 @@ export default function AdminPage() {
                         boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
                       }}
                     >
-                      {/* Name row */}
                       <div
                         style={{
                           display: "flex",
@@ -2104,20 +2102,6 @@ export default function AdminPage() {
                             🔄 REPEAT
                           </span>
                         )}
-                        {(first as ExtOrder).source === "dm" && (
-                          <span
-                            style={{
-                              fontSize: "0.65rem",
-                              padding: "2px 8px",
-                              borderRadius: 10,
-                              background: "#fce4ec",
-                              color: "#c2185b",
-                              fontWeight: 600,
-                            }}
-                          >
-                            📱 DM
-                          </span>
-                        )}
                         <span
                           style={{
                             fontSize: "0.65rem",
@@ -2148,8 +2132,6 @@ export default function AdminPage() {
                                 .join(" / ")}
                         </span>
                       </div>
-
-                      {/* Phone */}
                       <div
                         style={{
                           display: "flex",
@@ -2171,21 +2153,6 @@ export default function AdminPage() {
                           <CopyBtn value={first.phone} label="Phone" />
                         )}
                       </div>
-
-                      {/* Instagram */}
-                      {(first as ExtOrder).insta_id && (
-                        <p
-                          style={{
-                            fontSize: "0.82rem",
-                            color: "#c2185b",
-                            marginBottom: 4,
-                          }}
-                        >
-                          📸 @{(first as ExtOrder).insta_id}
-                        </p>
-                      )}
-
-                      {/* Address */}
                       {first.address && (
                         <div
                           style={{
@@ -2207,8 +2174,6 @@ export default function AdminPage() {
                           <CopyBtn value={first.address} label="Address" />
                         </div>
                       )}
-
-                      {/* Slot + total */}
                       <p
                         style={{
                           fontSize: "0.85rem",
@@ -2216,14 +2181,12 @@ export default function AdminPage() {
                           marginBottom: 6,
                         }}
                       >
-                        🕐 {getSlotLabel(first.time_slot_id)} ·{" "}
+                        🕐 {getOrderBatchLabel(first)} ·{" "}
                         <span style={{ color: T.gold, fontWeight: 600 }}>
                           ₹{combinedTotal}
                         </span>{" "}
                         · {first.payment_method}
                       </p>
-
-                      {/* Per-box breakdown */}
                       <div
                         style={{
                           background: "#fafafa",
@@ -2287,8 +2250,6 @@ export default function AdminPage() {
                           </span>
                         </div>
                       </div>
-
-                      {/* Flavours */}
                       {flavourList && (
                         <p
                           style={{
@@ -2300,32 +2261,6 @@ export default function AdminPage() {
                           🍡 {flavourList}
                         </p>
                       )}
-
-                      {/* Remarks */}
-                      {(first as ExtOrder).remarks && (
-                        <p
-                          style={{
-                            fontSize: "0.82rem",
-                            color: "#558b2f",
-                            fontStyle: "italic" as const,
-                            marginBottom: 4,
-                          }}
-                        >
-                          💬 {(first as ExtOrder).remarks}
-                        </p>
-                      )}
-
-                      <p
-                        style={{
-                          fontSize: "0.72rem",
-                          color: T.muted,
-                          marginBottom: 12,
-                        }}
-                      >
-                        {new Date(first.created_at).toLocaleString("en-IN")}
-                      </p>
-
-                      {/* Action buttons — advance/cancel all */}
                       {grp.every(
                         (o) =>
                           o.status !== "dispatched" && o.status !== "cancelled",
@@ -2342,12 +2277,8 @@ export default function AdminPage() {
                               onClick={async () => {
                                 for (const o of grp) {
                                   const next = nextStatus(o.status);
-                                  if (next === "porter_booked") {
-                                    await handlePorterEmail(
-                                      o,
-                                      getSlotLabel(o.time_slot_id),
-                                    );
-                                  }
+                                  if (next === "porter_booked")
+                                    await handlePorterEmail(o);
                                   if (next)
                                     await handleStatusChange(o.id, next);
                                 }
@@ -2497,11 +2428,6 @@ export default function AdminPage() {
                         ₹{o.total_price}
                       </span>
                     </p>
-                    {(o as ExtOrder).insta_id && (
-                      <p style={{ fontSize: "0.78rem", color: "#c2185b" }}>
-                        📸 @{(o as ExtOrder).insta_id}
-                      </p>
-                    )}
                     {o.address && (
                       <p style={{ fontSize: "0.8rem", color: T.muted }}>
                         📍 {o.address}
@@ -2525,7 +2451,7 @@ export default function AdminPage() {
                         marginTop: 3,
                       }}
                     >
-                      {getSlotLabel(o.time_slot_id)}
+                      {getOrderBatchLabel(o)}
                     </p>
                   </div>
                   <span
@@ -2561,7 +2487,6 @@ export default function AdminPage() {
               {customers.reduce((s, c) => s + c.total, 0).toLocaleString()}{" "}
               total revenue
             </p>
-
             {filteredCustomers.map((c) => (
               <div
                 key={c.key}
@@ -2613,8 +2538,7 @@ export default function AdminPage() {
                     <div style={{ display: "flex", gap: 8 }}>
                       <button
                         onClick={async () => {
-                          const ordersForCustomer = c.orders;
-                          for (const o of ordersForCustomer) {
+                          for (const o of c.orders)
                             await supabase
                               .from("orders")
                               .update({
@@ -2622,7 +2546,6 @@ export default function AdminPage() {
                                 remarks: editRemarks.trim(),
                               })
                               .eq("id", o.id);
-                          }
                           setEditingCustomer(null);
                           await load();
                           flash("Customer updated ✓");
@@ -2717,42 +2640,6 @@ export default function AdminPage() {
                           </span>{" "}
                           total
                         </p>
-                        <div
-                          style={{
-                            marginTop: 6,
-                            paddingTop: 6,
-                            borderTop: `1px solid ${T.border}`,
-                          }}
-                        >
-                          {c.orders.slice(0, 3).map((o) => (
-                            <p
-                              key={o.id}
-                              style={{
-                                fontSize: "0.75rem",
-                                color: T.muted,
-                                marginBottom: 2,
-                              }}
-                            >
-                              {(o as ExtOrder).order_date ||
-                                o.created_at?.split("T")[0]}{" "}
-                              ·{" "}
-                              {boxes.find((b) => b.id === o.box_size_id)
-                                ?.label || `Box`}{" "}
-                              · ₹{o.total_price}
-                              {o.status === "cancelled" && (
-                                <span style={{ color: T.red }}>
-                                  {" "}
-                                  · cancelled
-                                </span>
-                              )}
-                            </p>
-                          ))}
-                          {c.orders.length > 3 && (
-                            <p style={{ fontSize: "0.72rem", color: T.muted }}>
-                              +{c.orders.length - 3} more
-                            </p>
-                          )}
-                        </div>
                         {c.remarks && (
                           <p
                             style={{
@@ -2787,7 +2674,6 @@ export default function AdminPage() {
         {/* ── DASHBOARD ──────────────────────────────────────── */}
         {tab === "dashboard" && (
           <div>
-            {/* Period selector */}
             <div
               style={{
                 display: "flex",
@@ -2819,20 +2705,6 @@ export default function AdminPage() {
                 ),
               )}
             </div>
-            {/* Show the tracking start date when From Start is active */}
-            {dashPeriod === "from_start" && (
-              <p
-                style={{ fontSize: "0.72rem", color: T.blue, marginBottom: 6 }}
-              >
-                📌 Tracking from{" "}
-                {new Date(TRACKING_START_DATE).toLocaleDateString("en-IN", {
-                  day: "numeric",
-                  month: "long",
-                  year: "numeric",
-                })}{" "}
-                onwards
-              </p>
-            )}
             <p
               style={{ fontSize: "0.72rem", color: T.muted, marginBottom: 14 }}
             >
@@ -2877,7 +2749,6 @@ export default function AdminPage() {
               />
             </div>
 
-            {/* Expense breakdown */}
             <div
               style={{
                 display: "grid",
@@ -2939,368 +2810,6 @@ export default function AdminPage() {
                 </div>
               ))}
             </div>
-
-            {/* Cost per mochi calculator */}
-            {/* FIX: uses ingredientExp + packagingExp for true cost per mochi */}
-            <div
-              style={{
-                background: T.white,
-                border: `1px solid ${T.border}`,
-                borderRadius: 8,
-                padding: "16px 18px",
-                marginBottom: 14,
-                boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-              }}
-            >
-              <p
-                style={{
-                  fontSize: "0.75rem",
-                  color: T.muted,
-                  letterSpacing: "0.1em",
-                  textTransform: "uppercase" as const,
-                  marginBottom: 12,
-                }}
-              >
-                🍡 Cost per Mochi
-              </p>
-              <p
-                style={{ fontSize: "0.82rem", color: T.sub, marginBottom: 12 }}
-              >
-                All-time cost per mochi (ingredients + packaging) — unaffected
-                by period filter.
-              </p>
-              {(() => {
-                const trackingStart = new Date(TRACKING_START_DATE);
-                trackingStart.setHours(0, 0, 0, 0);
-
-                const trackedOrders = orders.filter((o) => {
-                  if (!PAID_STATUSES.includes(o.status)) return false;
-                  const dateStr = (o as ExtOrder).order_date || o.created_at;
-                  return new Date(dateStr) >= trackingStart;
-                });
-
-                const trackedExpenses = expenses.filter(
-                  (e) => new Date(e.date) >= trackingStart,
-                );
-
-                const allIngredientExp = trackedExpenses
-                  .filter((e) => e.category === "ingredient")
-                  .reduce((sum, e) => sum + e.amount, 0);
-                const allPackagingExp = trackedExpenses
-                  .filter((e) => e.category === "packaging")
-                  .reduce((sum, e) => sum + e.amount, 0);
-
-                const totalMochi = trackedOrders.reduce((sum, o) => {
-                  const box = boxes.find((b) => b.id === o.box_size_id);
-                  return sum + (box?.count || 0);
-                }, 0);
-                const costPerMochi =
-                  totalMochi > 0
-                    ? (allIngredientExp + allPackagingExp) / totalMochi
-                    : 0;
-                const allRevenue = trackedOrders.reduce(
-                  (s, o) => s + (o.total_price || 0),
-                  0,
-                );
-                const revenuePerMochi =
-                  totalMochi > 0 ? allRevenue / totalMochi : 0;
-                return (
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 1fr 1fr",
-                      gap: 10,
-                    }}
-                  >
-                    <div
-                      style={{
-                        textAlign: "center" as const,
-                        background: T.greenBg,
-                        borderRadius: 6,
-                        padding: "10px",
-                      }}
-                    >
-                      <p
-                        style={{
-                          fontSize: "0.65rem",
-                          color: T.green,
-                          fontWeight: 700,
-                          marginBottom: 4,
-                        }}
-                      >
-                        COST / MOCHI
-                      </p>
-                      <p
-                        style={{
-                          fontSize: "1.4rem",
-                          fontWeight: 700,
-                          color: T.green,
-                        }}
-                      >
-                        {totalMochi > 0 ? `₹${costPerMochi.toFixed(1)}` : "—"}
-                      </p>
-                      <p style={{ fontSize: "0.65rem", color: T.muted }}>
-                        ingredients + packaging
-                      </p>
-                    </div>
-                    <div
-                      style={{
-                        textAlign: "center" as const,
-                        background: T.blueBg,
-                        borderRadius: 6,
-                        padding: "10px",
-                      }}
-                    >
-                      <p
-                        style={{
-                          fontSize: "0.65rem",
-                          color: T.blue,
-                          fontWeight: 700,
-                          marginBottom: 4,
-                        }}
-                      >
-                        REVENUE / MOCHI
-                      </p>
-                      <p
-                        style={{
-                          fontSize: "1.4rem",
-                          fontWeight: 700,
-                          color: T.blue,
-                        }}
-                      >
-                        {totalMochi > 0
-                          ? `₹${revenuePerMochi.toFixed(1)}`
-                          : "—"}
-                      </p>
-                      <p style={{ fontSize: "0.65rem", color: T.muted }}>
-                        /mochi
-                      </p>
-                    </div>
-                    <div
-                      style={{
-                        textAlign: "center" as const,
-                        background: T.goldBg,
-                        borderRadius: 6,
-                        padding: "10px",
-                      }}
-                    >
-                      <p
-                        style={{
-                          fontSize: "0.65rem",
-                          color: T.gold,
-                          fontWeight: 700,
-                          marginBottom: 4,
-                        }}
-                      >
-                        TOTAL MOCHIS
-                      </p>
-                      <p
-                        style={{
-                          fontSize: "1.4rem",
-                          fontWeight: 700,
-                          color: T.gold,
-                        }}
-                      >
-                        {totalMochi > 0 ? totalMochi : "—"}
-                      </p>
-                      <p style={{ fontSize: "0.65rem", color: T.muted }}>
-                        all-time delivered
-                      </p>
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-
-            {/* Customers summary */}
-            <div
-              style={{
-                background: T.white,
-                border: `1px solid ${T.border}`,
-                borderRadius: 8,
-                padding: "16px 18px",
-                marginBottom: 14,
-              }}
-            >
-              <p
-                style={{
-                  fontSize: "0.75rem",
-                  color: T.muted,
-                  letterSpacing: "0.1em",
-                  textTransform: "uppercase" as const,
-                  marginBottom: 12,
-                }}
-              >
-                Customers
-              </p>
-              <div style={{ display: "flex", gap: 32 }}>
-                <div>
-                  <p
-                    style={{
-                      fontSize: "1.8rem",
-                      fontWeight: 700,
-                      color: "#1976d2",
-                    }}
-                  >
-                    {
-                      new Set(paidOrders.map((o) => o.phone || o.customer_name))
-                        .size
-                    }
-                  </p>
-                  <p style={{ fontSize: "0.75rem", color: T.muted }}>Unique</p>
-                </div>
-                <div>
-                  <p
-                    style={{
-                      fontSize: "1.8rem",
-                      fontWeight: 700,
-                      color: T.blue,
-                    }}
-                  >
-                    {repeatPhones.size}
-                  </p>
-                  <p style={{ fontSize: "0.75rem", color: T.muted }}>
-                    Repeat 🔄
-                  </p>
-                </div>
-                <div>
-                  <p
-                    style={{
-                      fontSize: "1.8rem",
-                      fontWeight: 700,
-                      color: T.green,
-                    }}
-                  >
-                    {paidOrders.filter((o) => o.status === "dispatched").length}
-                  </p>
-                  <p style={{ fontSize: "0.75rem", color: T.muted }}>
-                    Delivered
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Top flavours */}
-            {topFlavours.length > 0 && (
-              <div
-                style={{
-                  background: T.white,
-                  border: `1px solid ${T.border}`,
-                  borderRadius: 8,
-                  padding: "16px 18px",
-                  marginBottom: 14,
-                }}
-              >
-                <p
-                  style={{
-                    fontSize: "0.75rem",
-                    color: T.muted,
-                    letterSpacing: "0.1em",
-                    textTransform: "uppercase" as const,
-                    marginBottom: 14,
-                  }}
-                >
-                  Top Flavours
-                </p>
-                {topFlavours.map(([name, count], i) => (
-                  <div key={name} style={{ marginBottom: 10 }}>
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        marginBottom: 4,
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: "0.88rem",
-                          fontWeight: i === 0 ? 700 : 400,
-                        }}
-                      >
-                        {name}
-                      </span>
-                      <span style={{ fontSize: "0.82rem", color: T.muted }}>
-                        {count}
-                      </span>
-                    </div>
-                    <div
-                      style={{
-                        height: 6,
-                        background: "#f0f0f0",
-                        borderRadius: 3,
-                        overflow: "hidden",
-                      }}
-                    >
-                      <div
-                        style={{
-                          height: "100%",
-                          width: `${(count / topFlavours[0][1]) * 100}%`,
-                          background: i === 0 ? "#1976d2" : "#90caf9",
-                          borderRadius: 3,
-                        }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Box size breakdown */}
-            {Object.keys(boxRevenue).length > 0 && (
-              <div
-                style={{
-                  background: T.white,
-                  border: `1px solid ${T.border}`,
-                  borderRadius: 8,
-                  padding: "16px 18px",
-                  marginBottom: 14,
-                }}
-              >
-                <p
-                  style={{
-                    fontSize: "0.75rem",
-                    color: T.muted,
-                    letterSpacing: "0.1em",
-                    textTransform: "uppercase" as const,
-                    marginBottom: 14,
-                  }}
-                >
-                  Sales by Box Size
-                </p>
-                {Object.entries(boxRevenue)
-                  .sort(([, a], [, b]) => b.revenue - a.revenue)
-                  .map(([label, data]) => (
-                    <div
-                      key={label}
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        padding: "8px 0",
-                        borderBottom: `1px solid ${T.border}`,
-                      }}
-                    >
-                      <span style={{ fontSize: "0.88rem", fontWeight: 500 }}>
-                        {label}
-                      </span>
-                      <div style={{ textAlign: "right" as const }}>
-                        <p
-                          style={{
-                            fontSize: "0.9rem",
-                            fontWeight: 700,
-                            color: "#1976d2",
-                          }}
-                        >
-                          ₹{data.revenue.toLocaleString()}
-                        </p>
-                        <p style={{ fontSize: "0.72rem", color: T.muted }}>
-                          {data.count} orders
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            )}
 
             {/* Expenses log */}
             <div
@@ -3470,9 +2979,7 @@ export default function AdminPage() {
                   >
                     <option value="ingredient">🧪 Ingredient</option>
                     <option value="packaging">📦 Packaging</option>
-                    <option value="fixed">
-                      🏠 Fixed Cost (rent, utensils)
-                    </option>
+                    <option value="fixed">🏠 Fixed Cost</option>
                     <option value="delivery">🚚 Delivery</option>
                     <option value="equipment">🔧 Equipment</option>
                     <option value="other">📋 Other</option>
@@ -3488,13 +2995,15 @@ export default function AdminPage() {
                   disabled={saving || !ne.description || !ne.amount}
                   onClick={async () => {
                     setSaving(true);
-                    await supabase.from("expenses").insert({
-                      description: ne.description,
-                      amount: Number(ne.amount),
-                      category: ne.category,
-                      date: ne.date,
-                      note: ne.note,
-                    });
+                    await supabase
+                      .from("expenses")
+                      .insert({
+                        description: ne.description,
+                        amount: Number(ne.amount),
+                        category: ne.category,
+                        date: ne.date,
+                        note: ne.note,
+                      });
                     setNe({
                       description: "",
                       amount: "",
@@ -3524,56 +3033,73 @@ export default function AdminPage() {
                 >
                   {saving ? "Adding…" : "Add Expense"}
                 </button>
-
-                {/* JSON import for expenses */}
-                <div
-                  style={{
-                    marginTop: 14,
-                    paddingTop: 14,
-                    borderTop: `1px solid ${T.border}`,
-                  }}
-                >
-                  <p
-                    style={{
-                      fontSize: "0.78rem",
-                      fontWeight: 600,
-                      color: T.sub,
-                      marginBottom: 8,
-                    }}
-                  >
-                    Bulk import expenses (JSON)
-                  </p>
-                  <label
-                    style={{
-                      display: "inline-block",
-                      padding: "8px 16px",
-                      borderRadius: 6,
-                      border: `1px solid #1976d2`,
-                      background: T.blueBg,
-                      color: "#1976d2",
-                      fontSize: "0.82rem",
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      fontFamily: "system-ui, sans-serif",
-                    }}
-                  >
-                    📂 Upload JSON File
-                    <input
-                      type="file"
-                      accept=".json"
-                      style={{ display: "none" }}
-                      onChange={async (e) => {
-                        const f = e.target.files?.[0];
-                        if (!f) return;
-                        const text = await f.text();
-                        await handleExpenseImport(text);
-                        (e.target as HTMLInputElement).value = "";
-                      }}
-                    />
-                  </label>
-                </div>
               </div>
             </div>
+
+            {/* Top flavours */}
+            {topFlavours.length > 0 && (
+              <div
+                style={{
+                  background: T.white,
+                  border: `1px solid ${T.border}`,
+                  borderRadius: 8,
+                  padding: "16px 18px",
+                  marginBottom: 14,
+                }}
+              >
+                <p
+                  style={{
+                    fontSize: "0.75rem",
+                    color: T.muted,
+                    letterSpacing: "0.1em",
+                    textTransform: "uppercase" as const,
+                    marginBottom: 14,
+                  }}
+                >
+                  Top Flavours
+                </p>
+                {topFlavours.map(([name, count], i) => (
+                  <div key={name} style={{ marginBottom: 10 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        marginBottom: 4,
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: "0.88rem",
+                          fontWeight: i === 0 ? 700 : 400,
+                        }}
+                      >
+                        {name}
+                      </span>
+                      <span style={{ fontSize: "0.82rem", color: T.muted }}>
+                        {count}
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        height: 6,
+                        background: "#f0f0f0",
+                        borderRadius: 3,
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          height: "100%",
+                          width: `${(count / topFlavours[0][1]) * 100}%`,
+                          background: i === 0 ? "#1976d2" : "#90caf9",
+                          borderRadius: 3,
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -3622,23 +3148,6 @@ export default function AdminPage() {
                       value={ep.image_url}
                       onChange={(v) => setEp((p) => ({ ...p, image_url: v }))}
                     />
-                    {ep.image_url && (
-                      <img
-                        src={ep.image_url}
-                        alt="preview"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = "none";
-                        }}
-                        style={{
-                          width: 80,
-                          height: 80,
-                          objectFit: "cover",
-                          borderRadius: 6,
-                          marginBottom: 10,
-                          border: `1px solid ${T.border}`,
-                        }}
-                      />
-                    )}
                     <label
                       style={{
                         display: "flex",
@@ -3738,16 +3247,6 @@ export default function AdminPage() {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{ fontSize: "0.92rem", fontWeight: 700 }}>
                         {prod.name}
-                      </p>
-                      <p
-                        style={{
-                          fontSize: "0.78rem",
-                          color: T.muted,
-                          lineHeight: 1.4,
-                          marginBottom: 3,
-                        }}
-                      >
-                        {prod.description || <em>No description</em>}
                       </p>
                       <p style={{ fontSize: "0.75rem" }}>
                         {prod.is_premium ? (
@@ -3876,14 +3375,16 @@ export default function AdminPage() {
                 disabled={saving || !np.name}
                 onClick={async () => {
                   setSaving(true);
-                  await supabase.from("products").insert({
-                    name: np.name,
-                    description: np.description,
-                    price: 0,
-                    is_premium: np.is_premium,
-                    image_url: np.image_url || null,
-                    sort_order: products.length + 1,
-                  });
+                  await supabase
+                    .from("products")
+                    .insert({
+                      name: np.name,
+                      description: np.description,
+                      price: 0,
+                      is_premium: np.is_premium,
+                      image_url: np.image_url || null,
+                      sort_order: products.length + 1,
+                    });
                   setNp({
                     name: "",
                     description: "",
@@ -3908,145 +3409,6 @@ export default function AdminPage() {
                 }}
               >
                 {saving ? "Adding…" : "Add Product"}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ── SLOTS ──────────────────────────────────────────── */}
-        {tab === "slots" && (
-          <div>
-            <p style={{ fontSize: "0.8rem", color: T.muted, marginBottom: 14 }}>
-              Time Slots ({slots.length})
-            </p>
-            {slots.map((s) => (
-              <div
-                key={s.id}
-                style={{
-                  background: T.white,
-                  border: `1px solid ${T.border}`,
-                  borderRadius: 8,
-                  padding: "12px 16px",
-                  marginBottom: 8,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 12,
-                }}
-              >
-                <div>
-                  <p style={{ fontSize: "0.92rem", fontWeight: 700 }}>
-                    {s.label}
-                  </p>
-                  <p style={{ fontSize: "0.78rem", color: T.muted }}>
-                    {new Date(s.date).toLocaleDateString("en-IN", {
-                      weekday: "short",
-                      day: "numeric",
-                      month: "short",
-                    })}{" "}
-                    · {s.current_orders}/{s.max_orders} ·{" "}
-                    <span
-                      style={{
-                        color: s.is_active ? T.green : T.red,
-                        fontWeight: 600,
-                      }}
-                    >
-                      {s.is_active ? "Active" : "Disabled"}
-                    </span>
-                  </p>
-                </div>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <Btn
-                    variant={s.is_active ? "danger" : "primary"}
-                    onClick={async () => {
-                      await supabase
-                        .from("time_slots")
-                        .update({ is_active: !s.is_active })
-                        .eq("id", s.id);
-                      load();
-                    }}
-                  >
-                    {s.is_active ? "Disable" : "Enable"}
-                  </Btn>
-                  <Btn
-                    variant="danger"
-                    onClick={async () => {
-                      if (!confirm("Delete slot?")) return;
-                      await supabase.from("time_slots").delete().eq("id", s.id);
-                      load();
-                    }}
-                  >
-                    ✕
-                  </Btn>
-                </div>
-              </div>
-            ))}
-            <div
-              style={{
-                background: T.white,
-                border: `1px solid ${T.border}`,
-                borderRadius: 8,
-                padding: 16,
-                marginTop: 8,
-              }}
-            >
-              <p
-                style={{
-                  fontSize: "0.8rem",
-                  fontWeight: 600,
-                  color: T.sub,
-                  marginBottom: 12,
-                }}
-              >
-                Add Slot
-              </p>
-              <Input
-                placeholder="Label (e.g. 5:00 PM – 6:00 PM) *"
-                value={ns.label}
-                onChange={(v) => setNs((s) => ({ ...s, label: v }))}
-              />
-              <Input
-                type="date"
-                placeholder="Date *"
-                value={ns.date}
-                onChange={(v) => setNs((s) => ({ ...s, date: v }))}
-              />
-              <Input
-                type="number"
-                placeholder="Max orders"
-                value={ns.max_orders}
-                onChange={(v) => setNs((s) => ({ ...s, max_orders: v }))}
-              />
-              <button
-                disabled={saving || !ns.label || !ns.date}
-                onClick={async () => {
-                  setSaving(true);
-                  await supabase.from("time_slots").insert({
-                    label: ns.label,
-                    date: ns.date,
-                    max_orders: Number(ns.max_orders) || 10,
-                    current_orders: 0,
-                    is_active: true,
-                  });
-                  setNs({ label: "", date: "", max_orders: "10" });
-                  await load();
-                  setSaving(false);
-                  flash("Slot added ✓");
-                }}
-                style={{
-                  width: "100%",
-                  padding: "10px",
-                  borderRadius: 6,
-                  border: "none",
-                  background: "#1976d2",
-                  color: "#fff",
-                  fontSize: "0.88rem",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  fontFamily: "system-ui, sans-serif",
-                }}
-              >
-                {saving ? "Adding…" : "Add Slot"}
               </button>
             </div>
           </div>
@@ -4142,13 +3504,15 @@ export default function AdminPage() {
                 disabled={saving || !nb.label || !nb.count || !nb.price}
                 onClick={async () => {
                   setSaving(true);
-                  await supabase.from("box_sizes").insert({
-                    label: nb.label,
-                    count: Number(nb.count),
-                    price: Number(nb.price),
-                    is_active: true,
-                    sort_order: boxes.length + 1,
-                  });
+                  await supabase
+                    .from("box_sizes")
+                    .insert({
+                      label: nb.label,
+                      count: Number(nb.count),
+                      price: Number(nb.price),
+                      is_active: true,
+                      sort_order: boxes.length + 1,
+                    });
                   setNb({ label: "", count: "", price: "" });
                   await load();
                   setSaving(false);
@@ -4159,7 +3523,10 @@ export default function AdminPage() {
                   padding: "10px",
                   borderRadius: 6,
                   border: "none",
-                  background: "#1976d2",
+                  background:
+                    saving || !nb.label || !nb.count || !nb.price
+                      ? "#ccc"
+                      : "#1976d2",
                   color: "#fff",
                   fontSize: "0.88rem",
                   fontWeight: 600,
