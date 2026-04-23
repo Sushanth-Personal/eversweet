@@ -160,6 +160,7 @@ function buildWhatsAppUrl(
   batchLabel: string,
   batchIcon: string,
   deliveryDate: string,
+  fulfillmentType: string = "delivery",
 ): string {
   const message = [
     `Hi! I just paid ₹${amount} for my Eversweet order 🍡`,
@@ -167,6 +168,7 @@ function buildWhatsAppUrl(
     `📦 ${boxLabel}`,
     flavourSummary ? `🍡 ${flavourSummary}` : null,
     `${batchIcon} ${batchLabel} · ${deliveryDate}`,
+    fulfillmentType === "pickup" ? `🏠 Self Pickup` : `🚚 Delivery via Porter`,
     ``,
     `Please confirm my slot!`,
   ]
@@ -237,6 +239,9 @@ export default function Home() {
     address: "",
   });
 
+  const [fulfillmentType, setFulfillmentType] = useState<"delivery" | "pickup">(
+    "delivery",
+  );
   const [orderDone, setOrderDone] = useState(false);
   const [hasTappedPay, setHasTappedPay] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
@@ -290,7 +295,7 @@ export default function Home() {
 
   function proceedToSlot() {
     if (totalPicked === 0) {
-      setError("Please choose at least 4 pieces to place an order.");
+      setError("Please choose at least one flavour.");
       return;
     }
     if (autoBox && totalPicked < autoBox.count) {
@@ -344,6 +349,7 @@ export default function Home() {
           delivery_date: selectedDate,
           batch_label: batch.label,
           total_price: autoBox.price,
+          fulfillment_type: fulfillmentType,
         }),
       });
       const data = await res.json();
@@ -400,6 +406,7 @@ export default function Home() {
       batch.label,
       batch.icon,
       friendlyDate(selectedDate),
+      fulfillmentType,
     );
 
     return (
@@ -1065,16 +1072,6 @@ export default function Home() {
           Choose what you love
         </h2>
         <GoldLine />
-        <p
-          style={{
-            fontSize: "0.78rem",
-            color: "var(--cream-dim)",
-            marginBottom: 16,
-            lineHeight: 1.6,
-          }}
-        >
-          Minimum order is 4 pieces. Mix and match any flavours you like.
-        </p>
 
         {loading ? (
           <div
@@ -1802,6 +1799,90 @@ export default function Home() {
               />
             </div>
 
+            {/* Fulfillment toggle */}
+            <p
+              style={{
+                fontSize: "0.68rem",
+                color: "var(--gold)",
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                marginBottom: 10,
+                fontWeight: 600,
+              }}
+            >
+              Delivery or Pickup?
+            </p>
+            <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+              {(["delivery", "pickup"] as const).map((type) => (
+                <button
+                  key={type}
+                  onClick={() => setFulfillmentType(type)}
+                  style={{
+                    flex: 1,
+                    padding: "12px 16px",
+                    borderRadius: 8,
+                    border: `1px solid ${fulfillmentType === type ? "var(--gold)" : "var(--border2)"}`,
+                    background:
+                      fulfillmentType === type
+                        ? "rgba(184,134,11,0.08)"
+                        : "var(--surface)",
+                    color:
+                      fulfillmentType === type
+                        ? "var(--gold)"
+                        : "var(--cream-dim)",
+                    fontSize: "0.85rem",
+                    fontWeight: fulfillmentType === type ? 700 : 400,
+                    cursor: "pointer",
+                    fontFamily: "system-ui, sans-serif",
+                    transition: "all 0.2s",
+                    textAlign: "left" as const,
+                  }}
+                >
+                  <p style={{ margin: 0, fontSize: "0.9rem" }}>
+                    {type === "delivery" ? "🚚 Delivery" : "🏠 Self Pickup"}
+                  </p>
+                  <p
+                    style={{
+                      margin: "4px 0 0",
+                      fontSize: "0.65rem",
+                      opacity: 0.7,
+                      fontWeight: 400,
+                    }}
+                  >
+                    {type === "delivery"
+                      ? "Porter charges extra, paid by you"
+                      : "Collect from our kitchen"}
+                  </p>
+                </button>
+              ))}
+            </div>
+
+            {fulfillmentType === "delivery" && (
+              <div
+                style={{
+                  background: "rgba(255,200,100,0.06)",
+                  border: "1px solid rgba(184,134,11,0.2)",
+                  borderRadius: 8,
+                  padding: "10px 14px",
+                  marginBottom: 20,
+                }}
+              >
+                <p
+                  style={{
+                    fontSize: "0.75rem",
+                    color: "var(--cream-dim)",
+                    lineHeight: 1.7,
+                  }}
+                >
+                  🚚 We use{" "}
+                  <strong style={{ color: "var(--cream)" }}>Porter</strong> for
+                  delivery. Charges are based on your distance and are paid
+                  directly by you. We&apos;ll share the Porter booking link once
+                  your order is confirmed.
+                </p>
+              </div>
+            )}
+
             <p
               style={{
                 fontSize: "0.68rem",
@@ -2055,6 +2136,24 @@ export default function Home() {
                 <div
                   style={{ display: "flex", justifyContent: "space-between" }}
                 >
+                  <span
+                    style={{
+                      fontSize: "0.75rem",
+                      color:
+                        fulfillmentType === "pickup"
+                          ? "#a3d977"
+                          : "var(--cream-dim)",
+                    }}
+                  >
+                    {fulfillmentType === "pickup"
+                      ? "🏠 Self Pickup"
+                      : "🚚 Delivery via Porter"}
+                  </span>
+                </div>
+                <div className="divider" style={{ margin: "6px 0" }} />
+                <div
+                  style={{ display: "flex", justifyContent: "space-between" }}
+                >
                   <span style={{ fontSize: "0.85rem", fontWeight: 500 }}>
                     Total
                   </span>
@@ -2068,6 +2167,17 @@ export default function Home() {
                     ₹{autoBox?.price}
                   </span>
                 </div>
+                {fulfillmentType === "delivery" && (
+                  <p
+                    style={{
+                      fontSize: "0.65rem",
+                      color: "rgba(255,248,230,0.5)",
+                      marginTop: 4,
+                    }}
+                  >
+                    + Porter delivery charges paid by you directly
+                  </p>
+                )}
               </div>
             </div>
 
@@ -2306,7 +2416,7 @@ export default function Home() {
             >
               {autoBox.count - totalPicked === 0
                 ? "✓ Box full!"
-                : `${autoBox.count - totalPicked} more piece${autoBox.count - totalPicked === 1 ? "" : "s"} to fill ( Min ${autoBox.count} mochi's in a box )`}
+                : `${autoBox.count - totalPicked} more piece${autoBox.count - totalPicked === 1 ? "" : "s"} to fill`}
             </span>
           </div>
 

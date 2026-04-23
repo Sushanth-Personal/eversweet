@@ -132,6 +132,7 @@ type ExtOrder = Order & {
   order_date?: string;
   delivery_date?: string;
   batch_label?: string;
+  fulfillment_type?: string;
 };
 
 // ── Shared components ──────────────────────────────────────────────
@@ -303,8 +304,6 @@ function StatCard({
   );
 }
 
-// --- ADD THIS BELOW StatCard Component ---
-
 function ExpenseScanner({
   onDataExtracted,
 }: {
@@ -319,14 +318,11 @@ function ExpenseScanner({
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    // Show image preview
     const objectUrl = URL.createObjectURL(file);
     setPreview(objectUrl);
     setResults(null);
     setError(null);
     setScanning(true);
-
     const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onload = async () => {
@@ -335,31 +331,23 @@ function ExpenseScanner({
         const res = await fetch("/api/extract-bill", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            imageBase64: base64,
-            mimeType: file.type,
-          }),
+          body: JSON.stringify({ imageBase64: base64, mimeType: file.type }),
         });
-
         if (!res.ok) {
           const err = await res.json();
           throw new Error(err.error || "API error");
         }
-
         const data = await res.json();
-
         if (!Array.isArray(data) || data.length === 0) {
-          setError("No ingredients or packaging items found in this bill.");
+          setError("No items found in this bill.");
           setScanning(false);
           return;
         }
-
         setResults(data);
       } catch (err: any) {
         setError(err.message || "Something went wrong");
       } finally {
         setScanning(false);
-        // Reset input so same file can be re-uploaded
         if (fileInputRef.current) fileInputRef.current.value = "";
       }
     };
@@ -371,7 +359,7 @@ function ExpenseScanner({
 
   function handleConfirm() {
     if (results && results.length > 0) {
-      onDataExtracted(results); // ← this passes array
+      onDataExtracted(results);
       setResults(null);
       setPreview(null);
       setError(null);
@@ -413,8 +401,6 @@ function ExpenseScanner({
       >
         ✨ AI Bill Scanner
       </p>
-
-      {/* Upload button */}
       {!results && (
         <div
           onClick={() => !scanning && fileInputRef.current?.click()}
@@ -473,8 +459,6 @@ function ExpenseScanner({
           </p>
         </div>
       )}
-
-      {/* Error */}
       {error && (
         <div
           style={{
@@ -505,8 +489,6 @@ function ExpenseScanner({
           </button>
         </div>
       )}
-
-      {/* Results preview */}
       {results && (
         <div>
           <p
@@ -616,6 +598,7 @@ function ExpenseScanner({
     </div>
   );
 }
+
 function getOrderBatchLabel(order: ExtOrder): string {
   if (order.delivery_date && order.batch_label) {
     const icon = getBatchIcon(order.batch_label);
@@ -711,6 +694,20 @@ function OrderCard({
             📱 DM
           </span>
         )}
+        {order.source === "mini" && (
+          <span
+            style={{
+              fontSize: "0.65rem",
+              padding: "2px 8px",
+              borderRadius: 10,
+              background: "#e8f5e9",
+              color: "#2e7d32",
+              fontWeight: 600,
+            }}
+          >
+            🔗 Link
+          </span>
+        )}
         <span
           style={{
             marginLeft: "auto",
@@ -764,6 +761,9 @@ function OrderCard({
           ₹{order.total_price}
         </span>{" "}
         · {order.payment_method}
+        {order.fulfillment_type === "pickup"
+          ? " · 🏠 Pickup"
+          : " · 🚚 Delivery"}
       </p>
       {flavourList && (
         <p style={{ fontSize: "0.82rem", color: T.muted, marginBottom: 4 }}>
@@ -796,8 +796,18 @@ function OrderCard({
       )}
       <p style={{ fontSize: "0.72rem", color: T.muted, marginBottom: 12 }}>
         {new Date(order.created_at).toLocaleString("en-IN")}
-        {order.dob ? ` · DOB: ${order.dob}` : ""}
       </p>
+
+      {/* Payment link copy for pending orders */}
+      {order.status === "pending" && (
+        <div style={{ marginBottom: 10 }}>
+          <CopyBtn
+            value={`${typeof window !== "undefined" ? window.location.origin : ""}/pay/${order.id}`}
+            label="Payment Link"
+          />
+        </div>
+      )}
+
       {order.status !== "dispatched" && order.status !== "cancelled" && (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" as const }}>
           {next && (
@@ -903,7 +913,7 @@ function ManualOrderForm({
     remarks: string;
   }[];
   products: Product[];
-  onSave: () => void;
+  onSave: (orderId: string) => void;
   onClose: () => void;
 }) {
   const [form, setForm] = useState({
@@ -911,20 +921,22 @@ function ManualOrderForm({
     phone: "",
     insta_id: "",
     address: "",
-    dob: "",
     remarks: "",
     notes: "",
     order_date: new Date().toISOString().split("T")[0],
     delivery_date: new Date().toISOString().split("T")[0],
     batch_label: "Morning Batch",
     payment_method: "upi",
-    status: "dispatched",
+    status: "pending",
+    fulfillment_type: "delivery" as "delivery" | "pickup",
   });
   const [boxRows, setBoxRows] = useState<
     { box_size_label: string; price: string }[]
   >([{ box_size_label: "", price: "" }]);
   const [flavours, setFlavours] = useState<Record<string, number>>({});
   const [saving, setSaving] = useState(false);
+  const [savedOrderId, setSavedOrderId] = useState<string | null>(null);
+  const [payLinkCopied, setPayLinkCopied] = useState(false);
   const [nameSuggestions, setNameSuggestions] = useState<typeof customers>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const f = (k: string) => (v: string) => setForm((p) => ({ ...p, [k]: v }));
@@ -984,33 +996,45 @@ function ManualOrderForm({
 
   async function handleSave() {
     setSaving(true);
+    let firstOrderId = "";
     let isFirst = true;
     for (const row of boxRows) {
       if (!row.price) continue;
       const box = boxes.find((b) => b.label === row.box_size_label);
-      await supabase.from("orders").insert({
-        customer_name: form.customer_name.trim(),
-        phone: form.phone.trim(),
-        insta_id: form.insta_id.trim(),
-        address: form.address.trim() || null,
-        dob: form.dob.trim() || null,
-        remarks: form.remarks.trim(),
-        notes: form.notes.trim() || null,
-        box_size_id: box?.id || null,
-        flavours: isFirst && Object.keys(flavours).length > 0 ? flavours : {},
-        delivery_date: form.delivery_date,
-        batch_label: form.batch_label,
-        payment_method: form.payment_method,
-        total_price: Number(row.price),
-        status: form.status,
-        source: "dm",
-        order_date: form.order_date,
-      });
+      const { data } = await supabase
+        .from("orders")
+        .insert({
+          customer_name: form.customer_name.trim(),
+          phone: form.phone.trim(),
+          insta_id: form.insta_id.trim(),
+          address: form.address.trim() || null,
+          remarks: form.remarks.trim(),
+          notes: form.notes.trim() || null,
+          box_size_id: box?.id || null,
+          flavours: isFirst && Object.keys(flavours).length > 0 ? flavours : {},
+          delivery_date: form.delivery_date,
+          batch_label: form.batch_label,
+          payment_method: form.payment_method,
+          total_price: Number(row.price),
+          status: form.status,
+          source: "dm",
+          order_date: form.order_date,
+          fulfillment_type: form.fulfillment_type,
+        })
+        .select("id")
+        .single();
+      if (isFirst && data?.id) firstOrderId = data.id;
       isFirst = false;
     }
     setSaving(false);
-    onSave();
+    if (firstOrderId) setSavedOrderId(firstOrderId);
+    onSave(firstOrderId);
   }
+
+  const paymentLink =
+    savedOrderId && typeof window !== "undefined"
+      ? `${window.location.origin}/pay/${savedOrderId}`
+      : "";
 
   return (
     <div
@@ -1046,6 +1070,7 @@ function ManualOrderForm({
           ✕
         </button>
       </div>
+
       <div
         style={{
           display: "grid",
@@ -1141,17 +1166,49 @@ function ManualOrderForm({
           value={form.insta_id}
           onChange={f("insta_id")}
         />
-        <Input
-          placeholder="DOB (DD/MM/YYYY)"
-          value={form.dob}
-          onChange={f("dob")}
-        />
       </div>
       <Input
         placeholder="Address"
         value={form.address}
         onChange={f("address")}
       />
+
+      {/* Fulfillment type toggle */}
+      <p
+        style={{
+          fontSize: "0.8rem",
+          fontWeight: 600,
+          color: T.sub,
+          marginBottom: 8,
+        }}
+      >
+        📦 Fulfillment
+      </p>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        {(["delivery", "pickup"] as const).map((type) => (
+          <button
+            key={type}
+            onClick={() => setForm((p) => ({ ...p, fulfillment_type: type }))}
+            style={{
+              flex: 1,
+              padding: "10px 14px",
+              borderRadius: 6,
+              border: `1px solid ${form.fulfillment_type === type ? "#1976d2" : T.border}`,
+              background: form.fulfillment_type === type ? T.blueBg : T.white,
+              color: form.fulfillment_type === type ? "#1976d2" : T.sub,
+              fontSize: "0.82rem",
+              fontWeight: form.fulfillment_type === type ? 700 : 400,
+              cursor: "pointer",
+              fontFamily: "system-ui, sans-serif",
+              transition: "all 0.15s",
+              textAlign: "left" as const,
+            }}
+          >
+            {type === "delivery" ? "🚚 Delivery (Porter)" : "🏠 Self Pickup"}
+          </button>
+        ))}
+      </div>
+
       <div
         style={{
           display: "grid",
@@ -1190,6 +1247,7 @@ function ManualOrderForm({
           ))}
         </select>
       </div>
+
       <p
         style={{
           fontSize: "0.8rem",
@@ -1307,6 +1365,7 @@ function ManualOrderForm({
           </p>
         )}
       </div>
+
       {products.filter((p) => p.is_available).length > 0 && (
         <>
           <p
@@ -1417,6 +1476,7 @@ function ManualOrderForm({
           </div>
         </>
       )}
+
       <div
         style={{
           display: "grid",
@@ -1446,8 +1506,8 @@ function ManualOrderForm({
             outline: "none",
           }}
         >
+          <option value="pending">Pending (send payment link)</option>
           <option value="dispatched">Dispatched (already delivered)</option>
-          <option value="pending">Pending</option>
           <option value="confirmed">Confirmed</option>
         </select>
       </div>
@@ -1461,6 +1521,7 @@ function ManualOrderForm({
         value={form.notes}
         onChange={f("notes")}
       />
+
       <button
         disabled={saving || !form.customer_name || totalPrice === 0}
         onClick={handleSave}
@@ -1484,6 +1545,86 @@ function ManualOrderForm({
           ? "Saving..."
           : `Save ${boxRows.filter((r) => r.price).length > 1 ? `${boxRows.filter((r) => r.price).length} Orders` : "Order"} · ₹${totalPrice}`}
       </button>
+
+      {/* Generate Payment Link — shown after save when status is pending */}
+      {savedOrderId && form.status === "pending" && (
+        <div
+          style={{
+            marginTop: 12,
+            padding: "12px 14px",
+            background: T.blueBg,
+            border: `1px solid #90caf9`,
+            borderRadius: 8,
+          }}
+        >
+          <p
+            style={{
+              fontSize: "0.82rem",
+              fontWeight: 700,
+              color: "#1976d2",
+              marginBottom: 6,
+            }}
+          >
+            🔗 Payment Link Generated
+          </p>
+          <p
+            style={{
+              fontSize: "0.72rem",
+              color: T.sub,
+              marginBottom: 10,
+              wordBreak: "break-all" as const,
+            }}
+          >
+            {paymentLink}
+          </p>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(paymentLink).then(() => {
+                  setPayLinkCopied(true);
+                  setTimeout(() => setPayLinkCopied(false), 2500);
+                });
+              }}
+              style={{
+                flex: 1,
+                padding: "9px 14px",
+                borderRadius: 6,
+                border: "none",
+                background: payLinkCopied ? T.green : "#1976d2",
+                color: "#fff",
+                fontSize: "0.85rem",
+                fontWeight: 600,
+                cursor: "pointer",
+                fontFamily: "system-ui, sans-serif",
+                transition: "background 0.2s",
+              }}
+            >
+              {payLinkCopied ? "✓ Copied!" : "📋 Copy Payment Link"}
+            </button>
+            <button
+              onClick={() => {
+                const text = encodeURIComponent(
+                  `Hi! Here's your payment link to confirm your Eversweet order 🍡\n\n${paymentLink}\n\nPay and send us the screenshot on WhatsApp to lock your slot!`,
+                );
+                window.open(`https://wa.me/?text=${text}`, "_blank");
+              }}
+              style={{
+                padding: "9px 14px",
+                borderRadius: 6,
+                border: "none",
+                background: "#25d366",
+                color: "#fff",
+                fontSize: "0.85rem",
+                fontWeight: 600,
+                cursor: "pointer",
+                fontFamily: "system-ui, sans-serif",
+              }}
+            >
+              📲 Share on WhatsApp
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1594,7 +1735,7 @@ function BulkOrderImport({
   );
 }
 
-// ── Expense JSON importer (paste + upload) ─────────────────────────
+// ── Expense JSON importer ─────────────────────────────────────────
 function ExpenseImporter({
   onImport,
 }: {
@@ -1641,8 +1782,6 @@ function ExpenseImporter({
       >
         Bulk import expenses (JSON)
       </p>
-
-      {/* Mode toggle */}
       <div
         style={{
           display: "flex",
@@ -1674,26 +1813,8 @@ function ExpenseImporter({
           </button>
         ))}
       </div>
-
       {mode === "paste" ? (
         <div>
-          <pre
-            style={{
-              background: "#f8f8f8",
-              border: `1px solid ${T.border}`,
-              borderRadius: 6,
-              padding: "8px 10px",
-              fontSize: "0.68rem",
-              color: T.sub,
-              marginBottom: 8,
-              overflowX: "auto" as const,
-            }}
-          >
-            {`[
-  { "description": "Mango pulp 1kg", "amount": 120, "category": "ingredient", "date": "2026-04-21" },
-  { "description": "Gift boxes x20", "amount": 300, "category": "packaging", "date": "2026-04-21" }
-]`}
-          </pre>
           <textarea
             value={text}
             onChange={(e) => {
@@ -1972,28 +2093,22 @@ export default function AdminPage() {
       const data = JSON.parse(text);
       const items = Array.isArray(data) ? data : data.expenses;
       if (!Array.isArray(items)) throw new Error("Expected array");
-
-      // Get current IST date (YYYY-MM-DD) correctly even after midnight
       const now = new Date();
-      const ISTOffset = 5.5 * 60 * 60 * 1000; // IST is UTC + 5:30
+      const ISTOffset = 5.5 * 60 * 60 * 1000;
       const istDate = new Date(now.getTime() + ISTOffset);
       const uploadedDate = istDate.toISOString().split("T")[0];
-
       const valid = items
         .filter((e) => e.description && Number(e.amount) > 0)
         .map((e) => ({
           description: String(e.description).trim(),
           amount: Number(e.amount),
           category: e.category || "ingredient",
-          date: uploadedDate, // Always use the upload date
+          date: uploadedDate,
           note: e.note || "AI Scanned Bill",
         }));
-
       if (valid.length === 0) throw new Error("No valid entries");
-
       const { error } = await supabase.from("expenses").insert(valid);
       if (error) throw error;
-
       await load();
       flash(`${valid.length} expenses added for ${uploadedDate} ✓`);
     } catch (err: unknown) {
@@ -2004,7 +2119,6 @@ export default function AdminPage() {
     }
   }
 
-  // ── Order grouping helper ──────────────────────────────────────
   function groupOrders(orderList: ExtOrder[]) {
     const groups: { key: string; orders: ExtOrder[] }[] = [];
     const seen = new Map<string, ExtOrder[]>();
@@ -2055,7 +2169,6 @@ export default function AdminPage() {
         .filter(([, q]) => q > 0)
         .map(([id, q]) => `${productMap[id] || "Unknown"} ×${q}`)
         .join(", ");
-
       return (
         <div
           key={key}
@@ -2159,7 +2272,8 @@ export default function AdminPage() {
             <span style={{ color: T.gold, fontWeight: 600 }}>
               ₹{combinedTotal}
             </span>{" "}
-            · {first.payment_method}
+            ·{" "}
+            {first.fulfillment_type === "pickup" ? "🏠 Pickup" : "🚚 Delivery"}
           </p>
           <div
             style={{
@@ -2304,7 +2418,6 @@ export default function AdminPage() {
     });
   }
 
-  // ── Customer grouping ──────────────────────────────────────────
   const customerMap: Record<
     string,
     {
@@ -2351,7 +2464,6 @@ export default function AdminPage() {
       (c.insta_id || "").toLowerCase().includes(customerSearch.toLowerCase()),
   );
 
-  // ── Dashboard ──────────────────────────────────────────────────
   const PAID_STATUSES = [
     "confirmed",
     "cooking",
@@ -2362,45 +2474,27 @@ export default function AdminPage() {
 
   function filterByPeriod<T extends { created_at: string }>(items: T[]): T[] {
     const now = new Date();
-
-    // Set up local strings (YYYY-MM-DD)
-    // Since it's currently Kochi midnight, we ensure we use IST
     const offset = 5.5 * 60 * 60 * 1000;
     const localNow = new Date(now.getTime() + offset);
     const todayStr = localNow.toISOString().split("T")[0];
-
     return items.filter((item) => {
       const dateStr = (item as any).order_date || item.created_at.split("T")[0];
-
-      // 1. PINNED START (April 21st)
-      if (dashPeriod === "from_start") {
-        return dateStr >= TRACKING_START_DATE;
-      }
-
-      // 2. TODAY ONLY
-      if (dashPeriod === "today") {
-        return dateStr === todayStr;
-      }
-
-      // 3. THIS WEEK (Strictly from Monday)
+      if (dashPeriod === "from_start") return dateStr >= TRACKING_START_DATE;
+      if (dashPeriod === "today") return dateStr === todayStr;
       if (dashPeriod === "week") {
-        const day = localNow.getDay(); // 0 is Sun, 1 is Mon... 4 is Thu
-        const diffToMonday = day === 0 ? 6 : day - 1; // Days to subtract to get to Mon
-
+        const day = localNow.getDay();
+        const diffToMonday = day === 0 ? 6 : day - 1;
         const monday = new Date(localNow);
         monday.setDate(localNow.getDate() - diffToMonday);
-        const mondayStr = monday.toISOString().split("T")[0];
-
-        return dateStr >= mondayStr && dateStr <= todayStr;
+        return (
+          dateStr >= monday.toISOString().split("T")[0] && dateStr <= todayStr
+        );
       }
-
-      // 4. THIS MONTH (Strictly from the 1st)
       if (dashPeriod === "month") {
-        const firstOfMonth = todayStr.substring(0, 8) + "01"; // "2026-04-01"
+        const firstOfMonth = todayStr.substring(0, 8) + "01";
         return dateStr >= firstOfMonth && dateStr <= todayStr;
       }
-
-      return true; // "all"
+      return true;
     });
   }
 
@@ -2409,13 +2503,10 @@ export default function AdminPage() {
     const offset = 5.5 * 60 * 60 * 1000;
     const localNow = new Date(now.getTime() + offset);
     const todayStr = localNow.toISOString().split("T")[0];
-
     return items.filter((item) => {
       const dateStr = item.date;
-
       if (dashPeriod === "from_start") return dateStr >= TRACKING_START_DATE;
       if (dashPeriod === "today") return dateStr === todayStr;
-
       if (dashPeriod === "week") {
         const day = localNow.getDay();
         const diffToMonday = day === 0 ? 6 : day - 1;
@@ -2423,14 +2514,12 @@ export default function AdminPage() {
         monday.setDate(localNow.getDate() - diffToMonday);
         return dateStr >= monday.toISOString().split("T")[0];
       }
-
-      if (dashPeriod === "month") {
+      if (dashPeriod === "month")
         return dateStr.startsWith(todayStr.substring(0, 7));
-      }
-
       return true;
     });
   }
+
   const paidOrders = filterByPeriod(
     orders.filter((o) => PAID_STATUSES.includes(o.status)),
   ) as ExtOrder[];
@@ -2475,9 +2564,7 @@ export default function AdminPage() {
     boxRevenue[label].revenue += o.total_price || 0;
   });
 
-  // ── Order buckets ──────────────────────────────────────────────
   const pendingPaymentOrders = orders.filter((o) => o.status === "pending");
-  // Active = confirmed and beyond (not dispatched, not cancelled, not pending)
   const activeOrders = orders.filter(
     (o) =>
       o.status !== "dispatched" &&
@@ -2495,7 +2582,6 @@ export default function AdminPage() {
     return "All Time";
   }
 
-  // ── Login ──────────────────────────────────────────────────────
   if (!authed) {
     return (
       <main
@@ -2571,7 +2657,6 @@ export default function AdminPage() {
     );
   }
 
-  // ── Dashboard ──────────────────────────────────────────────────
   return (
     <main
       style={{
@@ -2581,7 +2666,6 @@ export default function AdminPage() {
         color: T.text,
       }}
     >
-      {/* Nav */}
       <div
         style={{
           background: T.white,
@@ -2736,7 +2820,6 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* ── PAYMENT PENDING ────────────────────────────────── */}
         {tab === "pending_payment" && (
           <div>
             <div
@@ -2761,7 +2844,8 @@ export default function AdminPage() {
                 style={{ fontSize: "0.78rem", color: "#b8860b", marginTop: 4 }}
               >
                 Once you receive payment (UPI notification), click "→ Confirm
-                Order" to move it to the Orders queue.
+                Order" to move it to the Orders queue. You can also copy the
+                payment link to resend to the customer.
               </p>
             </div>
             {pendingPaymentOrders.length === 0 ? (
@@ -2783,7 +2867,6 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* ── ACTIVE ORDERS (confirmed+) ─────────────────────── */}
         {tab === "orders" && (
           <div>
             <div
@@ -2853,7 +2936,7 @@ export default function AdminPage() {
                   remarks: c.remarks || "",
                 }))}
                 products={products}
-                onSave={() => {
+                onSave={(orderId) => {
                   load();
                   setShowManualForm(false);
                   flash("Order saved ✓");
@@ -2881,7 +2964,6 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* ── DISPATCHED ─────────────────────────────────────── */}
         {tab === "dispatched" && (
           <div>
             <p style={{ fontSize: "0.8rem", color: T.muted, marginBottom: 14 }}>
@@ -2950,6 +3032,9 @@ export default function AdminPage() {
                       <span style={{ color: T.gold, fontWeight: 600 }}>
                         ₹{o.total_price}
                       </span>
+                      {o.fulfillment_type === "pickup"
+                        ? " · 🏠 Pickup"
+                        : " · 🚚 Delivery"}
                     </p>
                     {o.address && (
                       <p style={{ fontSize: "0.8rem", color: T.muted }}>
@@ -2995,7 +3080,6 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* ── CUSTOMERS ──────────────────────────────────────── */}
         {tab === "customers" && (
           <div>
             <div style={{ marginBottom: 16 }}>
@@ -3192,7 +3276,6 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* ── DASHBOARD ──────────────────────────────────────── */}
         {tab === "dashboard" && (
           <div>
             <div
@@ -3234,8 +3317,7 @@ export default function AdminPage() {
             <p
               style={{ fontSize: "0.72rem", color: T.muted, marginBottom: 14 }}
             >
-              * Revenue = confirmed orders only. Pending &amp; cancelled
-              excluded.
+              * Revenue = confirmed orders only. Pending & cancelled excluded.
             </p>
             <div
               style={{
@@ -3334,8 +3416,6 @@ export default function AdminPage() {
                 </div>
               ))}
             </div>
-
-            {/* Expense log + add + paste import */}
             <div
               style={{
                 background: T.white,
@@ -3442,8 +3522,6 @@ export default function AdminPage() {
                   );
                 })
               )}
-
-              {/* Add single expense */}
               <div
                 style={{
                   marginTop: 16,
@@ -3555,13 +3633,9 @@ export default function AdminPage() {
                 >
                   {saving ? "Adding..." : "Add Expense"}
                 </button>
-
-                {/* Paste or upload JSON */}
                 <ExpenseImporter onImport={handleExpenseImport} />
               </div>
             </div>
-
-            {/* Top flavours */}
             {topFlavours.length > 0 && (
               <div
                 style={{
@@ -3625,8 +3699,6 @@ export default function AdminPage() {
                 ))}
               </div>
             )}
-
-            {/* Box revenue */}
             {Object.keys(boxRevenue).length > 0 && (
               <div
                 style={{
@@ -3685,7 +3757,6 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* ── PRODUCTS ───────────────────────────────────────── */}
         {tab === "products" && (
           <div>
             <p style={{ fontSize: "0.8rem", color: T.muted, marginBottom: 14 }}>
@@ -4021,7 +4092,6 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* ── BOXES ──────────────────────────────────────────── */}
         {tab === "boxes" && (
           <div>
             <p style={{ fontSize: "0.8rem", color: T.muted, marginBottom: 14 }}>
