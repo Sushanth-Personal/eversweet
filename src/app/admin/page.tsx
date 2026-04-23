@@ -1393,6 +1393,7 @@ function ManualOrderForm({
                 return (
                   <div
                     key={prod.id}
+                    onClick={() => setFlavourQty(prod.id, qty + 1)}
                     style={{
                       display: "flex",
                       alignItems: "center",
@@ -1421,7 +1422,10 @@ function ManualOrderForm({
                       style={{ display: "flex", alignItems: "center", gap: 6 }}
                     >
                       <button
-                        onClick={() => setFlavourQty(prod.id, qty - 1)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setFlavourQty(prod.id, qty - 1);
+                        }}
                         disabled={qty === 0}
                         style={{
                           width: 24,
@@ -1883,7 +1887,7 @@ function ExpenseImporter({
           </div>
           <p style={{ fontSize: "0.7rem", color: T.muted, marginTop: 6 }}>
             Categories: ingredient / packaging / fixed / delivery / equipment /
-            other
+            marketing / other
           </p>
         </div>
       ) : (
@@ -2541,6 +2545,24 @@ export default function AdminPage() {
   const fixedExp = periodExpenses
     .filter((e) => e.category === "fixed")
     .reduce((sum, e) => sum + e.amount, 0);
+  const marketingExp = periodExpenses
+    .filter((e) => e.category === "marketing")
+    .reduce((sum, e) => sum + e.amount, 0);
+
+  const totalMochis = paidOrders.reduce((sum, o) => {
+    if (!o.flavours) return sum;
+    return (
+      sum +
+      Object.values(o.flavours as Record<string, number>).reduce(
+        (s, q) => s + q,
+        0,
+      )
+    );
+  }, 0);
+  const costPerMochi =
+    totalMochis > 0 ? Math.round(totalExpenses / totalMochis) : 0;
+  const revenuePerMochi =
+    totalMochis > 0 ? Math.round(totalRevenue / totalMochis) : 0;
   const profit = totalRevenue - totalExpenses;
   const flavourCounts: Record<string, number> = {};
   paidOrders.forEach((o) => {
@@ -3354,11 +3376,32 @@ export default function AdminPage() {
                 }
                 sub="per order"
               />
+
+              <StatCard
+                label="Cost / Mochi"
+                value={totalMochis > 0 ? `₹${costPerMochi}` : "—"}
+                sub={
+                  totalMochis > 0
+                    ? `${totalMochis} mochis tracked`
+                    : "No flavour data yet"
+                }
+                color={T.sub}
+              />
+              <StatCard
+                label="Revenue / Mochi"
+                value={totalMochis > 0 ? `₹${revenuePerMochi}` : "—"}
+                sub={
+                  totalMochis > 0
+                    ? `₹${revenuePerMochi - costPerMochi} margin`
+                    : "No flavour data yet"
+                }
+                color={T.green}
+              />
             </div>
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "1fr 1fr 1fr",
+                gridTemplateColumns: "1fr 1fr", // 2x2 grid now
                 gap: 10,
                 marginBottom: 16,
               }}
@@ -3382,6 +3425,12 @@ export default function AdminPage() {
                   color: "#37474f",
                   bg: "#eceff1",
                 },
+                {
+                  label: "📣 Marketing",
+                  val: marketingExp,
+                  color: "#c2185b",
+                  bg: "#fce4ec",
+                },
               ].map(({ label, val, color, bg }) => (
                 <div
                   key={label}
@@ -3398,7 +3447,7 @@ export default function AdminPage() {
                       color,
                       fontWeight: 700,
                       letterSpacing: "0.08em",
-                      textTransform: "uppercase" as const,
+                      textTransform: "uppercase",
                       marginBottom: 6,
                     }}
                   >
@@ -3585,6 +3634,7 @@ export default function AdminPage() {
                     <option value="delivery">🚚 Delivery</option>
                     <option value="equipment">🔧 Equipment</option>
                     <option value="other">📋 Other</option>
+                    <option value="marketing">📣 Marketing</option>
                   </select>
                   <Input
                     type="date"

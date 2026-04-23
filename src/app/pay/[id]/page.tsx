@@ -72,6 +72,7 @@ export default function PayPage() {
   const [emailSent, setEmailSent] = useState(false);
 
   useEffect(() => {
+
     async function load() {
       if (!id) { setNotFound(true); setLoading(false); return; }
       const [{ data: o }, { data: p }, { data: b }] = await Promise.all([
