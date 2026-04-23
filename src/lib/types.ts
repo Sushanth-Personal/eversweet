@@ -55,6 +55,4 @@ export type CustomerForm = {
   name: string;
   phone: string;
   address: string;
-  dob: string;
-  notes: string;
 };
