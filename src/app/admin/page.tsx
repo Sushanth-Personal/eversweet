@@ -810,17 +810,13 @@ function OrderCard({
 
       {order.status !== "dispatched" && order.status !== "cancelled" && (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" as const }}>
-          {next && (
+          {/* Confirm button only for pending */}
+          {order.status === "pending" && (
             <button
               disabled={updating}
               onClick={async () => {
                 setUpdating(true);
-                if (next === "porter_booked") {
-                  setEmailing(true);
-                  await onPorterEmail(order);
-                  setEmailing(false);
-                }
-                await onStatusChange(order.id, next);
+                await onStatusChange(order.id, "confirmed");
                 setUpdating(false);
               }}
               style={{
@@ -830,55 +826,77 @@ function OrderCard({
                 fontWeight: 600,
                 cursor: updating ? "not-allowed" : "pointer",
                 opacity: updating ? 0.5 : 1,
-                border: "1px solid",
+                border: "1px solid #42a5f5",
+                background: "#e3f2fd",
+                color: "#1565c0",
                 fontFamily: "system-ui, sans-serif",
-                transition: "all 0.15s",
-                ...(order.status === "pending"
-                  ? {
-                      background: "#e3f2fd",
-                      color: "#1565c0",
-                      borderColor: "#42a5f5",
-                    }
-                  : order.status === "confirmed"
-                    ? {
-                        background: "#fff3e0",
-                        color: "#e65100",
-                        borderColor: "#ffa726",
-                      }
-                    : order.status === "cooking"
-                      ? {
-                          background: "#e8f5e9",
-                          color: "#2e7d32",
-                          borderColor: "#66bb6a",
-                        }
-                      : order.status === "cooked"
-                        ? {
-                            background: "#f3e5f5",
-                            color: "#6a1b9a",
-                            borderColor: "#ab47bc",
-                          }
-                        : {
-                            background: "#e8f5e9",
-                            color: "#1b5e20",
-                            borderColor: "#43a047",
-                          }),
+              }}
+            >
+              {updating ? "..." : "→ Confirm Order"}
+            </button>
+          )}
+
+          {/* Book Porter button for confirmed orders */}
+          {(order.status === "confirmed" ||
+            order.status === "cooking" ||
+            order.status === "cooked") && (
+            <button
+              disabled={updating}
+              onClick={async () => {
+                setUpdating(true);
+                setEmailing(true);
+                await onPorterEmail(order);
+                setEmailing(false);
+                await onStatusChange(order.id, "porter_booked");
+                setUpdating(false);
+              }}
+              style={{
+                padding: "8px 18px",
+                borderRadius: 5,
+                fontSize: "0.85rem",
+                fontWeight: 600,
+                cursor: updating ? "not-allowed" : "pointer",
+                opacity: updating ? 0.5 : 1,
+                border: "1px solid #ab47bc",
+                background: "#f3e5f5",
+                color: "#6a1b9a",
+                fontFamily: "system-ui, sans-serif",
               }}
             >
               {updating
                 ? emailing
                   ? "📧 Sending..."
                   : "..."
-                : order.status === "pending"
-                  ? "→ Confirm Order"
-                  : order.status === "confirmed"
-                    ? "→ Start Cooking"
-                    : order.status === "cooking"
-                      ? "✓ Cooking Done"
-                      : order.status === "cooked"
-                        ? "📦 Book Porter"
-                        : "→ Mark Dispatched"}
+                : "📦 Book Porter"}
             </button>
           )}
+
+          {/* Dispatched button only after porter booked */}
+          {order.status === "porter_booked" && (
+            <button
+              disabled={updating}
+              onClick={async () => {
+                setUpdating(true);
+                await onStatusChange(order.id, "dispatched");
+                setUpdating(false);
+              }}
+              style={{
+                padding: "8px 18px",
+                borderRadius: 5,
+                fontSize: "0.85rem",
+                fontWeight: 600,
+                cursor: updating ? "not-allowed" : "pointer",
+                opacity: updating ? 0.5 : 1,
+                border: "1px solid #43a047",
+                background: "#e8f5e9",
+                color: "#1b5e20",
+                fontFamily: "system-ui, sans-serif",
+              }}
+            >
+              {updating ? "..." : "→ Mark Dispatched"}
+            </button>
+          )}
+
           <Btn
             variant="danger"
             disabled={updating}
@@ -1642,6 +1660,37 @@ function BulkOrderImport({
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [importing, setImporting] = useState(false);
+  const [promptCopied, setPromptCopied] = useState(false);
+
+  const AI_PROMPT = `Convert the following order data into a JSON array for import. Return ONLY valid JSON, no explanation.
+
+Required format:
+[
+  {
+    "customer_name": "Full Name",
+    "phone": "9876543210",
+    "box_size_label": "Box of 6",
+    "total_price": 599,
+    "order_date": "2026-04-23",
+    "status": "dispatched",
+    "address": "optional address",
+    "batch_label": "Morning Batch",
+    "delivery_date": "2026-04-23",
+    "payment_method": "upi",
+    "remarks": "optional note"
+  }
+]
+
+Rules:
+- status must be one of: pending, confirmed, dispatched
+- box_size_label must match exactly: "Box of 4", "Box of 6", "Box of 8", "Box of 12", "Box of 16"
+- order_date and delivery_date format: YYYY-MM-DD
+- phone: 10 digits only, no country code
+- Return [] if no valid orders found
+
+Orders to convert:
+[PASTE YOUR ORDERS HERE]`;
+
   if (!open)
     return (
       <button
@@ -1660,6 +1709,7 @@ function BulkOrderImport({
         📂 Bulk Import Orders (JSON)
       </button>
     );
+
   return (
     <div
       style={{
@@ -1678,7 +1728,7 @@ function BulkOrderImport({
         }}
       >
         <p style={{ fontSize: "0.82rem", fontWeight: 600, color: T.sub }}>
-          Paste order JSON
+          Bulk Import Orders
         </p>
         <button
           onClick={() => setOpen(false)}
@@ -1692,13 +1742,71 @@ function BulkOrderImport({
           ✕
         </button>
       </div>
+
+      {/* Copy AI Prompt button */}
+      <div
+        style={{
+          background: T.goldBg,
+          border: `1px solid #f5c842`,
+          borderRadius: 6,
+          padding: "10px 12px",
+          marginBottom: 12,
+        }}
+      >
+        <p
+          style={{
+            fontSize: "0.75rem",
+            color: T.gold,
+            fontWeight: 700,
+            marginBottom: 6,
+          }}
+        >
+          ✨ Use AI to format your orders
+        </p>
+        <p
+          style={{
+            fontSize: "0.72rem",
+            color: "#92640a",
+            marginBottom: 8,
+            lineHeight: 1.5,
+          }}
+        >
+          Copy this prompt → paste into ChatGPT/Claude → paste your raw order
+          data → get JSON back → paste below
+        </p>
+        <button
+          onClick={() => {
+            navigator.clipboard.writeText(AI_PROMPT).then(() => {
+              setPromptCopied(true);
+              setTimeout(() => setPromptCopied(false), 3000);
+            });
+          }}
+          style={{
+            padding: "8px 16px",
+            borderRadius: 5,
+            border: `1px solid ${promptCopied ? "#66bb6a" : T.gold}`,
+            background: promptCopied ? T.greenBg : T.white,
+            color: promptCopied ? T.green : T.gold,
+            fontSize: "0.8rem",
+            fontWeight: 600,
+            cursor: "pointer",
+            fontFamily: "system-ui, sans-serif",
+            transition: "all 0.2s",
+          }}
+        >
+          {promptCopied
+            ? "✓ Prompt Copied! Paste into AI →"
+            : "📋 Copy AI Prompt"}
+        </button>
+      </div>
+
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder='[{ "customer_name":"Name", "phone":"", "box_size_label":"Box of 4", "total_price":499, "order_date":"2026-04-20", "status":"dispatched" }]'
+        placeholder="Paste the JSON array returned by AI here..."
         style={{
           width: "100%",
-          minHeight: 80,
+          minHeight: 100,
           background: "#f8f8f8",
           border: `1px solid ${T.border}`,
           borderRadius: 6,
@@ -1978,6 +2086,13 @@ export default function AdminPage() {
   const [dashPeriod, setDashPeriod] = useState<
     "from_start" | "today" | "week" | "month" | "all"
   >("from_start");
+
+  const [paymentEnabled, setPaymentEnabled] = useState(false);
+  const [paymentToggling, setPaymentToggling] = useState(false);
+
+ 
+
+ 
 
   useEffect(() => {
     if (localStorage.getItem("es_admin") === "true") setAuthed(true);
@@ -2729,6 +2844,7 @@ export default function AdminPage() {
             )}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
+            
             <button
               onClick={load}
               style={{

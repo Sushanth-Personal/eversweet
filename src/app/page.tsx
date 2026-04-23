@@ -14,7 +14,6 @@ const IMG: Record<string, string> = {
     "https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/products/mochi-strawberry.webp",
 };
 
-// ── Your payment details ───────────────────────────────────────────
 const UPI_ID = "thinkwide9-1@okicici";
 const WHATSAPP_NUMBER = "917907044368";
 
@@ -28,7 +27,6 @@ function getImg(name: string, url: string | null): string {
   return IMG.default;
 }
 
-// ── Static batch definitions — no DB needed ────────────────────────
 const BATCHES = [
   {
     id: "morning",
@@ -42,17 +40,11 @@ const BATCHES = [
     icon: "☀️",
     timeRange: "12PM – 4PM",
   },
-  {
-    id: "evening",
-    label: "Evening Batch",
-    icon: "🌙",
-    timeRange: "5PM – 8PM",
-  },
+  { id: "evening", label: "Evening Batch", icon: "🌙", timeRange: "5PM – 8PM" },
 ] as const;
 
 type BatchId = (typeof BATCHES)[number]["id"];
 
-// ── Real testimonials from customer DMs ───────────────────────────
 const TESTIMONIALS = [
   {
     name: "Sneha R.",
@@ -136,7 +128,6 @@ function GoldLine() {
   );
 }
 
-// ── Build per-app UPI deep links ─────────────────────────────────
 function buildUpiLinks(amount: number, name: string) {
   const note = encodeURIComponent(`Eversweet order for ${name}`);
   const pa = encodeURIComponent(UPI_ID);
@@ -151,7 +142,6 @@ function buildUpiLinks(amount: number, name: string) {
   };
 }
 
-// ── Build WhatsApp pre-filled message ─────────────────────────────
 function buildWhatsAppUrl(
   customerName: string,
   amount: number,
@@ -178,7 +168,6 @@ function buildWhatsAppUrl(
   return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
 }
 
-// ── Fire payment alert email to admin ────────────────────────────
 async function sendPaymentAlert(payload: {
   customer_name: string;
   phone: string;
@@ -200,11 +189,9 @@ async function sendPaymentAlert(payload: {
   }
 }
 
-// ── Validation ────────────────────────────────────────────────────
 function validateForm(form: { name: string; phone: string }): string {
   const nameRegex = /^[a-zA-Z\s.'-]{2,}$/;
   const phoneRegex = /^[6-9]\d{9}$/;
-
   if (!form.name.trim()) return "Please enter your name.";
   if (!nameRegex.test(form.name.trim()))
     return "Please enter a valid name (letters only).";
@@ -219,6 +206,7 @@ export default function Home() {
   const [products, setProducts] = useState<Product[]>([]);
   const [boxes, setBoxes] = useState<BoxSize[]>([]);
   const [loading, setLoading] = useState(true);
+  const [paymentEnabled, setPaymentEnabled] = useState(false);
 
   const [flavours, setFlavours] = useState<Record<string, number>>({});
   const [selectedBatch, setSelectedBatch] = useState<BatchId | null>(null);
@@ -238,7 +226,6 @@ export default function Home() {
     phone: "",
     address: "",
   });
-
   const [fulfillmentType, setFulfillmentType] = useState<"delivery" | "pickup">(
     "delivery",
   );
@@ -266,6 +253,8 @@ export default function Home() {
       ]);
       if (p) setProducts(p);
       if (b) setBoxes(b);
+      console.log(p, b);
+
       setLoading(false);
     }
     load();
@@ -384,7 +373,7 @@ export default function Home() {
     });
   }
 
-  // ── Order confirmed ─────────────────────────────────────────────
+  // ── Order confirmed screen ──────────────────────────────────────
   if (orderDone) {
     const batch = BATCHES.find((b) => b.id === selectedBatch)!;
 
@@ -438,10 +427,9 @@ export default function Home() {
           <em>{form.name.split(" ")[0]}</em>
         </h1>
         <SectionLabel text="Please make payment to confirm your order" />
-
         <GoldLine />
 
-        {/* Order summary pill */}
+        {/* Order summary */}
         <div
           style={{
             background: "rgba(184,134,11,0.08)",
@@ -475,296 +463,518 @@ export default function Home() {
           </p>
         </div>
 
-        {/* ── PAYMENT SECTION ── */}
-        <div
-          style={{
-            width: "100%",
-            background: "rgba(255,255,255,0.04)",
-            border: "1px solid rgba(184,134,11,0.3)",
-            borderRadius: 12,
-            padding: "20px 18px",
-            marginBottom: 24,
-          }}
-        >
-          <p
-            style={{
-              fontSize: "0.62rem",
-              letterSpacing: "0.2em",
-              textTransform: "uppercase" as const,
-              color: "var(--gold)",
-              marginBottom: 6,
-              opacity: 0.85,
-            }}
-          >
-            Complete Your Payment
-          </p>
-          <p
-            style={{
-              fontSize: "1.6rem",
-              fontWeight: 700,
-              color: "var(--gold)",
-              marginBottom: 4,
-              fontFamily: "Cormorant Garamond, serif",
-            }}
-          >
-            ₹{autoBox?.price}
-          </p>
-          <p
-            style={{
-              fontSize: "0.75rem",
-              color: "rgba(255,248,230,0.65)",
-              marginBottom: 18,
-              lineHeight: 1.6,
-            }}
-          >
-            Your slot is reserved. Pay now to confirm it.
-          </p>
-
-          <p
-            style={{
-              fontSize: "0.78rem",
-              color: "var(--cream-dim)",
-              marginBottom: 12,
-              lineHeight: 1.6,
-            }}
-          >
-            Tap your payment app — amount is pre-filled ✓
-          </p>
+        {/* ── Payment section — toggleable ── */}
+        {paymentEnabled ? (
           <div
             style={{
-              display: "flex",
-              flexDirection: "column" as const,
-              gap: 10,
-              marginBottom: 4,
+              width: "100%",
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(184,134,11,0.3)",
+              borderRadius: 12,
+              padding: "20px 18px",
+              marginBottom: 24,
             }}
           >
-            {/* Google Pay */}
-            <a
-              href={upiLinks.gpay}
-              onClick={() => setHasTappedPay(true)}
+            <p
               style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 10,
-                width: "100%",
-                padding: "13px 20px",
-                borderRadius: 10,
-                background: "linear-gradient(135deg, #1a73e8 0%, #0d47a1 100%)",
-                color: "#fff",
-                fontSize: "0.95rem",
-                fontWeight: 700,
-                textDecoration: "none",
-                boxSizing: "border-box" as const,
-                boxShadow: "0 3px 12px rgba(26,115,232,0.35)",
+                fontSize: "0.62rem",
+                letterSpacing: "0.2em",
+                textTransform: "uppercase" as const,
+                color: "var(--gold)",
+                marginBottom: 6,
+                opacity: 0.85,
               }}
             >
-              <img
-                src="https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/Payment/img.icons8.com.png"
-                alt="GPay"
-                style={{ width: 28, height: 28, objectFit: "contain" }}
-              />
-              Google Pay — ₹{autoBox?.price}
-            </a>
-            {/* PhonePe */}
-            <a
-              href={upiLinks.phonepe}
-              onClick={() => setHasTappedPay(true)}
+              Complete Your Payment
+            </p>
+            <p
               style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 10,
-                width: "100%",
-                padding: "13px 20px",
-                borderRadius: 10,
-                background: "linear-gradient(135deg, #5f259f 0%, #3d1a6e 100%)",
-                color: "#fff",
-                fontSize: "0.95rem",
+                fontSize: "1.6rem",
                 fontWeight: 700,
-                textDecoration: "none",
-                boxSizing: "border-box" as const,
-                boxShadow: "0 3px 12px rgba(95,37,159,0.35)",
+                color: "var(--gold)",
+                marginBottom: 4,
+                fontFamily: "Cormorant Garamond, serif",
               }}
             >
-              <img
-                src="https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/Payment/icons8-phone-pe-48.png"
-                alt="PhonePe"
-                style={{ width: 28, height: 28, objectFit: "contain" }}
-              />
-              PhonePe — ₹{autoBox?.price}
-            </a>
-            {/* Paytm */}
-            <a
-              href={upiLinks.paytm}
-              onClick={() => setHasTappedPay(true)}
+              ₹{autoBox?.price}
+            </p>
+            <p
               style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 10,
-                width: "100%",
-                padding: "13px 20px",
-                borderRadius: 10,
-                background: "linear-gradient(135deg, #00baf2 0%, #0073b7 100%)",
-                color: "#fff",
-                fontSize: "0.95rem",
-                fontWeight: 700,
-                textDecoration: "none",
-                boxSizing: "border-box" as const,
-                boxShadow: "0 3px 12px rgba(0,115,183,0.35)",
+                fontSize: "0.75rem",
+                color: "rgba(255,248,230,0.65)",
+                marginBottom: 18,
+                lineHeight: 1.6,
               }}
             >
-              <img
-                src="https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/Payment/icons8-paytm-48.png"
-                alt="Paytm"
-                style={{ width: 28, height: 28, objectFit: "contain" }}
-              />
-              Paytm — ₹{autoBox?.price}
-            </a>
-            {/* Any UPI app fallback */}
-            <a
-              href={upiLinks.generic}
-              onClick={() => setHasTappedPay(true)}
+              Your slot is reserved. Pay now to confirm it.
+            </p>
+            <p
               style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 10,
-                width: "100%",
-                padding: "11px 20px",
-                borderRadius: 10,
-                background: "transparent",
-                border: "1px solid rgba(184,134,11,0.35)",
+                fontSize: "0.78rem",
                 color: "var(--cream-dim)",
-                fontSize: "0.8rem",
-                fontWeight: 500,
-                textDecoration: "none",
-                boxSizing: "border-box" as const,
+                marginBottom: 12,
+                lineHeight: 1.6,
               }}
             >
-              Other UPI App
-            </a>
-          </div>
+              Tap your payment app — amount is pre-filled ✓
+            </p>
 
-          {/* Divider */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              marginBottom: 16,
-            }}
-          >
             <div
               style={{
-                flex: 1,
-                height: 1,
-                background: "rgba(255,255,255,0.1)",
+                display: "flex",
+                flexDirection: "column" as const,
+                gap: 10,
+                marginBottom: 4,
               }}
-            />
-            <span
+            >
+              <a
+                href={upiLinks.gpay}
+                onClick={() => setHasTappedPay(true)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 10,
+                  width: "100%",
+                  padding: "13px 20px",
+                  borderRadius: 10,
+                  background:
+                    "linear-gradient(135deg, #1a73e8 0%, #0d47a1 100%)",
+                  color: "#fff",
+                  fontSize: "0.95rem",
+                  fontWeight: 700,
+                  textDecoration: "none",
+                  boxSizing: "border-box" as const,
+                  boxShadow: "0 3px 12px rgba(26,115,232,0.35)",
+                }}
+              >
+                <img
+                  src="https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/Payment/img.icons8.com.png"
+                  alt="GPay"
+                  style={{ width: 28, height: 28, objectFit: "contain" }}
+                />
+                Google Pay — ₹{autoBox?.price}
+              </a>
+
+              <a
+                href={upiLinks.phonepe}
+                onClick={() => setHasTappedPay(true)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 10,
+                  width: "100%",
+                  padding: "13px 20px",
+                  borderRadius: 10,
+                  background:
+                    "linear-gradient(135deg, #5f259f 0%, #3d1a6e 100%)",
+                  color: "#fff",
+                  fontSize: "0.95rem",
+                  fontWeight: 700,
+                  textDecoration: "none",
+                  boxSizing: "border-box" as const,
+                  boxShadow: "0 3px 12px rgba(95,37,159,0.35)",
+                }}
+              >
+                <img
+                  src="https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/Payment/icons8-phone-pe-48.png"
+                  alt="PhonePe"
+                  style={{ width: 28, height: 28, objectFit: "contain" }}
+                />
+                PhonePe — ₹{autoBox?.price}
+              </a>
+
+              <a
+                href={upiLinks.paytm}
+                onClick={() => setHasTappedPay(true)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 10,
+                  width: "100%",
+                  padding: "13px 20px",
+                  borderRadius: 10,
+                  background:
+                    "linear-gradient(135deg, #00baf2 0%, #0073b7 100%)",
+                  color: "#fff",
+                  fontSize: "0.95rem",
+                  fontWeight: 700,
+                  textDecoration: "none",
+                  boxSizing: "border-box" as const,
+                  boxShadow: "0 3px 12px rgba(0,115,183,0.35)",
+                }}
+              >
+                <img
+                  src="https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/Payment/icons8-paytm-48.png"
+                  alt="Paytm"
+                  style={{ width: 28, height: 28, objectFit: "contain" }}
+                />
+                Paytm — ₹{autoBox?.price}
+              </a>
+
+              <a
+                href={upiLinks.generic}
+                onClick={() => setHasTappedPay(true)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 10,
+                  width: "100%",
+                  padding: "11px 20px",
+                  borderRadius: 10,
+                  background: "transparent",
+                  border: "1px solid rgba(184,134,11,0.35)",
+                  color: "var(--cream-dim)",
+                  fontSize: "0.8rem",
+                  fontWeight: 500,
+                  textDecoration: "none",
+                  boxSizing: "border-box" as const,
+                }}
+              >
+                Other UPI App
+              </a>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                marginBottom: 16,
+                marginTop: 16,
+              }}
+            >
+              <div
+                style={{
+                  flex: 1,
+                  height: 1,
+                  background: "rgba(255,255,255,0.1)",
+                }}
+              />
+              <span
+                style={{
+                  fontSize: "0.65rem",
+                  color: "rgba(255,248,230,0.5)",
+                  letterSpacing: "0.1em",
+                }}
+              >
+                AFTER PAYING
+              </span>
+              <div
+                style={{
+                  flex: 1,
+                  height: 1,
+                  background: "rgba(255,255,255,0.1)",
+                }}
+              />
+            </div>
+
+            <button
+              onClick={async () => {
+                if (!emailSent) {
+                  setEmailSent(true);
+                  await sendPaymentAlert({
+                    customer_name: form.name,
+                    phone: form.phone,
+                    address: form.address,
+                    batch_label: batch.label,
+                    delivery_date: friendlyDate(selectedDate),
+                    box_label: autoBox?.label || "",
+                    flavour_summary: flavourSummary,
+                    total_price: autoBox?.price || 0,
+                  });
+                }
+                window.open(whatsappUrl, "_blank");
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 10,
+                width: "100%",
+                padding: "13px 20px",
+                borderRadius: 10,
+                background: hasTappedPay
+                  ? "linear-gradient(135deg, #25d366 0%, #128c4a 100%)"
+                  : "rgba(37,211,102,0.12)",
+                border: hasTappedPay
+                  ? "none"
+                  : "1.5px solid rgba(37,211,102,0.4)",
+                color: hasTappedPay ? "#fff" : "#25d366",
+                fontSize: hasTappedPay ? "1rem" : "0.9rem",
+                fontWeight: 700,
+                cursor: "pointer",
+                boxSizing: "border-box" as const,
+                transition: "all 0.3s ease",
+                boxShadow: hasTappedPay
+                  ? "0 4px 16px rgba(37,211,102,0.35)"
+                  : "none",
+                letterSpacing: "0.01em",
+                fontFamily: "system-ui, sans-serif",
+              }}
+            >
+              <span style={{ fontSize: "1.3rem" }}>
+                {emailSent ? "✅" : "📲"}
+              </span>
+              {emailSent
+                ? "Screenshot Sent — Slot Confirmed!"
+                : hasTappedPay
+                  ? "Send Payment Screenshot on WhatsApp"
+                  : "Send Screenshot on WhatsApp"}
+            </button>
+
+            {hasTappedPay && (
+              <p
+                style={{
+                  fontSize: "0.7rem",
+                  color: "#25d366",
+                  marginTop: 8,
+                  lineHeight: 1.6,
+                  opacity: 0.9,
+                }}
+              >
+                Opens WhatsApp with your order details pre-filled.
+                <br />
+                Just attach your payment screenshot and send! 🍡
+              </p>
+            )}
+            {!hasTappedPay && (
+              <p
+                style={{
+                  fontSize: "0.68rem",
+                  color: "rgba(255,248,230,0.6)",
+                  marginTop: 8,
+                  lineHeight: 1.6,
+                }}
+              >
+                Pay first, then send us the screenshot to lock your slot.
+              </p>
+            )}
+          </div>
+        ) : (
+          /* ── Payment disabled — QR + phone only ── */
+          <div
+            style={{
+              width: "100%",
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(184,134,11,0.3)",
+              borderRadius: 12,
+              padding: "28px 20px",
+              marginBottom: 24,
+              textAlign: "center",
+            }}
+          >
+            {/* Amount */}
+            <p
+              style={{
+                fontSize: "0.62rem",
+                letterSpacing: "0.2em",
+                textTransform: "uppercase" as const,
+                color: "var(--gold)",
+                marginBottom: 6,
+                opacity: 0.85,
+              }}
+            >
+              Amount to Pay
+            </p>
+            <p
+              style={{
+                fontSize: "2.4rem",
+                fontWeight: 700,
+                color: "var(--gold)",
+                fontFamily: "Cormorant Garamond, serif",
+                lineHeight: 1,
+                marginBottom: 22,
+              }}
+            >
+              ₹{autoBox?.price}
+            </p>
+
+            {/* QR Code */}
+            <div
+              style={{
+                display: "inline-block",
+                background: "#ffffff",
+                borderRadius: 12,
+                padding: 16,
+                marginBottom: 18,
+                boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+              }}
+            >
+              <img
+                src="/upi-qr.png"
+                alt="UPI QR Code"
+                style={{ width: 200, height: 200, display: "block" }}
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = "none";
+                }}
+              />
+            </div>
+
+            {/* UPI ID */}
+            <p
+              style={{
+                fontSize: "0.72rem",
+                color: "rgba(255,248,230,0.5)",
+                letterSpacing: "0.08em",
+                marginBottom: 6,
+                textTransform: "uppercase" as const,
+              }}
+            >
+              UPI ID
+            </p>
+            <p
+              style={{
+                fontSize: "1rem",
+                fontWeight: 600,
+                color: "var(--cream)",
+                marginBottom: 22,
+                letterSpacing: "0.02em",
+              }}
+            >
+              {UPI_ID}
+            </p>
+            {/* Contact Number*/}
+            <p
+              style={{
+                fontSize: "0.72rem",
+                color: "rgba(255,248,230,0.5)",
+                letterSpacing: "0.08em",
+                marginBottom: 6,
+                textTransform: "uppercase" as const,
+              }}
+            >
+              or Pay to this number
+            </p>
+            <p
+              style={{
+                fontSize: "1rem",
+                fontWeight: 600,
+                color: "var(--cream)",
+                marginBottom: 22,
+                letterSpacing: "0.02em",
+              }}
+            >
+              {7907044368}
+            </p>
+
+            {/* Divider */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                marginBottom: 22,
+              }}
+            >
+              <div
+                style={{
+                  flex: 1,
+                  height: 1,
+                  background: "rgba(255,255,255,0.1)",
+                }}
+              />
+              <span
+                style={{
+                  fontSize: "0.62rem",
+                  color: "rgba(255,248,230,0.4)",
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase" as const,
+                }}
+              >
+                After paying
+              </span>
+              <div
+                style={{
+                  flex: 1,
+                  height: 1,
+                  background: "rgba(255,255,255,0.1)",
+                }}
+              />
+            </div>
+
+            {/* WhatsApp + phone */}
+            <p
+              style={{
+                fontSize: "0.8rem",
+                color: "var(--cream-dim)",
+                lineHeight: 1.7,
+                marginBottom: 16,
+              }}
+            >
+              Send your payment screenshot to us on WhatsApp to confirm your
+              slot.
+            </p>
+
+            {/* Phone number — tappable */}
+            <a
+              href="tel:+917907044368"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 10,
+                width: "100%",
+                padding: "13px 20px",
+                borderRadius: 10,
+                background: "rgba(255,255,255,0.06)",
+                border: "1px solid rgba(255,255,255,0.15)",
+                color: "var(--cream)",
+                fontSize: "1.1rem",
+                fontWeight: 700,
+                textDecoration: "none",
+                boxSizing: "border-box" as const,
+                marginBottom: 10,
+                letterSpacing: "0.04em",
+              }}
+            >
+              📞 +91 79070 44368
+            </a>
+
+            {/* WhatsApp button */}
+            <a
+              href={`https://wa.me/917907044368?text=${encodeURIComponent(
+                `Hi! I've paid ₹${autoBox?.price} for my Eversweet order 🍡\n\n📦 ${autoBox?.label}\n${BATCHES.find((b) => b.id === selectedBatch)?.icon || ""} ${BATCHES.find((b) => b.id === selectedBatch)?.label || ""} · ${friendlyDate(selectedDate)}\n\nPlease confirm my slot!`,
+              )}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 10,
+                width: "100%",
+                padding: "13px 20px",
+                borderRadius: 10,
+                background: "linear-gradient(135deg, #25d366 0%, #128c4a 100%)",
+                color: "#fff",
+                fontSize: "0.95rem",
+                fontWeight: 700,
+                textDecoration: "none",
+                boxSizing: "border-box" as const,
+                boxShadow: "0 4px 16px rgba(37,211,102,0.3)",
+              }}
+            >
+              <span style={{ fontSize: "1.2rem" }}>📲</span>
+              Send Screenshot on WhatsApp
+            </a>
+
+            <p
               style={{
                 fontSize: "0.65rem",
-                color: "rgba(255,248,230,0.5)",
-                letterSpacing: "0.1em",
+                color: "rgba(255,248,230,0.35)",
+                marginTop: 14,
+                lineHeight: 1.7,
               }}
             >
-              AFTER PAYING
-            </span>
-            <div
-              style={{
-                flex: 1,
-                height: 1,
-                background: "rgba(255,255,255,0.1)",
-              }}
-            />
+              Scan the QR with any UPI app · Pay ₹{autoBox?.price} · Send
+              screenshot to confirm
+            </p>
           </div>
-
-          {/* WhatsApp Screenshot Button */}
-          <button
-            onClick={async () => {
-              if (!emailSent) {
-                setEmailSent(true);
-                await sendPaymentAlert({
-                  customer_name: form.name,
-                  phone: form.phone,
-                  address: form.address,
-                  batch_label: batch.label,
-                  delivery_date: friendlyDate(selectedDate),
-                  box_label: autoBox?.label || "",
-                  flavour_summary: flavourSummary,
-                  total_price: autoBox?.price || 0,
-                });
-              }
-              window.open(whatsappUrl, "_blank");
-            }}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 10,
-              width: "100%",
-              padding: "13px 20px",
-              borderRadius: 10,
-              background: hasTappedPay
-                ? "linear-gradient(135deg, #25d366 0%, #128c4a 100%)"
-                : "rgba(37,211,102,0.12)",
-              border: hasTappedPay
-                ? "none"
-                : "1.5px solid rgba(37,211,102,0.4)",
-              color: hasTappedPay ? "#fff" : "#25d366",
-              fontSize: hasTappedPay ? "1rem" : "0.9rem",
-              fontWeight: 700,
-              cursor: "pointer",
-              boxSizing: "border-box" as const,
-              transition: "all 0.3s ease",
-              boxShadow: hasTappedPay
-                ? "0 4px 16px rgba(37,211,102,0.35)"
-                : "none",
-              letterSpacing: "0.01em",
-              fontFamily: "system-ui, sans-serif",
-            }}
-          >
-            <span style={{ fontSize: "1.3rem" }}>
-              {emailSent ? "✅" : "📲"}
-            </span>
-            {emailSent
-              ? "Screenshot Sent — Slot Confirmed!"
-              : hasTappedPay
-                ? "Send Payment Screenshot on WhatsApp"
-                : "Send Screenshot on WhatsApp"}
-          </button>
-
-          {hasTappedPay && (
-            <p
-              style={{
-                fontSize: "0.7rem",
-                color: "#25d366",
-                marginTop: 8,
-                lineHeight: 1.6,
-                opacity: 0.9,
-              }}
-            >
-              Opens WhatsApp with your order details pre-filled.
-              <br />
-              Just attach your payment screenshot and send! 🍡
-            </p>
-          )}
-
-          {!hasTappedPay && (
-            <p
-              style={{
-                fontSize: "0.68rem",
-                color: "rgba(255,248,230,0.6)",
-                marginTop: 8,
-                lineHeight: 1.6,
-              }}
-            >
-              Pay first, then send us the screenshot to lock your slot.
-            </p>
-          )}
-        </div>
+        )}
 
         {/* QR fallback */}
         <details style={{ width: "100%", marginBottom: 24, cursor: "pointer" }}>
@@ -930,14 +1140,14 @@ export default function Home() {
         )}
 
         <style>{`
-  @keyframes heroFade {
-    0% { opacity: 0; }
-    8% { opacity: 1; }
-    33% { opacity: 1; }
-    41% { opacity: 0; }
-    100% { opacity: 0; }
-  }
-`}</style>
+          @keyframes heroFade {
+            0% { opacity: 0; }
+            8% { opacity: 1; }
+            33% { opacity: 1; }
+            41% { opacity: 0; }
+            100% { opacity: 0; }
+          }
+        `}</style>
 
         <p
           className="font-display"
@@ -965,7 +1175,6 @@ export default function Home() {
           Made fresh the morning it reaches you — because that&apos;s the only
           way mochi should be eaten.
         </p>
-
         <div style={{ display: "flex", justifyContent: "center" }}>
           <button
             className="btn-gold"
@@ -1180,7 +1389,10 @@ export default function Home() {
                     >
                       <button
                         className="qty-btn"
-                        onClick={() => adjustFlavour(p.id, -1)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          adjustFlavour(p.id, -1);
+                        }}
                         disabled={qty === 0}
                         style={{
                           width: 30,
@@ -1214,7 +1426,10 @@ export default function Home() {
                       </span>
                       <button
                         className="qty-btn"
-                        onClick={() => adjustFlavour(p.id, 1)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          adjustFlavour(p.id, 1);
+                        }}
                         style={{
                           width: 30,
                           height: 30,
@@ -1430,7 +1645,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ══ ORDER ══════════════════════════════════════════════════ */}
+      {/* ══ ORDER ═════════════════════════════════════════════════ */}
       <section
         id="order"
         ref={orderRef}
@@ -1450,7 +1665,7 @@ export default function Home() {
         </h2>
         <GoldLine />
 
-        {/* ── STEP 1: Pick flavours ──────────────────────────────── */}
+        {/* ── STEP 1: Pick flavours ─────────────────────────────── */}
         <div style={{ marginBottom: 28, textAlign: "left" }}>
           <p className="step-label">Step 1 — Pick your flavours</p>
           <p
@@ -1609,7 +1824,6 @@ export default function Home() {
                   </span>
                 )}
               </div>
-
               <div
                 style={{
                   marginTop: 10,
@@ -1692,7 +1906,7 @@ export default function Home() {
           )}
         </div>
 
-        {/* ── STEP 2: Date + Batch selection ───────────────────── */}
+        {/* ── STEP 2: Date + Batch ──────────────────────────────── */}
         {step >= 2 && (
           <div ref={slotRef} style={{ marginTop: 40, textAlign: "left" }}>
             <div className="divider" style={{ marginBottom: 24 }} />
@@ -1723,7 +1937,6 @@ export default function Home() {
               >
                 Delivery Date
               </p>
-
               <div
                 style={{
                   display: "flex",
@@ -1774,7 +1987,6 @@ export default function Home() {
                   </button>
                 ))}
               </div>
-
               <input
                 type="date"
                 min={todayStr}
@@ -1975,7 +2187,6 @@ export default function Home() {
         {step >= 3 && (
           <div ref={formRef} style={{ textAlign: "left" }}>
             <div className="divider" style={{ marginBottom: 24 }} />
-
             <button
               onClick={() => {
                 setStep(2);
@@ -2005,7 +2216,6 @@ export default function Home() {
             </button>
 
             <p className="step-label">Step 3 — Your details</p>
-
             <div
               style={{
                 display: "flex",
@@ -2209,7 +2419,6 @@ export default function Home() {
                 {placing ? "Placing order…" : "Place Order"}
               </button>
             </div>
-
             <p
               style={{
                 fontSize: "0.68rem",
@@ -2316,7 +2525,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ══ FOOTER ═════════════════════════════════════════════════ */}
+      {/* ══ FOOTER ════════════════════════════════════════════════ */}
       <footer
         style={{
           padding: "28px 24px",
@@ -2370,7 +2579,7 @@ export default function Home() {
         </p>
       </footer>
 
-      {/* ══ STICKY BOX PROGRESS BAR ══════════════════════════════════ */}
+      {/* ══ STICKY PROGRESS BAR ═══════════════════════════════════ */}
       {totalPicked > 0 && step === 1 && autoBox && (
         <div
           style={{
