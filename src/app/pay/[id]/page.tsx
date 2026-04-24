@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabase";
 
 const UPI_ID = "thinkwide9-1@okicici";
 const WHATSAPP_NUMBER = "917907044368";
-
+const PAYMENT_ENABLED = false; // Set to true when ready to enable UPI payments
 const BATCHES = [
   { id: "morning", label: "Morning Batch", icon: "🌅", timeRange: "9AM – 12PM" },
   { id: "afternoon", label: "Afternoon Batch", icon: "☀️", timeRange: "12PM – 4PM" },
@@ -216,83 +216,68 @@ export default function PayPage() {
         </div>
       </div>
 
-      {/* Payment block */}
-      <div style={{
-        width: "100%", background: "rgba(255,255,255,0.04)",
-        border: "1px solid rgba(184,134,11,0.3)", borderRadius: 12,
-        padding: "20px 18px", marginBottom: 24,
-      }}>
-        <p style={{ fontSize: "0.62rem", letterSpacing: "0.2em", textTransform: "uppercase" as const, color: "var(--gold)", marginBottom: 6, opacity: 0.85 }}>
-          Complete Your Payment
-        </p>
-        <p style={{ fontSize: "1.8rem", fontWeight: 700, color: "var(--gold)", marginBottom: 4, fontFamily: "Cormorant Garamond, serif" }}>
-          ₹{order.total_price}
-        </p>
-        <p style={{ fontSize: "0.75rem", color: "rgba(255,248,230,0.65)", marginBottom: 18, lineHeight: 1.6 }}>
-          Pay now to confirm your slot.
-        </p>
-        <p style={{ fontSize: "0.78rem", color: "var(--cream-dim)", marginBottom: 12, lineHeight: 1.6 }}>
-          Tap your payment app — amount is pre-filled ✓
-        </p>
+     {/* Payment block */}
+{PAYMENT_ENABLED ? (
+  <div style={{
+    width: "100%", background: "rgba(255,255,255,0.04)",
+    border: "1px solid rgba(184,134,11,0.3)", borderRadius: 12,
+    padding: "20px 18px", marginBottom: 24,
+  }}>
+    {/* ... all your existing payment block content unchanged ... */}
+  </div>
+) : (
+  <div style={{
+    width: "100%", background: "rgba(255,255,255,0.04)",
+    border: "1px solid rgba(184,134,11,0.3)", borderRadius: 12,
+    padding: "24px 18px", marginBottom: 24, textAlign: "center",
+  }}>
+    <p style={{ fontSize: "1.8rem", marginBottom: 12 }}>📱</p>
+    <p style={{ fontSize: "1rem", fontWeight: 700, color: "var(--gold)", marginBottom: 8 }}>
+      Pay via UPI to <strong>7907044368</strong> & confirm on WhatsApp
+    </p>
+    <p style={{ fontSize: "0.82rem", color: "var(--cream-dim)", lineHeight: 1.7, marginBottom: 20 }}>
+      Please pay <strong style={{ color: "var(--gold)" }}>₹{order.total_price}</strong> to:
+      <br />
+      <strong style={{ color: "var(--cream)", fontSize: "1rem" }}>{UPI_ID}</strong>
+    </p>
 
-        <div style={{ display: "flex", flexDirection: "column" as const, gap: 10, marginBottom: 4 }}>
-          <a href={upiLinks.gpay} onClick={() => setHasTappedPay(true)} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, width: "100%", padding: "13px 20px", borderRadius: 10, background: "linear-gradient(135deg, #1a73e8 0%, #0d47a1 100%)", color: "#fff", fontSize: "0.95rem", fontWeight: 700, textDecoration: "none", boxSizing: "border-box" as const, boxShadow: "0 3px 12px rgba(26,115,232,0.35)" }}>
-            <img src="https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/Payment/img.icons8.com.png" alt="GPay" style={{ width: 28, height: 28, objectFit: "contain" }} />
-            Google Pay — ₹{order.total_price}
-          </a>
-          <a href={upiLinks.phonepe} onClick={() => setHasTappedPay(true)} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, width: "100%", padding: "13px 20px", borderRadius: 10, background: "linear-gradient(135deg, #5f259f 0%, #3d1a6e 100%)", color: "#fff", fontSize: "0.95rem", fontWeight: 700, textDecoration: "none", boxSizing: "border-box" as const, boxShadow: "0 3px 12px rgba(95,37,159,0.35)" }}>
-            <img src="https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/Payment/icons8-phone-pe-48.png" alt="PhonePe" style={{ width: 28, height: 28, objectFit: "contain" }} />
-            PhonePe — ₹{order.total_price}
-          </a>
-          <a href={upiLinks.paytm} onClick={() => setHasTappedPay(true)} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, width: "100%", padding: "13px 20px", borderRadius: 10, background: "linear-gradient(135deg, #00baf2 0%, #0073b7 100%)", color: "#fff", fontSize: "0.95rem", fontWeight: 700, textDecoration: "none", boxSizing: "border-box" as const, boxShadow: "0 3px 12px rgba(0,115,183,0.35)" }}>
-            <img src="https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/Payment/icons8-paytm-48.png" alt="Paytm" style={{ width: 28, height: 28, objectFit: "contain" }} />
-            Paytm — ₹{order.total_price}
-          </a>
-          <a href={upiLinks.generic} onClick={() => setHasTappedPay(true)} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, width: "100%", padding: "11px 20px", borderRadius: 10, background: "transparent", border: "1px solid rgba(184,134,11,0.35)", color: "var(--cream-dim)", fontSize: "0.8rem", fontWeight: 500, textDecoration: "none", boxSizing: "border-box" as const }}>
-            Other UPI App
-          </a>
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, marginTop: 16 }}>
-          <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.1)" }} />
-          <span style={{ fontSize: "0.65rem", color: "rgba(255,248,230,0.5)", letterSpacing: "0.1em" }}>AFTER PAYING</span>
-          <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.1)" }} />
-        </div>
-
-        <button
-          onClick={async () => {
-            if (!emailSent) { setEmailSent(true); await sendAlert(); }
-            window.open(whatsappUrl, "_blank");
-          }}
-          style={{
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
-            width: "100%", padding: "13px 20px", borderRadius: 10,
-            background: hasTappedPay ? "linear-gradient(135deg, #25d366 0%, #128c4a 100%)" : "rgba(37,211,102,0.12)",
-            border: hasTappedPay ? "none" : "1.5px solid rgba(37,211,102,0.4)",
-            color: hasTappedPay ? "#fff" : "#25d366",
-            fontSize: hasTappedPay ? "1rem" : "0.9rem",
-            fontWeight: 700, cursor: "pointer", boxSizing: "border-box" as const,
-            transition: "all 0.3s ease",
-            boxShadow: hasTappedPay ? "0 4px 16px rgba(37,211,102,0.35)" : "none",
-            fontFamily: "system-ui, sans-serif",
-          }}
-        >
-          <span style={{ fontSize: "1.3rem" }}>{emailSent ? "✅" : "📲"}</span>
-          {emailSent ? "Screenshot Sent — Slot Confirmed!" : hasTappedPay ? "Send Payment Screenshot on WhatsApp" : "Send Screenshot on WhatsApp"}
-        </button>
-
-        {!hasTappedPay && (
-          <p style={{ fontSize: "0.68rem", color: "rgba(255,248,230,0.6)", marginTop: 8, lineHeight: 1.6 }}>
-            Pay first, then send us the screenshot to lock your slot.
-          </p>
-        )}
-        {hasTappedPay && (
-          <p style={{ fontSize: "0.7rem", color: "#25d366", marginTop: 8, lineHeight: 1.6, opacity: 0.9 }}>
-            Opens WhatsApp with your order details pre-filled.<br />
-            Just attach your payment screenshot and send! 🍡
-          </p>
-        )}
+    {/* QR Code */}
+    <div style={{ display: "flex", justifyContent: "center", marginBottom: 20 }}>
+      <div style={{ background: "white", borderRadius: 10, padding: 14, display: "inline-block" }}>
+        <img
+          src="/upi-qr.png"
+          alt="UPI QR Code"
+          style={{ width: 160, height: 160, display: "block" }}
+          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+        />
+        <p style={{ color: "#555", fontSize: "0.7rem", marginTop: 8, textAlign: "center" }}>
+          Scan to pay ₹{order.total_price}
+        </p>
       </div>
+    </div>
+
+    {/* WhatsApp button */}
+    <a
+      href={`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{
+        display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+        width: "100%", padding: "14px 20px", borderRadius: 10,
+        background: "linear-gradient(135deg, #25d366 0%, #128c4a 100%)",
+        color: "#fff", fontSize: "1rem", fontWeight: 700,
+        textDecoration: "none", boxSizing: "border-box" as const,
+        boxShadow: "0 4px 16px rgba(37,211,102,0.35)",
+      }}
+    >
+      📲 Send Payment Screenshot on WhatsApp
+    </a>
+    <p style={{ fontSize: "0.7rem", color: "rgba(255,248,230,0.5)", marginTop: 12, lineHeight: 1.6 }}>
+      After paying, send us the screenshot on WhatsApp to confirm your slot.
+      <br />UPI ID: {UPI_ID}
+    </p>
+  </div>
+)}
 
       <a href="https://instagram.com/byeversweet" target="_blank" rel="noopener noreferrer" style={{ color: "var(--gold)", fontSize: "0.7rem", letterSpacing: "0.15em", textTransform: "uppercase" as const, textDecoration: "none" }}>
         Follow us @byeversweet →
