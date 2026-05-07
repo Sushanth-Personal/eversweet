@@ -4,17 +4,19 @@
 // SECTION 1 — IMPORTS & TYPES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import type { Product, BoxSize, Order } from "@/lib/types";
 
 type Tab =
   | "cook"
   | "pending_payment"
-  | "dispatched"
+  | "orders"
   | "customers"
   | "dashboard"
   | "more";
+
+type OrdersFilterPreset = "today_paid" | "period_paid" | null;
 type MoreTab = "products" | "boxes";
 
 type Expense = {
@@ -33,9 +35,10 @@ type ExtOrder = Order & {
   source?: string;
   order_date?: string;
   delivery_date?: string;
-  delivery_slot?: string; // e.g. "1–3 PM" — customer-chosen time window
+  delivery_slot?: string;
   batch_label?: string;
   fulfillment_type?: string;
+  payment_confirmed_at?: string;
 };
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -3834,6 +3837,445 @@ function OrderEditModal({
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// SECTION 14b — ALL ORDERS TAB
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function AllOrdersTab({
+  orders,
+  productMap,
+  boxes,
+  onEdit,
+  onCancel,
+  onStatusChange,
+  filterPreset,
+  onFilterPresetConsumed,
+  dashPeriod,
+  trackingStart,
+}: {
+  orders: ExtOrder[];
+  productMap: Record<string, string>;
+  boxes: BoxSize[];
+  onEdit: (order: ExtOrder) => void;
+  onCancel: (id: string) => Promise<void>;
+  onStatusChange: (id: string, status: string) => Promise<void>;
+  filterPreset: OrdersFilterPreset;
+  onFilterPresetConsumed: () => void;
+  dashPeriod: "from_start" | "today" | "week" | "month" | "all";
+  trackingStart: string;
+}) {
+  const todayStr = new Date().toISOString().split("T")[0];
+
+  // Date filter: "all" | "today" | "week" | specific date string
+  const [dateFilter, setDateFilter] = React.useState<string>("all");
+  // Status filter: "all" | specific status
+  const [statusFilter, setStatusFilter] = React.useState<string>("all");
+  const [searchText, setSearchText] = React.useState("");
+
+  // Consume preset from dashboard click
+  React.useEffect(() => {
+    if (!filterPreset) return;
+    if (filterPreset === "today_paid") {
+      setDateFilter("today");
+      setStatusFilter("paid");
+    } else if (filterPreset === "period_paid") {
+      // mirror the dashboard's period filter
+      if (dashPeriod === "today") setDateFilter("today");
+      else if (dashPeriod === "week") setDateFilter("week");
+      else if (dashPeriod === "month") setDateFilter("month");
+      else if (dashPeriod === "from_start") setDateFilter("from_start");
+      else setDateFilter("all");
+      setStatusFilter("paid");
+    }
+    onFilterPresetConsumed();
+  }, [filterPreset]);
+
+  // Filter logic
+  const filtered = orders.filter((o) => {
+    // cancelled always hidden unless you pick it explicitly
+    if (o.status === "cancelled" && statusFilter !== "cancelled") return false;
+
+    // date filter
+    const orderDate =
+      o.delivery_date || o.order_date || o.created_at?.split("T")[0] || "";
+    if (dateFilter === "today") {
+      if (orderDate !== todayStr) return false;
+    } else if (dateFilter === "week") {
+      const now = new Date();
+      const localNow = new Date(now.getTime() + 5.5 * 3600000);
+      const day = localNow.getDay();
+      const diff = day === 0 ? 6 : day - 1;
+      const monday = new Date(localNow);
+      monday.setDate(localNow.getDate() - diff);
+      const mondayStr = monday.toISOString().split("T")[0];
+      if (orderDate < mondayStr || orderDate > todayStr) return false;
+    } else if (dateFilter === "month") {
+      if (!orderDate.startsWith(todayStr.substring(0, 7))) return false;
+    } else if (dateFilter === "from_start") {
+      if (orderDate < trackingStart) return false;
+    }
+
+    // status filter
+    if (statusFilter === "paid") {
+      if (!PAID_STATUSES.includes(o.status)) return false;
+    } else if (statusFilter !== "all") {
+      if (o.status !== statusFilter) return false;
+    }
+
+    // search
+    if (searchText.trim()) {
+      const q = searchText.toLowerCase();
+      if (
+        !o.customer_name?.toLowerCase().includes(q) &&
+        !(o.phone || "").includes(q) &&
+        !(o.insta_id || "").toLowerCase().includes(q)
+      )
+        return false;
+    }
+
+    return true;
+  });
+
+  const filteredRevenue = filtered
+    .filter((o) => PAID_STATUSES.includes(o.status))
+    .reduce((s, o) => s + (o.total_price || 0), 0);
+
+  const DATE_FILTERS = [
+    { id: "all", label: "All Time" },
+    { id: "today", label: "Today" },
+    { id: "week", label: "Week" },
+    { id: "month", label: "Month" },
+    { id: "from_start", label: "📌 Since Start" },
+  ];
+
+  const STATUS_FILTERS = [
+    { id: "all", label: "All" },
+    { id: "paid", label: "✓ Paid" },
+    { id: "pending", label: "⏳ Pending" },
+    { id: "confirmed", label: "Confirmed" },
+    { id: "dispatched", label: "Dispatched" },
+    { id: "cancelled", label: "Cancelled" },
+  ];
+
+  return (
+    <div style={{ maxWidth: 900, margin: "0 auto", padding: "14px 14px 20px" }}>
+      {/* Search */}
+      <div style={{ marginBottom: 10 }}>
+        <input
+          placeholder="Search name, phone, Instagram..."
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          style={{
+            width: "100%",
+            background: G.glass,
+            border: `1px solid ${G.glassBorder}`,
+            color: G.text,
+            padding: "11px 14px",
+            borderRadius: 10,
+            fontSize: "0.9rem",
+            outline: "none",
+            fontFamily: "system-ui, sans-serif",
+            boxSizing: "border-box" as const,
+          }}
+        />
+      </div>
+
+      {/* Date filter chips */}
+      <div
+        style={{
+          display: "flex",
+          gap: 6,
+          overflowX: "auto" as const,
+          scrollbarWidth: "none" as const,
+          marginBottom: 8,
+          paddingBottom: 2,
+        }}
+      >
+        {DATE_FILTERS.map((f) => (
+          <button
+            key={f.id}
+            onClick={() => setDateFilter(f.id)}
+            style={{
+              flexShrink: 0,
+              padding: "6px 13px",
+              borderRadius: 20,
+              border: `1px solid ${dateFilter === f.id ? "rgba(96,165,250,0.5)" : G.glassBorder}`,
+              background: dateFilter === f.id ? G.blueGlass : G.glass,
+              color: dateFilter === f.id ? G.blue : G.muted,
+              fontSize: "0.75rem",
+              fontWeight: dateFilter === f.id ? 700 : 400,
+              cursor: "pointer",
+              fontFamily: "system-ui, sans-serif",
+              whiteSpace: "nowrap" as const,
+            }}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Status filter chips */}
+      <div
+        style={{
+          display: "flex",
+          gap: 6,
+          overflowX: "auto" as const,
+          scrollbarWidth: "none" as const,
+          marginBottom: 14,
+          paddingBottom: 2,
+        }}
+      >
+        {STATUS_FILTERS.map((f) => {
+          const isActive = statusFilter === f.id;
+          let activeColor = G.blue;
+          if (f.id === "paid") activeColor = G.green;
+          if (f.id === "pending") activeColor = G.gold;
+          if (f.id === "cancelled") activeColor = G.red;
+          return (
+            <button
+              key={f.id}
+              onClick={() => setStatusFilter(f.id)}
+              style={{
+                flexShrink: 0,
+                padding: "6px 13px",
+                borderRadius: 20,
+                border: `1px solid ${isActive ? `${activeColor}60` : G.glassBorder}`,
+                background: isActive ? `${activeColor}18` : G.glass,
+                color: isActive ? activeColor : G.muted,
+                fontSize: "0.75rem",
+                fontWeight: isActive ? 700 : 400,
+                cursor: "pointer",
+                fontFamily: "system-ui, sans-serif",
+                whiteSpace: "nowrap" as const,
+              }}
+            >
+              {f.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Summary strip */}
+      <div
+        style={{
+          background: G.glassStrong,
+          border: `1px solid ${G.glassBorderStrong}`,
+          borderRadius: 10,
+          padding: "10px 14px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 14,
+        }}
+      >
+        <p style={{ fontSize: "0.82rem", color: G.muted }}>
+          <span style={{ color: G.text, fontWeight: 700 }}>
+            {filtered.length}
+          </span>{" "}
+          orders
+        </p>
+        {filteredRevenue > 0 && (
+          <p style={{ fontSize: "0.88rem", fontWeight: 700, color: G.green }}>
+            ₹{filteredRevenue.toLocaleString()} revenue
+          </p>
+        )}
+      </div>
+
+      {/* Order list */}
+      {filtered.length === 0 ? (
+        <div
+          style={{
+            background: G.glass,
+            border: `1px solid ${G.glassBorder}`,
+            borderRadius: 14,
+            padding: "48px 20px",
+            textAlign: "center" as const,
+          }}
+        >
+          <p style={{ fontSize: "2rem", marginBottom: 8 }}>🔍</p>
+          <p style={{ color: G.muted }}>No orders match this filter</p>
+        </div>
+      ) : (
+        filtered.map((o) => {
+          const isPaid = PAID_STATUSES.includes(o.status);
+          const isDispatched = o.status === "dispatched";
+          const isPending = o.status === "pending";
+          const isCancelled = o.status === "cancelled";
+
+          const statusColor = isPending
+            ? G.gold
+            : isCancelled
+              ? G.red
+              : isDispatched
+                ? G.green
+                : G.blue;
+          const statusBg = isPending
+            ? G.goldGlass
+            : isCancelled
+              ? G.redGlass
+              : isDispatched
+                ? G.greenGlass
+                : G.blueGlass;
+
+          const flavours = o.flavours
+            ? Object.entries(o.flavours as Record<string, number>).filter(
+                ([, q]) => q > 0,
+              )
+            : [];
+
+          return (
+            <div
+              key={o.id}
+              style={{
+                background: G.glassStrong,
+                border: `0.5px solid ${isCancelled ? "rgba(255,92,108,0.15)" : isDispatched ? "rgba(52,217,123,0.18)" : G.glassBorder}`,
+                borderLeft: `3px solid ${statusColor}50`,
+                borderRadius: 12,
+                padding: "12px 14px",
+                marginBottom: 8,
+                opacity: isCancelled ? 0.55 : 1,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                  marginBottom: 6,
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p
+                    style={{
+                      fontSize: "0.95rem",
+                      fontWeight: 700,
+                      color: G.text,
+                      marginBottom: 2,
+                    }}
+                  >
+                    {o.customer_name}
+                  </p>
+                  <p style={{ fontSize: "0.78rem", color: G.muted }}>
+                    {o.delivery_date
+                      ? new Date(
+                          o.delivery_date + "T00:00:00",
+                        ).toLocaleDateString("en-IN", {
+                          day: "numeric",
+                          month: "short",
+                          weekday: "short",
+                        })
+                      : "—"}
+                    {" · "}
+                    {o.delivery_slot || o.batch_label || "—"}
+                    {" · "}
+                    <span style={{ color: G.gold, fontWeight: 700 }}>
+                      ₹{o.total_price}
+                    </span>
+                    {o.fulfillment_type === "pickup" ? " · 🏠" : " · 🚚"}
+                  </p>
+                  {o.phone && (
+                    <p
+                      style={{
+                        fontSize: "0.75rem",
+                        color: G.sub,
+                        marginTop: 2,
+                      }}
+                    >
+                      📞 {o.phone}
+                    </p>
+                  )}
+                  {o.address && (
+                    <p
+                      style={{
+                        fontSize: "0.72rem",
+                        color: G.muted,
+                        marginTop: 1,
+                      }}
+                    >
+                      📍 {o.address}
+                    </p>
+                  )}
+                  {o.remarks && (
+                    <p
+                      style={{
+                        fontSize: "0.72rem",
+                        color: "#86efac",
+                        fontStyle: "italic" as const,
+                        marginTop: 2,
+                      }}
+                    >
+                      💬 {o.remarks}
+                    </p>
+                  )}
+                  {flavours.length > 0 && (
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap" as const,
+                        marginTop: 6,
+                      }}
+                    >
+                      {flavours.map(([id, qty]) => (
+                        <FlavourPill
+                          key={id}
+                          name={productMap[id] || "Unknown"}
+                          qty={qty}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column" as const,
+                    alignItems: "flex-end",
+                    gap: 6,
+                    marginLeft: 10,
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: "0.65rem",
+                      padding: "3px 9px",
+                      borderRadius: 8,
+                      background: statusBg,
+                      color: statusColor,
+                      fontWeight: 700,
+                      border: `1px solid ${statusColor}40`,
+                      whiteSpace: "nowrap" as const,
+                    }}
+                  >
+                    {STATUS_LABELS[o.status] || o.status}
+                  </span>
+                  {!isCancelled && (
+                    <button
+                      onClick={() => onEdit(o)}
+                      style={{
+                        padding: "5px 12px",
+                        borderRadius: 7,
+                        border: `1px solid rgba(96,165,250,0.35)`,
+                        background: G.blueGlass,
+                        color: G.blue,
+                        fontSize: "0.72rem",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        fontFamily: "system-ui, sans-serif",
+                      }}
+                    >
+                      ✏️ Edit
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // SECTION 15 — MAIN APP COMPONENT
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -3842,6 +4284,8 @@ export default function AdminPage() {
   const [pw, setPw] = useState("");
   const [pwError, setPwError] = useState(false);
   const [tab, setTab] = useState<Tab>("cook");
+  const [ordersFilterPreset, setOrdersFilterPreset] =
+    useState<OrdersFilterPreset>(null);
   const [moreTab, setMoreTab] = useState<MoreTab>("products");
 
   const [orders, setOrders] = useState<ExtOrder[]>([]);
@@ -3946,16 +4390,20 @@ export default function AdminPage() {
 
   // ── Order actions ──────────────────────────────────────────
   async function handleStatusChange(id: string, status: string) {
+    const updatePayload: Record<string, unknown> = { status };
+    if (status === "confirmed") {
+      updatePayload.payment_confirmed_at = new Date().toISOString();
+    }
     const { error } = await supabase
       .from("orders")
-      .update({ status })
+      .update(updatePayload)
       .eq("id", id);
     if (error) {
       flash("Error: " + error.message, "error");
       return;
     }
     await load();
-    flash(`Marked as ${STATUS_LABELS[status]} ✓`);
+    flash(`Marked as ${STATUS_LABELS[status] || status} ✓`);
   }
 
   async function handleCancel(id: string) {
@@ -4056,14 +4504,19 @@ export default function AdminPage() {
   }
 
   // ── Dashboard helpers ──────────────────────────────────────
-  function filterByPeriod<T extends { created_at: string }>(items: T[]): T[] {
+  function filterRevenueByPeriod(items: ExtOrder[]): ExtOrder[] {
     const now = new Date();
     const localNow = new Date(now.getTime() + 5.5 * 3600000);
     const todayStr = localNow.toISOString().split("T")[0];
     return items.filter((item) => {
-      const dateStr =
-        (item as Record<string, string>).order_date ||
-        item.created_at.split("T")[0];
+      // Use payment_confirmed_at as the income date; fall back to order_date
+      const confirmedAt = item.payment_confirmed_at;
+      const dateStr = confirmedAt
+        ? new Date(confirmedAt).toISOString().split("T")[0]
+        : item.delivery_date ||
+          item.order_date ||
+          item.created_at?.split("T")[0] ||
+          "";
       if (dashPeriod === "from_start") return dateStr >= trackingStart;
       if (dashPeriod === "today") return dateStr === todayStr;
       if (dashPeriod === "week") {
@@ -4100,7 +4553,7 @@ export default function AdminPage() {
     });
   }
 
-  const paidOrders = filterByPeriod(
+  const paidOrders = filterRevenueByPeriod(
     orders.filter((o) => PAID_STATUSES.includes(o.status)),
   ) as ExtOrder[];
   const periodExpenses = filterExpByPeriod(expenses);
@@ -4598,141 +5051,19 @@ export default function AdminPage() {
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           SECTION 20 — DISPATCHED TAB
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      {tab === "dispatched" && (
-        <div style={{ maxWidth: 900, margin: "0 auto", padding: "16px 14px" }}>
-          <p style={{ fontSize: "0.75rem", color: G.muted, marginBottom: 14 }}>
-            {dispatchedOrders.length} delivered orders
-          </p>
-          {dispatchedOrders.map((o) => (
-            <div
-              key={o.id}
-              style={{
-                background: G.glass,
-                border: `0.5px solid ${G.glassBorder}`,
-                borderLeft: `3px solid ${G.green}40`,
-                borderRadius: 12,
-                padding: "12px 16px",
-                marginBottom: 8,
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "flex-start",
-                }}
-              >
-                <div>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 7,
-                      marginBottom: 3,
-                    }}
-                  >
-                    <p
-                      style={{
-                        fontSize: "0.92rem",
-                        fontWeight: 700,
-                        color: G.text,
-                      }}
-                    >
-                      {o.customer_name}
-                    </p>
-                    {repeatPhones.has(o.phone) && (
-                      <span
-                        style={{
-                          fontSize: "0.6rem",
-                          color: G.blue,
-                          background: G.blueGlass,
-                          padding: "1px 6px",
-                          borderRadius: 6,
-                        }}
-                      >
-                        🔄
-                      </span>
-                    )}
-                    {o.source === "dm" && (
-                      <span
-                        style={{
-                          fontSize: "0.6rem",
-                          color: "#f472b6",
-                          background: "rgba(236,72,153,0.12)",
-                          padding: "1px 6px",
-                          borderRadius: 6,
-                        }}
-                      >
-                        📱 DM
-                      </span>
-                    )}
-                  </div>
-                  <p style={{ fontSize: "0.8rem", color: G.muted }}>
-                    🕐 {o.delivery_slot || o.batch_label || "—"} ·{" "}
-                    <span style={{ color: G.gold, fontWeight: 700 }}>
-                      ₹{o.total_price}
-                    </span>
-                    {o.fulfillment_type === "pickup"
-                      ? " · 🏠 Pickup"
-                      : " · 🚚 Delivery"}
-                  </p>
-                  {o.address && (
-                    <p style={{ fontSize: "0.75rem", color: G.muted }}>
-                      📍 {o.address}
-                    </p>
-                  )}
-                  {o.remarks && (
-                    <p
-                      style={{
-                        fontSize: "0.75rem",
-                        color: "#86efac",
-                        fontStyle: "italic" as const,
-                      }}
-                    >
-                      💬 {o.remarks}
-                    </p>
-                  )}
-                  {o.flavours &&
-                    Object.entries(o.flavours as Record<string, number>).filter(
-                      ([, q]) => q > 0,
-                    ).length > 0 && (
-                      <div
-                        style={{
-                          display: "flex",
-                          flexWrap: "wrap" as const,
-                          marginTop: 5,
-                        }}
-                      >
-                        {Object.entries(o.flavours as Record<string, number>)
-                          .filter(([, q]) => q > 0)
-                          .map(([id, qty]) => (
-                            <FlavourPill
-                              key={id}
-                              name={productMap[id] || "Unknown"}
-                              qty={qty}
-                            />
-                          ))}
-                      </div>
-                    )}
-                </div>
-                <span
-                  style={{
-                    fontSize: "0.68rem",
-                    padding: "3px 9px",
-                    borderRadius: 8,
-                    background: G.greenGlass,
-                    color: G.green,
-                    fontWeight: 700,
-                    border: `1px solid rgba(52,217,123,0.3)`,
-                    flexShrink: 0,
-                  }}
-                >
-                  ✓ Done
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
+      {tab === "orders" && (
+        <AllOrdersTab
+          orders={orders}
+          productMap={productMap}
+          boxes={boxes}
+          onEdit={(order) => setEditingOrder(order)}
+          onCancel={handleCancel}
+          onStatusChange={handleStatusChange}
+          filterPreset={ordersFilterPreset}
+          onFilterPresetConsumed={() => setOrdersFilterPreset(null)}
+          dashPeriod={dashPeriod}
+          trackingStart={trackingStart}
+        />
       )}
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -5058,24 +5389,44 @@ export default function AdminPage() {
               marginBottom: 14,
             }}
           >
-            <GlassStatCard
-              label="Revenue"
-              value={`₹${totalRevenue.toLocaleString()}`}
-              sub={`${paidOrders.length} orders`}
-              color={G.blue}
-            />
+            <div
+              onClick={() => {
+                setOrdersFilterPreset("period_paid");
+                setTab("orders");
+              }}
+              style={{ cursor: "pointer" }}
+            >
+              <GlassStatCard
+                label="Revenue ↗"
+                value={`₹${totalRevenue.toLocaleString()}`}
+                sub={`${paidOrders.length} orders · tap to see`}
+                color={G.blue}
+              />
+            </div>
             <GlassStatCard
               label="Expenses"
               value={`₹${totalExpenses.toLocaleString()}`}
               sub={`${periodExpenses.length} entries`}
               color={G.red}
             />
-            <GlassStatCard
-              label="Profit"
-              value={`₹${profit.toLocaleString()}`}
-              sub={profit >= 0 ? "↑ positive" : "↓ negative"}
-              color={profit >= 0 ? G.green : G.red}
-            />
+            <div
+              onClick={() => {
+                setOrdersFilterPreset("period_paid");
+                setTab("orders");
+              }}
+              style={{ cursor: "pointer" }}
+            >
+              <GlassStatCard
+                label="Profit"
+                value={`₹${profit.toLocaleString()}`}
+                sub={
+                  profit >= 0
+                    ? "↑ positive · tap to audit"
+                    : "↓ negative · tap to audit"
+                }
+                color={profit >= 0 ? G.green : G.red}
+              />
+            </div>
             <GlassStatCard
               label="Avg Order"
               value={
@@ -6105,7 +6456,7 @@ export default function AdminPage() {
             label="Payment"
             badge={pendingCount}
           />
-          <NavBtn id="dispatched" icon="✅" label="Done" />
+          <NavBtn id="orders" icon="📋" label="Orders" />{" "}
           <NavBtn id="customers" icon="👥" label="Customers" />
           <NavBtn id="dashboard" icon="📊" label="Dash" />
           <NavBtn id="more" icon="⚙️" label="More" />
