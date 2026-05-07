@@ -953,6 +953,7 @@ function CookOrderCard({
   onPorterBook,
   onDispatch,
   onEdit,
+  onCancel,
 }: {
   order: ExtOrder;
   productMap: Record<string, string>;
@@ -960,6 +961,7 @@ function CookOrderCard({
   onPorterBook: (order: ExtOrder) => Promise<void>;
   onDispatch: (id: string) => Promise<void>;
   onEdit: (order: ExtOrder) => void;
+  onCancel: (id: string) => Promise<void>;
 }) {
   const [showInfo, setShowInfo] = useState(false);
   const [bookingPorter, setBookingPorter] = useState(false);
@@ -1167,6 +1169,9 @@ function CookOrderCard({
         >
           ✓ {dispatching ? "Saving..." : "Dispatched"}
         </button>
+        <div
+          style={{ width: "0.5px", background: G.glassBorder, flexShrink: 0 }}
+        />
         <button
           onClick={() => onEdit(order)}
           style={{
@@ -1187,14 +1192,41 @@ function CookOrderCard({
         >
           ✏️ Edit
         </button>
+        <div
+          style={{ width: "0.5px", background: G.glassBorder, flexShrink: 0 }}
+        />
+        <button
+          onClick={async () => {
+            if (
+              !confirm(
+                `Cancel order for ${order.customer_name}? This cannot be undone.`,
+              )
+            )
+              return;
+            await onCancel(order.id);
+          }}
+          style={{
+            flex: 1,
+            padding: "12px 10px",
+            background: G.redGlass,
+            border: "none",
+            color: G.red,
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: "pointer",
+            fontFamily: "system-ui, sans-serif",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+          }}
+        >
+          ✕ Cancel
+        </button>
       </div>
     </div>
   );
 }
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// SECTION 9 — COOK TAB: FULL LAYOUT
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // SECTION 9 — COOK TAB: FULL LAYOUT
@@ -1221,6 +1253,7 @@ function CookTab({
   onPorterBook,
   onDispatch,
   onEdit,
+  onCancel,
 }: {
   orders: ExtOrder[];
   boxes: BoxSize[];
@@ -1228,6 +1261,7 @@ function CookTab({
   onPorterBook: (order: ExtOrder) => Promise<void>;
   onDispatch: (id: string) => Promise<void>;
   onEdit: (order: ExtOrder) => void;
+  onCancel: (id: string) => Promise<void>;
 }) {
   function getCurrentSlot(): string {
     const now = new Date();
@@ -1492,6 +1526,7 @@ function CookTab({
                 onPorterBook={onPorterBook}
                 onDispatch={onDispatch}
                 onEdit={onEdit}
+                onCancel={onCancel}
               />
             ))}
           </>
@@ -1755,13 +1790,14 @@ function ManualOrderForm({
     notes: "",
     order_date: new Date().toISOString().split("T")[0],
     delivery_date: new Date().toISOString().split("T")[0],
-    delivery_slot: ALL_SLOTS[2], // default 1–3 PM
+    delivery_slot: ALL_SLOTS[2],
     payment_method: "upi",
     status: "pending",
     fulfillment_type: "delivery" as "delivery" | "pickup",
+    custom_box_label: "",
   });
   const [boxRows, setBoxRows] = useState<
-    { box_size_label: string; price: string }[]
+    { box_size_label: string; price: string; custom_label?: string }[]
   >([{ box_size_label: "", price: "" }]);
   const [flavours, setFlavours] = useState<Record<string, number>>({});
   const [saving, setSaving] = useState(false);
@@ -1793,10 +1829,18 @@ function ManualOrderForm({
       if (field === "box_size_label") {
         const box = boxes.find((b) => b.label === value);
         updated[i] = {
+          ...updated[i],
           box_size_label: value,
-          price: box ? String(box.price) : updated[i].price,
+          price: box
+            ? String(box.price)
+            : value === "custom"
+              ? ""
+              : updated[i].price,
+          custom_label: value === "custom" ? "" : undefined,
         };
-      } else updated[i] = { ...updated[i], price: value };
+      } else {
+        updated[i] = { ...updated[i], price: value };
+      }
       return updated;
     });
   }
@@ -1807,7 +1851,10 @@ function ManualOrderForm({
     let isFirst = true;
     for (const row of boxRows) {
       if (!row.price) continue;
-      const box = boxes.find((b) => b.label === row.box_size_label);
+      const isCustom = row.box_size_label === "custom";
+      const box = isCustom
+        ? null
+        : boxes.find((b) => b.label === row.box_size_label);
       const { data } = await supabase
         .from("orders")
         .insert({
@@ -1816,7 +1863,9 @@ function ManualOrderForm({
           insta_id: form.insta_id.trim(),
           address: form.address.trim() || null,
           remarks: form.remarks.trim(),
-          notes: form.notes.trim() || null,
+          notes: isCustom
+            ? `Custom box: ${row.custom_label || ""}${form.notes.trim() ? ` | ${form.notes.trim()}` : ""}`
+            : form.notes.trim() || null,
           box_size_id: box?.id || null,
           flavours: isFirst && Object.keys(flavours).length > 0 ? flavours : {},
           delivery_date: form.delivery_date,
@@ -1891,7 +1940,7 @@ function ManualOrderForm({
         </button>
       </div>
 
-      {/* Name (with autocomplete) */}
+      {/* Name with autocomplete */}
       <div style={{ position: "relative" }}>
         <GlassInput
           placeholder="Customer Name *"
@@ -2045,86 +2094,122 @@ function ManualOrderForm({
       >
         📦 Boxes
       </p>
+
       {boxRows.map((row, i) => (
-        <div
-          key={i}
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 90px 32px",
-            gap: 6,
-            marginBottom: 6,
-            alignItems: "center",
-          }}
-        >
-          <select
-            value={row.box_size_label}
-            onChange={(e) => updateBoxRow(i, "box_size_label", e.target.value)}
+        <div key={i} style={{ marginBottom: 8 }}>
+          <div
             style={{
-              background: G.glass,
-              border: `1px solid ${G.glassBorder}`,
-              color: row.box_size_label ? G.text : G.muted,
-              padding: "10px 12px",
-              borderRadius: 9,
-              fontSize: "0.85rem",
-              fontFamily: "system-ui, sans-serif",
-              outline: "none",
-            }}
-          >
-            <option value="" style={{ background: "#1a2535" }}>
-              Select box
-            </option>
-            {boxes.map((b) => (
-              <option
-                key={b.id}
-                value={b.label}
-                style={{ background: "#1a2535" }}
-              >
-                {b.label} — ₹{b.price}
-              </option>
-            ))}
-          </select>
-          <input
-            type="number"
-            placeholder="₹"
-            value={row.price}
-            onChange={(e) => updateBoxRow(i, "price", e.target.value)}
-            style={{
-              background: G.glass,
-              border: `1px solid ${G.glassBorder}`,
-              color: G.text,
-              padding: "10px",
-              borderRadius: 9,
-              fontSize: "0.88rem",
-              fontFamily: "system-ui, sans-serif",
-              outline: "none",
-              width: "100%",
-              boxSizing: "border-box" as const,
-            }}
-          />
-          <button
-            onClick={() =>
-              setBoxRows((rows) =>
-                rows.length === 1 ? rows : rows.filter((_, j) => j !== i),
-              )
-            }
-            style={{
-              background: G.redGlass,
-              border: `1px solid rgba(255,92,108,0.3)`,
-              color: G.red,
-              borderRadius: 8,
-              cursor: "pointer",
-              fontSize: "0.9rem",
-              width: 32,
-              height: 38,
-              display: "flex",
+              display: "grid",
+              gridTemplateColumns: "1fr 90px 32px",
+              gap: 6,
               alignItems: "center",
-              justifyContent: "center",
+              marginBottom: row.box_size_label === "custom" ? 6 : 0,
             }}
           >
-            ✕
-          </button>
+            <select
+              value={row.box_size_label}
+              onChange={(e) =>
+                updateBoxRow(i, "box_size_label", e.target.value)
+              }
+              style={{
+                background: G.glass,
+                border: `1px solid ${G.glassBorder}`,
+                color: row.box_size_label ? G.text : G.muted,
+                padding: "10px 12px",
+                borderRadius: 9,
+                fontSize: "0.85rem",
+                fontFamily: "system-ui, sans-serif",
+                outline: "none",
+              }}
+            >
+              <option value="" style={{ background: "#1a2535" }}>
+                Select box
+              </option>
+              {boxes.map((b) => (
+                <option
+                  key={b.id}
+                  value={b.label}
+                  style={{ background: "#1a2535" }}
+                >
+                  {b.label} — ₹{b.price}
+                </option>
+              ))}
+              <option value="custom" style={{ background: "#1a2535" }}>
+                ✏️ Custom size
+              </option>
+            </select>
+            <input
+              type="number"
+              placeholder="₹"
+              value={row.price}
+              onChange={(e) => updateBoxRow(i, "price", e.target.value)}
+              style={{
+                background: G.glass,
+                border: `1px solid ${G.glassBorder}`,
+                color: G.text,
+                padding: "10px",
+                borderRadius: 9,
+                fontSize: "0.88rem",
+                fontFamily: "system-ui, sans-serif",
+                outline: "none",
+                width: "100%",
+                boxSizing: "border-box" as const,
+              }}
+            />
+            <button
+              onClick={() =>
+                setBoxRows((rows) =>
+                  rows.length === 1 ? rows : rows.filter((_, j) => j !== i),
+                )
+              }
+              style={{
+                background: G.redGlass,
+                border: `1px solid rgba(255,92,108,0.3)`,
+                color: G.red,
+                borderRadius: 8,
+                cursor: "pointer",
+                fontSize: "0.9rem",
+                width: 32,
+                height: 38,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* Custom label input */}
+          {row.box_size_label === "custom" && (
+            <input
+              type="text"
+              placeholder="Describe box (e.g. Box of 18)"
+              value={row.custom_label || ""}
+              onChange={(e) =>
+                setBoxRows((rows) => {
+                  const updated = [...rows];
+                  updated[i] = { ...updated[i], custom_label: e.target.value };
+                  return updated;
+                })
+              }
+              style={{
+                width: "100%",
+                background: G.glass,
+                border: `1px solid ${G.goldBorder}`,
+                color: G.text,
+                padding: "9px 12px",
+                borderRadius: 9,
+                fontSize: "0.82rem",
+                fontFamily: "system-ui, sans-serif",
+                outline: "none",
+                boxSizing: "border-box" as const,
+              }}
+            />
+          )}
         </div>
       ))}
+
       <div
         style={{
           display: "flex",
@@ -2332,6 +2417,7 @@ function ManualOrderForm({
           </option>
         </select>
       </div>
+
       <GlassInput
         placeholder="Remarks"
         value={form.remarks}
@@ -3233,12 +3319,14 @@ function OrderEditModal({
   boxes,
   onSave,
   onClose,
+  onCancel,
 }: {
   order: ExtOrder;
   products: Product[];
   boxes: BoxSize[];
   onSave: () => Promise<void>;
   onClose: () => void;
+  onCancel: (id: string) => Promise<void>;
 }) {
   const [form, setForm] = useState({
     customer_name: order.customer_name || "",
@@ -3254,11 +3342,13 @@ function OrderEditModal({
     fulfillment_type:
       (order.fulfillment_type as "delivery" | "pickup") || "delivery",
     box_size_id: order.box_size_id || "",
+    custom_box_label: "",
   });
   const [flavours, setFlavours] = useState<Record<string, number>>(
     (order.flavours as Record<string, number>) || {},
   );
   const [saving, setSaving] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   const f = (k: string) => (v: string) => setForm((p) => ({ ...p, [k]: v }));
 
@@ -3312,7 +3402,7 @@ function OrderEditModal({
           }}
         >
           <p style={{ fontSize: "1rem", fontWeight: 700, color: G.blue }}>
-            ✏️ Edit Order
+            ✏️ Edit Order — {order.customer_name}
           </p>
           <button
             onClick={onClose}
@@ -3416,7 +3506,12 @@ function OrderEditModal({
         <select
           value={form.box_size_id}
           onChange={(e) =>
-            setForm((p) => ({ ...p, box_size_id: e.target.value }))
+            setForm((p) => ({
+              ...p,
+              box_size_id: e.target.value,
+              custom_box_label:
+                e.target.value !== "custom" ? "" : p.custom_box_label,
+            }))
           }
           style={selectStyle}
         >
@@ -3428,7 +3523,35 @@ function OrderEditModal({
               {b.label} — ₹{b.price}
             </option>
           ))}
+          <option value="custom" style={{ background: "#1a2535" }}>
+            ✏️ Custom size
+          </option>
         </select>
+
+        {/* Custom box label — only when custom selected */}
+        {form.box_size_id === "custom" && (
+          <input
+            type="text"
+            placeholder="Describe box (e.g. Box of 18)"
+            value={form.custom_box_label || ""}
+            onChange={(e) =>
+              setForm((p) => ({ ...p, custom_box_label: e.target.value }))
+            }
+            style={{
+              width: "100%",
+              background: G.glass,
+              border: `1px solid ${G.goldBorder}`,
+              color: G.text,
+              padding: "9px 12px",
+              borderRadius: 9,
+              fontSize: "0.82rem",
+              fontFamily: "system-ui, sans-serif",
+              outline: "none",
+              boxSizing: "border-box" as const,
+              marginBottom: 8,
+            }}
+          />
+        )}
 
         {/* Price + status */}
         <div
@@ -3627,6 +3750,7 @@ function OrderEditModal({
           disabled={saving || !form.customer_name || !form.total_price}
           onClick={async () => {
             setSaving(true);
+            const isCustomBox = form.box_size_id === "custom";
             await supabase
               .from("orders")
               .update({
@@ -3635,13 +3759,15 @@ function OrderEditModal({
                 insta_id: form.insta_id.trim(),
                 address: form.address.trim() || null,
                 remarks: form.remarks.trim(),
-                notes: form.notes.trim() || null,
+                notes: isCustomBox
+                  ? `Custom box: ${form.custom_box_label || ""}${form.notes.trim() ? ` | ${form.notes.trim()}` : ""}`
+                  : form.notes.trim() || null,
                 delivery_date: form.delivery_date || null,
                 delivery_slot: form.delivery_slot,
                 total_price: Number(form.total_price),
                 status: form.status,
                 fulfillment_type: form.fulfillment_type,
-                box_size_id: form.box_size_id || null,
+                box_size_id: isCustomBox ? null : form.box_size_id || null,
                 flavours,
               })
               .eq("id", order.id);
@@ -3665,9 +3791,42 @@ function OrderEditModal({
             fontWeight: 700,
             cursor: "pointer",
             fontFamily: "system-ui, sans-serif",
+            marginBottom: 10,
           }}
         >
           {saving ? "Saving..." : "Save Changes"}
+        </button>
+
+        {/* Cancel order button */}
+        <button
+          disabled={cancelling}
+          onClick={async () => {
+            if (
+              !confirm(
+                `Cancel order for ${order.customer_name}? This cannot be undone.`,
+              )
+            )
+              return;
+            setCancelling(true);
+            await onCancel(order.id);
+            setCancelling(false);
+            onClose();
+          }}
+          style={{
+            width: "100%",
+            padding: "13px",
+            borderRadius: 10,
+            border: `1px solid rgba(255,92,108,0.3)`,
+            background: G.redGlass,
+            color: G.red,
+            fontSize: "0.92rem",
+            fontWeight: 700,
+            cursor: cancelling ? "not-allowed" : "pointer",
+            opacity: cancelling ? 0.5 : 1,
+            fontFamily: "system-ui, sans-serif",
+          }}
+        >
+          {cancelling ? "Cancelling..." : "✕ Cancel Order"}
         </button>
       </div>
     </div>
@@ -4341,6 +4500,7 @@ export default function AdminPage() {
               await handleStatusChange(id, "dispatched");
             }}
             onEdit={(order) => setEditingOrder(order)}
+            onCancel={handleCancel}
           />
           <div style={{ padding: "0 14px 14px" }}>
             <button
@@ -4786,8 +4946,36 @@ export default function AdminPage() {
                           )
                         )
                           return;
+
                         const ids = c.orders.map((o) => o.id);
-                        await supabase.from("orders").delete().in("id", ids);
+
+                        // Chunk into groups of 5 to avoid hitting limits
+                        const chunks = [];
+                        for (let i = 0; i < ids.length; i += 5) {
+                          chunks.push(ids.slice(i, i + 5));
+                        }
+
+                        let hasError = false;
+                        for (const chunk of chunks) {
+                          const { error } = await supabase
+                            .from("orders")
+                            .delete()
+                            .in("id", chunk);
+                          if (error) {
+                            console.error("Delete error:", error);
+                            hasError = true;
+                            break;
+                          }
+                        }
+
+                        if (hasError) {
+                          flash(
+                            "Delete failed — check Supabase RLS policy",
+                            "error",
+                          );
+                          return;
+                        }
+
                         await load();
                         flash("Customer deleted ✓");
                       }}
@@ -5880,6 +6068,11 @@ export default function AdminPage() {
             flash("Order updated ✓");
           }}
           onClose={() => setEditingOrder(null)}
+          onCancel={async (id) => {
+            // ← add this
+            await handleCancel(id);
+            setEditingOrder(null);
+          }}
         />
       )}
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
