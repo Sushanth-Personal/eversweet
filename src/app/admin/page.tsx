@@ -373,7 +373,135 @@ function GlassStatCard({
     </div>
   );
 }
-
+function StartDateEditor({
+  trackingStart,
+  setTrackingStart,
+}: {
+  trackingStart: string;
+  setTrackingStart: (d: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(trackingStart);
+  return (
+    <div
+      style={{
+        background: G.goldGlass,
+        border: `1px solid ${G.goldBorder}`,
+        borderRadius: 10,
+        padding: "10px 14px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 10,
+      }}
+    >
+      {editing ? (
+        <>
+          <input
+            type="date"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            style={{
+              background: "rgba(0,0,0,0.3)",
+              border: `1px solid ${G.goldBorder}`,
+              color: G.text,
+              padding: "7px 10px",
+              borderRadius: 7,
+              fontSize: 13,
+              fontFamily: "system-ui, sans-serif",
+              outline: "none",
+              colorScheme: "dark" as const,
+            }}
+          />
+          <div style={{ display: "flex", gap: 6 }}>
+            <button
+              onClick={() => {
+                if (draft) {
+                  setTrackingStart(draft);
+                  localStorage.setItem("es_tracking_start", draft);
+                }
+                setEditing(false);
+              }}
+              style={{
+                padding: "6px 12px",
+                borderRadius: 7,
+                border: "none",
+                background: G.goldGlass,
+                color: G.gold,
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: "pointer",
+                fontFamily: "system-ui, sans-serif",
+              }}
+            >
+              Save
+            </button>
+            <button
+              onClick={() => {
+                setDraft(trackingStart);
+                setEditing(false);
+              }}
+              style={{
+                padding: "6px 10px",
+                borderRadius: 7,
+                border: `1px solid ${G.glassBorder}`,
+                background: G.glass,
+                color: G.muted,
+                fontSize: 12,
+                cursor: "pointer",
+                fontFamily: "system-ui, sans-serif",
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div>
+            <p
+              style={{
+                fontSize: 10,
+                color: G.gold,
+                fontWeight: 700,
+                letterSpacing: "0.1em",
+                textTransform: "uppercase" as const,
+                marginBottom: 3,
+              }}
+            >
+              Tracking from
+            </p>
+            <p style={{ fontSize: 14, fontWeight: 600, color: G.text }}>
+              {new Date(trackingStart + "T00:00:00").toLocaleDateString(
+                "en-IN",
+                { day: "numeric", month: "long", year: "numeric" },
+              )}
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              setDraft(trackingStart);
+              setEditing(true);
+            }}
+            style={{
+              padding: "6px 12px",
+              borderRadius: 7,
+              border: `1px solid ${G.goldBorder}`,
+              background: "transparent",
+              color: G.gold,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+              fontFamily: "system-ui, sans-serif",
+            }}
+          >
+            Edit
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // SECTION 5 — FLAVOUR PILL (shared between cook view & order cards)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -470,6 +598,259 @@ function FlavourBigCard({ name, qty }: { name: string; qty: number }) {
       >
         {name}
       </div>
+    </div>
+  );
+}
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// FEATURE 1 — CALENDAR COMPONENT (add near SlotTabs)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function MonthCalendar({
+  orders,
+  selectedDate,
+  onSelectDate,
+}: {
+  orders: ExtOrder[];
+  selectedDate: string; // "YYYY-MM-DD"
+  onSelectDate: (date: string) => void;
+}) {
+  const [viewMonth, setViewMonth] = useState(() => {
+    const now = new Date();
+    return { year: now.getFullYear(), month: now.getMonth() }; // 0-indexed
+  });
+
+  // Build order count per date
+  const countByDate: Record<string, number> = {};
+  orders.forEach((o) => {
+    if (!PAID_STATUSES.includes(o.status) && o.status !== "pending") return;
+    const d = o.delivery_date || o.order_date || o.created_at?.split("T")[0];
+    if (d) countByDate[d] = (countByDate[d] || 0) + 1;
+  });
+
+  const { year, month } = viewMonth;
+  const firstDay = new Date(year, month, 1).getDay(); // 0=Sun
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const todayStr = new Date().toISOString().split("T")[0];
+
+  // Pad so week starts Monday
+  const startPad = (firstDay + 6) % 7; // Mon=0
+  const cells: (number | null)[] = [
+    ...Array(startPad).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+  ];
+  // Fill to complete last row
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  function toDateStr(day: number) {
+    return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  }
+
+  const monthName = new Date(year, month).toLocaleDateString("en-IN", {
+    month: "long",
+    year: "numeric",
+  });
+
+  return (
+    <div
+      style={{
+        background: G.glassStrong,
+        border: `1px solid ${G.glassBorderStrong}`,
+        borderRadius: 14,
+        padding: 16,
+        marginBottom: 14,
+      }}
+    >
+      {/* Month navigation */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 14,
+        }}
+      >
+        <button
+          onClick={() =>
+            setViewMonth((v) => {
+              const d = new Date(v.year, v.month - 1);
+              return { year: d.getFullYear(), month: d.getMonth() };
+            })
+          }
+          style={{
+            background: G.glass,
+            border: `1px solid ${G.glassBorder}`,
+            color: G.sub,
+            width: 32,
+            height: 32,
+            borderRadius: 8,
+            cursor: "pointer",
+            fontSize: 16,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          ‹
+        </button>
+        <p style={{ fontSize: 15, fontWeight: 700, color: G.text }}>
+          {monthName}
+        </p>
+        <button
+          onClick={() =>
+            setViewMonth((v) => {
+              const d = new Date(v.year, v.month + 1);
+              return { year: d.getFullYear(), month: d.getMonth() };
+            })
+          }
+          style={{
+            background: G.glass,
+            border: `1px solid ${G.glassBorder}`,
+            color: G.sub,
+            width: 32,
+            height: 32,
+            borderRadius: 8,
+            cursor: "pointer",
+            fontSize: 16,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          ›
+        </button>
+      </div>
+
+      {/* Day headers */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(7, 1fr)",
+          gap: 3,
+          marginBottom: 6,
+        }}
+      >
+        {["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((d) => (
+          <div
+            key={d}
+            style={{
+              textAlign: "center" as const,
+              fontSize: 10,
+              fontWeight: 700,
+              color: G.muted,
+              letterSpacing: "0.08em",
+              padding: "3px 0",
+            }}
+          >
+            {d}
+          </div>
+        ))}
+      </div>
+
+      {/* Day cells */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(7, 1fr)",
+          gap: 3,
+        }}
+      >
+        {cells.map((day, i) => {
+          if (!day) return <div key={i} />;
+          const dateStr = toDateStr(day);
+          const count = countByDate[dateStr] || 0;
+          const isSelected = selectedDate === dateStr;
+          const isToday = dateStr === todayStr;
+
+          return (
+            <button
+              key={i}
+              onClick={() => onSelectDate(isSelected ? "" : dateStr)}
+              style={{
+                padding: "6px 4px",
+                borderRadius: 8,
+                border: `1px solid ${isSelected ? G.blue : isToday ? G.goldBorder : count > 0 ? "rgba(52,217,123,0.25)" : G.glassBorder}`,
+                background: isSelected
+                  ? G.blueGlass
+                  : isToday
+                    ? G.goldGlass
+                    : count > 0
+                      ? G.greenGlass
+                      : "transparent",
+                cursor: "pointer",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 2,
+                transition: "all 0.15s",
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 13,
+                  fontWeight: isSelected || isToday ? 700 : 400,
+                  color: isSelected ? G.blue : isToday ? G.gold : G.text,
+                  lineHeight: 1,
+                }}
+              >
+                {day}
+              </span>
+              {count > 0 ? (
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: isSelected ? G.blue : G.green,
+                    lineHeight: 1,
+                  }}
+                >
+                  {count}
+                </span>
+              ) : (
+                <span
+                  style={{ fontSize: 10, color: "transparent", lineHeight: 1 }}
+                >
+                  ·
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {selectedDate && (
+        <div
+          style={{
+            marginTop: 12,
+            paddingTop: 10,
+            borderTop: `1px solid ${G.glassBorder}`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <p style={{ fontSize: 12, color: G.blue, fontWeight: 600 }}>
+            Showing:{" "}
+            {new Date(selectedDate + "T00:00:00").toLocaleDateString("en-IN", {
+              weekday: "long",
+              day: "numeric",
+              month: "short",
+            })}
+          </p>
+          <button
+            onClick={() => onSelectDate("")}
+            style={{
+              background: "transparent",
+              border: "none",
+              color: G.muted,
+              fontSize: 12,
+              cursor: "pointer",
+              fontFamily: "system-ui, sans-serif",
+            }}
+          >
+            Show all ✕
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -571,12 +952,14 @@ function CookOrderCard({
   boxes,
   onPorterBook,
   onDispatch,
+  onEdit,
 }: {
   order: ExtOrder;
   productMap: Record<string, string>;
   boxes: BoxSize[];
   onPorterBook: (order: ExtOrder) => Promise<void>;
   onDispatch: (id: string) => Promise<void>;
+  onEdit: (order: ExtOrder) => void;
 }) {
   const [showInfo, setShowInfo] = useState(false);
   const [bookingPorter, setBookingPorter] = useState(false);
@@ -784,6 +1167,26 @@ function CookOrderCard({
         >
           ✓ {dispatching ? "Saving..." : "Dispatched"}
         </button>
+        <button
+          onClick={() => onEdit(order)}
+          style={{
+            flex: 1,
+            padding: "12px 10px",
+            background: G.blueGlass,
+            border: "none",
+            color: G.blue,
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: "pointer",
+            fontFamily: "system-ui, sans-serif",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+          }}
+        >
+          ✏️ Edit
+        </button>
       </div>
     </div>
   );
@@ -793,89 +1196,229 @@ function CookOrderCard({
 // SECTION 9 — COOK TAB: FULL LAYOUT
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// SECTION 9 — COOK TAB: FULL LAYOUT
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const BATCHES = [
+  { label: "Morning", range: "6 AM – 12 PM", slots: ["9–11 AM"] },
+  {
+    label: "Afternoon",
+    range: "12 PM – 4 PM",
+    slots: ["11–1 PM", "1–3 PM", "3–5 PM"],
+  },
+  {
+    label: "Evening",
+    range: "4 PM – 12 AM",
+    slots: ["5–7 PM", "7–9 PM", "9–11 PM", "11 PM–12 AM"],
+  },
+];
+
 function CookTab({
   orders,
   boxes,
   productMap,
   onPorterBook,
   onDispatch,
+  onEdit,
 }: {
   orders: ExtOrder[];
   boxes: BoxSize[];
   productMap: Record<string, string>;
   onPorterBook: (order: ExtOrder) => Promise<void>;
   onDispatch: (id: string) => Promise<void>;
+  onEdit: (order: ExtOrder) => void;
 }) {
-  // Determine which slot is "now" based on current IST time
   function getCurrentSlot(): string {
     const now = new Date();
-    const istHour =
-      ((now.getUTCHours() + 5) % 24) + (now.getUTCMinutes() >= 30 ? 0.5 : 0);
-    if (istHour >= 9 && istHour < 11) return "9–11 AM";
-    if (istHour >= 11 && istHour < 13) return "11–1 PM";
-    if (istHour >= 13 && istHour < 15) return "1–3 PM";
-    if (istHour >= 15 && istHour < 17) return "3–5 PM";
-    if (istHour >= 17 && istHour < 19) return "5–7 PM";
-    if (istHour >= 19 && istHour < 21) return "7–9 PM";
-    if (istHour >= 21 && istHour < 23) return "9–11 PM";
+    const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+    const istMs = utcMs + 5.5 * 3600000;
+    const ist = new Date(istMs);
+    const h = ist.getHours() + ist.getMinutes() / 60;
+    if (h < 9) return "9–11 AM";
+    if (h < 11) return "9–11 AM";
+    if (h < 13) return "11–1 PM";
+    if (h < 15) return "1–3 PM";
+    if (h < 17) return "3–5 PM";
+    if (h < 19) return "5–7 PM";
+    if (h < 21) return "7–9 PM";
+    if (h < 23) return "9–11 PM";
     return "11 PM–12 AM";
   }
 
-  const [activeSlot, setActiveSlot] = useState<string>(getCurrentSlot);
+  const todayStr = new Date().toISOString().split("T")[0];
 
-  // Only confirmed (paid) orders appear in cook view
+  type ViewMode = "all" | "batches" | "slots";
+  const [viewMode, setViewMode] = useState<ViewMode>("slots");
+  const [activeSlot, setActiveSlot] = useState<string>(getCurrentSlot);
+  const [activeBatch, setActiveBatch] = useState<string>("Morning");
+  const [selectedDate, setSelectedDate] = useState<string>(todayStr);
+  const [showCalendar, setShowCalendar] = useState(false);
+
   const activeOrders = orders.filter(
     (o) => PAID_STATUSES.includes(o.status) && o.status !== "dispatched",
   );
 
-  // Group by slot
+  const dateFilteredOrders = selectedDate
+    ? activeOrders.filter((o) => {
+        const d =
+          o.delivery_date || o.order_date || o.created_at?.split("T")[0];
+        return d === selectedDate;
+      })
+    : activeOrders;
+
+  // ── Aggregation helpers ──────────────────────────────────────
+  function aggregateFlavours(orderList: ExtOrder[]) {
+    const totals: Record<string, number> = {};
+    orderList.forEach((o) => {
+      if (!o.flavours) return;
+      Object.entries(o.flavours as Record<string, number>).forEach(
+        ([id, qty]) => {
+          const name = productMap[id] || "Unknown";
+          totals[name] = (totals[name] || 0) + qty;
+        },
+      );
+    });
+    return Object.entries(totals).sort(([, a], [, b]) => b - a);
+  }
+
+  // ── Slot view data ───────────────────────────────────────────
   const ordersBySlot: Record<string, ExtOrder[]> = {};
-  activeOrders.forEach((o) => {
+  dateFilteredOrders.forEach((o) => {
     const slot = o.delivery_slot || o.batch_label || "Unscheduled";
     if (!ordersBySlot[slot]) ordersBySlot[slot] = [];
     ordersBySlot[slot].push(o);
   });
 
-  // Build slot metadata for tabs
+  const nowSlot = getCurrentSlot();
   const slotMeta = ALL_SLOTS.map((label) => {
     const count = (ordersBySlot[label] || []).length;
-    const nowSlot = getCurrentSlot();
     const nowIdx = ALL_SLOTS.indexOf(nowSlot);
     const thisIdx = ALL_SLOTS.indexOf(label);
     const status: "done" | "active" | "upcoming" =
-      thisIdx < nowIdx ? "done" : thisIdx === nowIdx ? "active" : "upcoming";
+      count > 0
+        ? "active"
+        : thisIdx < nowIdx
+          ? "done"
+          : thisIdx === nowIdx
+            ? "active"
+            : "upcoming";
     return { label, count, status };
   });
 
   const slotOrders = ordersBySlot[activeSlot] || [];
+  const slotFlavours = aggregateFlavours(slotOrders);
+  const slotTotal = slotFlavours.reduce((s, [, q]) => s + q, 0);
 
-  // Aggregate flavours for the selected slot
-  const flavourTotals: Record<string, number> = {};
-  slotOrders.forEach((o) => {
-    if (!o.flavours) return;
-    Object.entries(o.flavours as Record<string, number>).forEach(
-      ([id, qty]) => {
-        const name = productMap[id] || "Unknown";
-        flavourTotals[name] = (flavourTotals[name] || 0) + qty;
-      },
-    );
+  // ── Batch view data ──────────────────────────────────────────
+  const currentBatch = BATCHES.find((b) => b.label === activeBatch)!;
+  const batchOrders = dateFilteredOrders.filter((o) => {
+    const slot = o.delivery_slot || o.batch_label || "";
+    return currentBatch.slots.includes(slot);
   });
-  const flavourEntries = Object.entries(flavourTotals).sort(
-    ([, a], [, b]) => b - a,
-  );
-  const totalPieces = flavourEntries.reduce((s, [, q]) => s + q, 0);
+  const batchFlavours = aggregateFlavours(batchOrders);
+  const batchTotal = batchFlavours.reduce((s, [, q]) => s + q, 0);
 
-  return (
-    <div>
-      {/* Slot tabs */}
-      <SlotTabs
-        slots={slotMeta}
-        activeSlot={activeSlot}
-        onSelect={setActiveSlot}
-      />
+  // ── All view data ────────────────────────────────────────────
+  const allFlavours = aggregateFlavours(dateFilteredOrders);
+  const allTotal = allFlavours.reduce((s, [, q]) => s + q, 0);
 
-      <div style={{ padding: "14px 14px 20px" }}>
-        {/* Flavour section label */}
+  // ── Friendly date label ──────────────────────────────────────
+  const friendlyDate = (d: string) => {
+    if (d === todayStr) return "Today";
+    if (d === new Date(Date.now() + 86400000).toISOString().split("T")[0])
+      return "Tomorrow";
+    return new Date(d + "T00:00:00").toLocaleDateString("en-IN", {
+      day: "numeric",
+      month: "short",
+      weekday: "short",
+    });
+  };
+
+  // ── Shared: flavour grid + order list ────────────────────────
+  function FlavourSection({
+    flavourEntries,
+    totalPieces,
+    orderList,
+    groupLabel,
+  }: {
+    flavourEntries: [string, number][];
+    totalPieces: number;
+    orderList: ExtOrder[];
+    groupLabel: string;
+  }) {
+    return (
+      <>
+        {/* Hero strip */}
+        <div
+          style={{
+            background: "rgba(96,165,250,0.08)",
+            border: `1px solid rgba(96,165,250,0.2)`,
+            borderRadius: 10,
+            padding: "12px 16px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 14,
+          }}
+        >
+          <div>
+            <p
+              style={{
+                fontSize: 11,
+                color: G.muted,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase" as const,
+                marginBottom: 3,
+                fontWeight: 600,
+              }}
+            >
+              {viewMode === "slots"
+                ? "SLOT"
+                : viewMode === "batches"
+                  ? "BATCH"
+                  : "ALL ORDERS"}
+            </p>
+            <p
+              style={{
+                fontSize: 22,
+                fontWeight: 800,
+                color: G.blue,
+                lineHeight: 1,
+              }}
+            >
+              {groupLabel}
+            </p>
+          </div>
+          <div style={{ textAlign: "right" as const }}>
+            <p
+              style={{
+                fontSize: 11,
+                color: G.muted,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase" as const,
+                marginBottom: 3,
+                fontWeight: 600,
+              }}
+            >
+              MAKE
+            </p>
+            <p
+              style={{
+                fontSize: 22,
+                fontWeight: 800,
+                color: G.text,
+                lineHeight: 1,
+              }}
+            >
+              {totalPieces}{" "}
+              <span style={{ fontSize: 14, fontWeight: 500, color: G.muted }}>
+                mochis
+              </span>
+            </p>
+          </div>
+        </div>
+
         <p
           style={{
             fontSize: "0.65rem",
@@ -883,97 +1426,25 @@ function CookTab({
             letterSpacing: "0.13em",
             textTransform: "uppercase" as const,
             marginBottom: 10,
-            marginTop: 6,
             fontWeight: 600,
           }}
         >
           What to make
         </p>
 
-        {/* Big flavour grid */}
         {flavourEntries.length > 0 ? (
-          <>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(3, 1fr)",
-                gap: 7,
-                marginBottom: 12,
-              }}
-            >
-              {flavourEntries.map(([name, qty]) => (
-                <FlavourBigCard key={name} name={name} qty={qty} />
-              ))}
-            </div>
-
-            {/* Total strip */}
-            <div
-              style={{
-                background: "rgba(96,165,250,0.08)",
-                border: `1px solid rgba(96,165,250,0.2)`,
-                borderRadius: 10,
-                padding: "12px 16px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: 16,
-              }}
-            >
-              <div>
-                <p
-                  style={{
-                    fontSize: 11,
-                    color: G.muted,
-                    letterSpacing: "0.12em",
-                    textTransform: "uppercase",
-                    marginBottom: 3,
-                    fontWeight: 600,
-                  }}
-                >
-                  SLOT
-                </p>
-                <p
-                  style={{
-                    fontSize: 22,
-                    fontWeight: 800,
-                    color: G.blue,
-                    lineHeight: 1,
-                  }}
-                >
-                  {activeSlot}
-                </p>
-              </div>
-              <div style={{ textAlign: "right" as const }}>
-                <p
-                  style={{
-                    fontSize: 11,
-                    color: G.muted,
-                    letterSpacing: "0.12em",
-                    textTransform: "uppercase",
-                    marginBottom: 3,
-                    fontWeight: 600,
-                  }}
-                >
-                  MAKE
-                </p>
-                <p
-                  style={{
-                    fontSize: 22,
-                    fontWeight: 800,
-                    color: G.text,
-                    lineHeight: 1,
-                  }}
-                >
-                  {totalPieces}{" "}
-                  <span
-                    style={{ fontSize: 14, fontWeight: 500, color: G.muted }}
-                  >
-                    mochis
-                  </span>
-                </p>
-              </div>
-            </div>
-          </>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(3, 1fr)",
+              gap: 7,
+              marginBottom: 16,
+            }}
+          >
+            {flavourEntries.map(([name, qty]) => (
+              <FlavourBigCard key={name} name={name} qty={qty} />
+            ))}
+          </div>
         ) : (
           <div
             style={{
@@ -987,13 +1458,12 @@ function CookTab({
           >
             <p style={{ fontSize: "2rem", marginBottom: 8 }}>✓</p>
             <p style={{ color: G.muted, fontSize: "0.88rem" }}>
-              No orders in this slot
+              No orders here
             </p>
           </div>
         )}
 
-        {/* Order list */}
-        {slotOrders.length > 0 && (
+        {orderList.length > 0 && (
           <>
             <div
               style={{
@@ -1011,19 +1481,243 @@ function CookTab({
                 fontWeight: 600,
               }}
             >
-              Orders · {activeSlot} ({slotOrders.length})
+              Orders · {groupLabel} ({orderList.length})
             </p>
-            {slotOrders.map((order) => (
+            {orderList.map((order) => (
               <CookOrderCard
                 key={order.id}
                 order={order}
                 productMap={productMap}
-                boxes={boxes} // ← add this
+                boxes={boxes}
                 onPorterBook={onPorterBook}
                 onDispatch={onDispatch}
+                onEdit={onEdit}
               />
             ))}
           </>
+        )}
+      </>
+    );
+  }
+
+  return (
+    <div>
+      {/* ── Date header + calendar toggle ── */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "12px 14px 8px",
+        }}
+      >
+        <div>
+          <p
+            style={{
+              fontSize: 11,
+              color: G.muted,
+              letterSpacing: "0.1em",
+              textTransform: "uppercase" as const,
+              marginBottom: 2,
+              fontWeight: 600,
+            }}
+          >
+            Viewing
+          </p>
+          <p
+            style={{
+              fontSize: 16,
+              fontWeight: 700,
+              color: selectedDate ? G.blue : G.text,
+            }}
+          >
+            {selectedDate ? friendlyDate(selectedDate) : "All days"}
+          </p>
+        </div>
+        <button
+          onClick={() => setShowCalendar((v) => !v)}
+          style={{
+            padding: "8px 14px",
+            borderRadius: 10,
+            border: `1px solid ${showCalendar ? G.blue : G.glassBorder}`,
+            background: showCalendar ? G.blueGlass : G.glass,
+            color: showCalendar ? G.blue : G.sub,
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: "pointer",
+            fontFamily: "system-ui, sans-serif",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+          }}
+        >
+          📅 {showCalendar ? "Hide Calendar" : "Calendar"}
+        </button>
+      </div>
+
+      {/* ── Calendar ── */}
+      {showCalendar && (
+        <div style={{ padding: "0 14px" }}>
+          <MonthCalendar
+            orders={orders}
+            selectedDate={selectedDate}
+            onSelectDate={(d) => {
+              setSelectedDate(d);
+              if (d) setShowCalendar(false);
+            }}
+          />
+        </div>
+      )}
+
+      {/* ── View mode switcher: All | Batches | Slots ── */}
+      <div
+        style={{
+          display: "flex",
+          gap: 0,
+          margin: "6px 14px 0",
+          border: `1px solid ${G.glassBorder}`,
+          borderRadius: 10,
+          overflow: "hidden",
+        }}
+      >
+        {(
+          [
+            { id: "all", label: "All", icon: "◉" },
+            { id: "batches", label: "Batches", icon: "☀" },
+            { id: "slots", label: "Time Slots", icon: "🕐" },
+          ] as { id: ViewMode; label: string; icon: string }[]
+        ).map((v) => (
+          <button
+            key={v.id}
+            onClick={() => setViewMode(v.id)}
+            style={{
+              flex: 1,
+              padding: "9px 6px",
+              border: "none",
+              borderRight:
+                v.id !== "slots" ? `1px solid ${G.glassBorder}` : "none",
+              fontFamily: "system-ui, sans-serif",
+              background: viewMode === v.id ? G.blueGlass : G.glass,
+              color: viewMode === v.id ? G.blue : G.muted,
+              fontSize: "0.78rem",
+              fontWeight: viewMode === v.id ? 700 : 400,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 5,
+              transition: "all 0.15s",
+            }}
+          >
+            <span style={{ fontSize: "0.85rem" }}>{v.icon}</span>
+            {v.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Batch sub-tabs (only when viewMode === "batches") ── */}
+      {viewMode === "batches" && (
+        <div
+          style={{
+            display: "flex",
+            gap: 6,
+            padding: "10px 14px 0",
+          }}
+        >
+          {BATCHES.map((b) => {
+            const bOrders = dateFilteredOrders.filter((o) => {
+              const slot = o.delivery_slot || o.batch_label || "";
+              return b.slots.includes(slot);
+            });
+            const isActive = activeBatch === b.label;
+            return (
+              <button
+                key={b.label}
+                onClick={() => setActiveBatch(b.label)}
+                style={{
+                  flex: 1,
+                  padding: "9px 8px",
+                  borderRadius: 10,
+                  border: `1px solid ${isActive ? "rgba(96,165,250,0.5)" : G.glassBorder}`,
+                  background: isActive ? G.blueGlass : G.glass,
+                  color: isActive ? G.blue : G.sub,
+                  fontFamily: "system-ui, sans-serif",
+                  cursor: "pointer",
+                  textAlign: "center" as const,
+                  transition: "all 0.15s",
+                }}
+              >
+                <p
+                  style={{
+                    fontSize: "0.8rem",
+                    fontWeight: isActive ? 700 : 500,
+                    marginBottom: 2,
+                  }}
+                >
+                  {b.label}
+                </p>
+                <p
+                  style={{
+                    fontSize: "0.62rem",
+                    color: isActive ? G.blue : G.muted,
+                  }}
+                >
+                  {b.range}
+                </p>
+                {bOrders.length > 0 && (
+                  <p
+                    style={{
+                      fontSize: "0.68rem",
+                      fontWeight: 700,
+                      color: isActive ? G.blue : G.green,
+                      marginTop: 3,
+                    }}
+                  >
+                    {bOrders.length} order{bOrders.length !== 1 ? "s" : ""}
+                  </p>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Slot tabs (only when viewMode === "slots") ── */}
+      {viewMode === "slots" && (
+        <SlotTabs
+          slots={slotMeta}
+          activeSlot={activeSlot}
+          onSelect={setActiveSlot}
+        />
+      )}
+
+      {/* ── Main content area ── */}
+      <div style={{ padding: "14px 14px 20px" }}>
+        {viewMode === "all" && (
+          <FlavourSection
+            flavourEntries={allFlavours}
+            totalPieces={allTotal}
+            orderList={dateFilteredOrders}
+            groupLabel={selectedDate ? friendlyDate(selectedDate) : "All Days"}
+          />
+        )}
+
+        {viewMode === "batches" && (
+          <FlavourSection
+            flavourEntries={batchFlavours}
+            totalPieces={batchTotal}
+            orderList={batchOrders}
+            groupLabel={`${currentBatch.label} · ${currentBatch.range}`}
+          />
+        )}
+
+        {viewMode === "slots" && (
+          <FlavourSection
+            flavourEntries={slotFlavours}
+            totalPieces={slotTotal}
+            orderList={slotOrders}
+            groupLabel={activeSlot}
+          />
         )}
       </div>
     </div>
@@ -2530,6 +3224,457 @@ function ExpenseImporter({
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ORDER EDIT MODAL
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function OrderEditModal({
+  order,
+  products,
+  boxes,
+  onSave,
+  onClose,
+}: {
+  order: ExtOrder;
+  products: Product[];
+  boxes: BoxSize[];
+  onSave: () => Promise<void>;
+  onClose: () => void;
+}) {
+  const [form, setForm] = useState({
+    customer_name: order.customer_name || "",
+    phone: order.phone || "",
+    insta_id: order.insta_id || "",
+    address: order.address || "",
+    remarks: order.remarks || "",
+    notes: order.notes || "",
+    delivery_date: order.delivery_date || "",
+    delivery_slot: order.delivery_slot || ALL_SLOTS[2],
+    total_price: String(order.total_price || ""),
+    status: order.status || "pending",
+    fulfillment_type:
+      (order.fulfillment_type as "delivery" | "pickup") || "delivery",
+    box_size_id: order.box_size_id || "",
+  });
+  const [flavours, setFlavours] = useState<Record<string, number>>(
+    (order.flavours as Record<string, number>) || {},
+  );
+  const [saving, setSaving] = useState(false);
+
+  const f = (k: string) => (v: string) => setForm((p) => ({ ...p, [k]: v }));
+
+  const selectStyle: React.CSSProperties = {
+    width: "100%",
+    background: G.glass,
+    border: `1px solid ${G.glassBorder}`,
+    color: G.text,
+    padding: "11px 14px",
+    borderRadius: 10,
+    fontSize: "0.88rem",
+    marginBottom: 8,
+    fontFamily: "system-ui, sans-serif",
+    outline: "none",
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed" as const,
+        inset: 0,
+        background: "rgba(0,0,0,0.75)",
+        zIndex: 500,
+        display: "flex",
+        alignItems: "flex-end",
+        justifyContent: "center",
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        style={{
+          background: G.pageBg,
+          border: `1px solid ${G.glassBorderStrong}`,
+          borderRadius: "18px 18px 0 0",
+          padding: 20,
+          width: "100%",
+          maxWidth: 900,
+          maxHeight: "90vh",
+          overflowY: "auto" as const,
+        }}
+      >
+        {/* Header */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 16,
+          }}
+        >
+          <p style={{ fontSize: "1rem", fontWeight: 700, color: G.blue }}>
+            ✏️ Edit Order
+          </p>
+          <button
+            onClick={onClose}
+            style={{
+              background: "transparent",
+              border: "none",
+              color: G.muted,
+              cursor: "pointer",
+              fontSize: "1.2rem",
+            }}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Fields */}
+        <GlassInput
+          placeholder="Customer Name *"
+          value={form.customer_name}
+          onChange={f("customer_name")}
+        />
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "0 8px",
+          }}
+        >
+          <GlassInput
+            placeholder="Phone"
+            value={form.phone}
+            onChange={f("phone")}
+          />
+          <GlassInput
+            placeholder="Instagram (without @)"
+            value={form.insta_id}
+            onChange={f("insta_id")}
+          />
+        </div>
+        <GlassInput
+          placeholder="Address"
+          value={form.address}
+          onChange={f("address")}
+        />
+
+        {/* Fulfillment type */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          {(["delivery", "pickup"] as const).map((type) => (
+            <button
+              key={type}
+              onClick={() => setForm((p) => ({ ...p, fulfillment_type: type }))}
+              style={{
+                flex: 1,
+                padding: "9px 12px",
+                borderRadius: 9,
+                fontFamily: "system-ui, sans-serif",
+                border: `1px solid ${form.fulfillment_type === type ? "rgba(96,165,250,0.5)" : G.glassBorder}`,
+                background:
+                  form.fulfillment_type === type ? G.blueGlass : G.glass,
+                color: form.fulfillment_type === type ? G.blue : G.sub,
+                fontSize: "0.8rem",
+                fontWeight: form.fulfillment_type === type ? 700 : 400,
+                cursor: "pointer",
+              }}
+            >
+              {type === "delivery" ? "🚚 Delivery" : "🏠 Pickup"}
+            </button>
+          ))}
+        </div>
+
+        {/* Date + slot */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "0 8px",
+          }}
+        >
+          <GlassInput
+            type="date"
+            placeholder="Delivery Date"
+            value={form.delivery_date}
+            onChange={f("delivery_date")}
+          />
+          <select
+            value={form.delivery_slot}
+            onChange={(e) =>
+              setForm((p) => ({ ...p, delivery_slot: e.target.value }))
+            }
+            style={selectStyle}
+          >
+            {ALL_SLOTS.map((s) => (
+              <option key={s} value={s} style={{ background: "#1a2535" }}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Box size */}
+        <select
+          value={form.box_size_id}
+          onChange={(e) =>
+            setForm((p) => ({ ...p, box_size_id: e.target.value }))
+          }
+          style={selectStyle}
+        >
+          <option value="" style={{ background: "#1a2535" }}>
+            Select box size
+          </option>
+          {boxes.map((b) => (
+            <option key={b.id} value={b.id} style={{ background: "#1a2535" }}>
+              {b.label} — ₹{b.price}
+            </option>
+          ))}
+        </select>
+
+        {/* Price + status */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "0 8px",
+          }}
+        >
+          <GlassInput
+            type="number"
+            placeholder="Total Price ₹ *"
+            value={form.total_price}
+            onChange={f("total_price")}
+          />
+          <select
+            value={form.status}
+            onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}
+            style={selectStyle}
+          >
+            {Object.entries(STATUS_LABELS).map(([k, v]) => (
+              <option key={k} value={k} style={{ background: "#1a2535" }}>
+                {v}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <GlassInput
+          placeholder="Remarks"
+          value={form.remarks}
+          onChange={f("remarks")}
+        />
+        <GlassInput
+          placeholder="Internal notes"
+          value={form.notes}
+          onChange={f("notes")}
+        />
+
+        {/* Flavours */}
+        {products.filter((p) => p.is_available).length > 0 && (
+          <>
+            <p
+              style={{
+                fontSize: "0.72rem",
+                color: G.muted,
+                letterSpacing: "0.1em",
+                textTransform: "uppercase" as const,
+                marginBottom: 8,
+                fontWeight: 700,
+              }}
+            >
+              🍡 Flavours
+            </p>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 5,
+                marginBottom: 14,
+              }}
+            >
+              {products
+                .filter((p) => p.is_available)
+                .map((prod) => {
+                  const qty = flavours[prod.id] || 0;
+                  const c = getFlavourColor(prod.name);
+                  return (
+                    <div
+                      key={prod.id}
+                      onClick={() => {
+                        const n = { ...flavours };
+                        if ((n[prod.id] || 0) === 0) n[prod.id] = 1;
+                        else delete n[prod.id];
+                        setFlavours(n);
+                      }}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "7px 10px",
+                        borderRadius: 8,
+                        border: `1px solid ${qty > 0 ? c.border : G.glassBorder}`,
+                        background: qty > 0 ? c.bg : G.glass,
+                        cursor: "pointer",
+                        transition: "all 0.15s",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                        }}
+                      >
+                        {qty > 0 && (
+                          <div
+                            style={{
+                              width: 8,
+                              height: 8,
+                              borderRadius: "50%",
+                              background: c.dot,
+                            }}
+                          />
+                        )}
+                        <span
+                          style={{
+                            fontSize: "0.8rem",
+                            fontWeight: qty > 0 ? 600 : 400,
+                            color: qty > 0 ? c.text : G.sub,
+                          }}
+                        >
+                          {prod.name}
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 5,
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          onClick={() => {
+                            const n = { ...flavours };
+                            const cur = n[prod.id] || 0;
+                            if (cur > 0) {
+                              if (cur === 1) delete n[prod.id];
+                              else n[prod.id] = cur - 1;
+                              setFlavours(n);
+                            }
+                          }}
+                          disabled={qty === 0}
+                          style={{
+                            width: 22,
+                            height: 22,
+                            borderRadius: 4,
+                            border: `1px solid ${G.glassBorder}`,
+                            background: G.glass,
+                            color: G.sub,
+                            cursor: qty === 0 ? "not-allowed" : "pointer",
+                            opacity: qty === 0 ? 0.3 : 1,
+                            fontSize: "0.9rem",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          −
+                        </button>
+                        <span
+                          style={{
+                            fontSize: "0.85rem",
+                            fontWeight: 700,
+                            minWidth: 14,
+                            textAlign: "center" as const,
+                            color: G.text,
+                          }}
+                        >
+                          {qty}
+                        </span>
+                        <button
+                          onClick={() =>
+                            setFlavours((n) => ({
+                              ...n,
+                              [prod.id]: (n[prod.id] || 0) + 1,
+                            }))
+                          }
+                          style={{
+                            width: 22,
+                            height: 22,
+                            borderRadius: 4,
+                            border: `1px solid rgba(96,165,250,0.4)`,
+                            background: G.blueGlass,
+                            color: G.blue,
+                            cursor: "pointer",
+                            fontSize: "0.9rem",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </>
+        )}
+
+        {/* Save button */}
+        <button
+          disabled={saving || !form.customer_name || !form.total_price}
+          onClick={async () => {
+            setSaving(true);
+            await supabase
+              .from("orders")
+              .update({
+                customer_name: form.customer_name.trim(),
+                phone: form.phone.trim(),
+                insta_id: form.insta_id.trim(),
+                address: form.address.trim() || null,
+                remarks: form.remarks.trim(),
+                notes: form.notes.trim() || null,
+                delivery_date: form.delivery_date || null,
+                delivery_slot: form.delivery_slot,
+                total_price: Number(form.total_price),
+                status: form.status,
+                fulfillment_type: form.fulfillment_type,
+                box_size_id: form.box_size_id || null,
+                flavours,
+              })
+              .eq("id", order.id);
+            setSaving(false);
+            await onSave();
+          }}
+          style={{
+            width: "100%",
+            padding: "13px",
+            borderRadius: 10,
+            border: "none",
+            background:
+              saving || !form.customer_name || !form.total_price
+                ? G.glass
+                : G.blueGlass,
+            color:
+              saving || !form.customer_name || !form.total_price
+                ? G.muted
+                : G.blue,
+            fontSize: "0.92rem",
+            fontWeight: 700,
+            cursor: "pointer",
+            fontFamily: "system-ui, sans-serif",
+          }}
+        >
+          {saving ? "Saving..." : "Save Changes"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // SECTION 15 — MAIN APP COMPONENT
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -2551,7 +3696,7 @@ export default function AdminPage() {
   const [editingCustomer, setEditingCustomer] = useState<string | null>(null);
   const [editRemarks, setEditRemarks] = useState("");
   const [editInsta, setEditInsta] = useState("");
-
+  const [editingOrder, setEditingOrder] = useState<ExtOrder | null>(null);
   const [np, setNp] = useState({
     name: "",
     description: "",
@@ -2582,7 +3727,11 @@ export default function AdminPage() {
   const [dashPeriod, setDashPeriod] = useState<
     "from_start" | "today" | "week" | "month" | "all"
   >("from_start");
-
+  const [trackingStart, setTrackingStart] = useState<string>(() =>
+    typeof window !== "undefined"
+      ? localStorage.getItem("es_tracking_start") || TRACKING_START_DATE
+      : TRACKING_START_DATE,
+  );
   useEffect(() => {
     if (localStorage.getItem("es_admin") === "true") setAuthed(true);
   }, []);
@@ -2654,6 +3803,14 @@ export default function AdminPage() {
     await supabase.from("orders").update({ status: "cancelled" }).eq("id", id);
     await load();
     flash("Order cancelled");
+  }
+
+  async function handleDeleteCustomer(customerOrders: ExtOrder[]) {
+    for (const o of customerOrders) {
+      await supabase.from("orders").delete().eq("id", o.id);
+    }
+    await load();
+    flash("Customer deleted ✓");
   }
 
   async function handlePorterEmail(order: ExtOrder) {
@@ -2748,7 +3905,7 @@ export default function AdminPage() {
       const dateStr =
         (item as Record<string, string>).order_date ||
         item.created_at.split("T")[0];
-      if (dashPeriod === "from_start") return dateStr >= TRACKING_START_DATE;
+      if (dashPeriod === "from_start") return dateStr >= trackingStart;
       if (dashPeriod === "today") return dateStr === todayStr;
       if (dashPeriod === "week") {
         const day = localNow.getDay();
@@ -2769,7 +3926,7 @@ export default function AdminPage() {
     const localNow = new Date(now.getTime() + 5.5 * 3600000);
     const todayStr = localNow.toISOString().split("T")[0];
     return items.filter((item) => {
-      if (dashPeriod === "from_start") return item.date >= TRACKING_START_DATE;
+      if (dashPeriod === "from_start") return item.date >= trackingStart;
       if (dashPeriod === "today") return item.date === todayStr;
       if (dashPeriod === "week") {
         const day = localNow.getDay();
@@ -3183,8 +4340,8 @@ export default function AdminPage() {
             onDispatch={async (id) => {
               await handleStatusChange(id, "dispatched");
             }}
+            onEdit={(order) => setEditingOrder(order)}
           />
-          {/* Add order button — floating at bottom of cook section */}
           <div style={{ padding: "0 14px 14px" }}>
             <button
               onClick={() => setShowManualForm((f) => !f)}
@@ -3524,6 +4681,7 @@ export default function AdminPage() {
                     alignItems: "flex-start",
                   }}
                 >
+                  {/* Customer info */}
                   <div style={{ flex: 1 }}>
                     <div
                       style={{
@@ -3599,16 +4757,44 @@ export default function AdminPage() {
                       </p>
                     )}
                   </div>
-                  <GlassBtn
-                    variant="primary"
-                    onClick={() => {
-                      setEditingCustomer(c.key);
-                      setEditInsta(c.insta_id || "");
-                      setEditRemarks(c.remarks || "");
+
+                  {/* Action buttons */}
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column" as const,
+                      gap: 5,
+                      marginLeft: 10,
                     }}
                   >
-                    Edit
-                  </GlassBtn>
+                    <GlassBtn
+                      variant="primary"
+                      onClick={() => {
+                        setEditingCustomer(c.key);
+                        setEditInsta(c.insta_id || "");
+                        setEditRemarks(c.remarks || "");
+                      }}
+                    >
+                      Edit
+                    </GlassBtn>
+                    <GlassBtn
+                      variant="danger"
+                      onClick={async () => {
+                        if (
+                          !confirm(
+                            `Delete ${c.name} and all ${c.orders.length} order${c.orders.length !== 1 ? "s" : ""}? This cannot be undone.`,
+                          )
+                        )
+                          return;
+                        const ids = c.orders.map((o) => o.id);
+                        await supabase.from("orders").delete().in("id", ids);
+                        await load();
+                        flash("Customer deleted ✓");
+                      }}
+                    >
+                      Delete
+                    </GlassBtn>
+                  </div>
                 </div>
               )}
             </div>
@@ -3663,7 +4849,12 @@ export default function AdminPage() {
               ),
             )}
           </div>
-
+          {dashPeriod === "from_start" && (
+            <StartDateEditor
+              trackingStart={trackingStart}
+              setTrackingStart={setTrackingStart}
+            />
+          )}
           <ExpenseScanner
             onDataExtracted={async (data) => {
               await handleExpenseImport(JSON.stringify(data));
@@ -4678,7 +5869,19 @@ export default function AdminPage() {
           )}
         </div>
       )}
-
+      {editingOrder && (
+        <OrderEditModal
+          order={editingOrder}
+          products={products}
+          boxes={boxes}
+          onSave={async () => {
+            await load();
+            setEditingOrder(null);
+            flash("Order updated ✓");
+          }}
+          onClose={() => setEditingOrder(null)}
+        />
+      )}
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           SECTION 24 — BOTTOM NAV
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
