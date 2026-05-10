@@ -5,6 +5,7 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
+import { SmartOrderModal, SmartOrderNavBtn } from "./SmartOrderModal";
 import { supabase } from "@/lib/supabase";
 import type { Product, BoxSize, Order } from "@/lib/types";
 
@@ -190,6 +191,7 @@ const FLAVOUR_COLORS: Record<
     dot: "#6a7a90",
   },
 };
+
 
 function getFlavourColor(name: string) {
   const n = name.toLowerCase();
@@ -4280,6 +4282,7 @@ function AllOrdersTab({
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 export default function AdminPage() {
+  const [showSmartOrder, setShowSmartOrder] = useState(false);
   const [authed, setAuthed] = useState(false);
   const [pw, setPw] = useState("");
   const [pwError, setPwError] = useState(false);
@@ -4884,6 +4887,7 @@ export default function AdminPage() {
             )}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
+            <SmartOrderNavBtn onClick={() => setShowSmartOrder(true)} />
             <button
               onClick={load}
               style={{
@@ -6423,6 +6427,24 @@ export default function AdminPage() {
             // ← add this
             await handleCancel(id);
             setEditingOrder(null);
+          }}
+        />
+      )}
+      {showSmartOrder && (
+        <SmartOrderModal
+          boxes={boxes}
+          products={products}
+          customers={customers.map((c) => ({
+            name: c.name,
+            phone: c.phone,
+            insta_id: c.insta_id || "",
+            remarks: c.remarks || "",
+          }))}
+          onClose={() => setShowSmartOrder(false)}
+          onSaved={() => {
+            load();
+            setShowSmartOrder(false);
+            flash("Order saved ✓");
           }}
         />
       )}
