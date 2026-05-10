@@ -5,7 +5,10 @@ export async function POST(req: Request) {
     const { images, productList, boxList, slots } = await req.json();
 
     if (!images || images.length === 0) {
-      return NextResponse.json({ error: "No images provided" }, { status: 400 });
+      return NextResponse.json(
+        { error: "No images provided" },
+        { status: 400 },
+      );
     }
 
     const prompt = `
@@ -25,7 +28,7 @@ Example output: "Flat 4B, Sunrise Apartments, near KSRTC bus stand"
 
 SLOT RULE: Map delivery time to exactly one of: ${slots.join(", ")}
 
-Return ONLY valid JSON (no markdown, no explanation, no backticks):
+Return ONLY valid JSON (no markdown, no backticks, no explanation):
 {
   "customer_name": string or null,
   "phone": string or null,
@@ -41,7 +44,7 @@ Return ONLY valid JSON (no markdown, no explanation, no backticks):
 }
 `;
 
-    // Build Gemini parts — text prompt + all images
+    // Build Gemini parts: prompt text + all images
     const parts: object[] = [{ text: prompt }];
     for (const img of images) {
       parts.push({
@@ -59,12 +62,9 @@ Return ONLY valid JSON (no markdown, no explanation, no backticks):
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts }],
-          generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 1024,
-          },
+          generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
         }),
-      }
+      },
     );
 
     if (!response.ok) {
@@ -72,7 +72,7 @@ Return ONLY valid JSON (no markdown, no explanation, no backticks):
       console.error("Gemini API error:", errText);
       return NextResponse.json(
         { error: `Gemini API error: ${response.status}` },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -81,23 +81,52 @@ Return ONLY valid JSON (no markdown, no explanation, no backticks):
       geminiData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
 
     if (!rawText) {
-      return NextResponse.json({ error: "Empty response from Gemini" }, { status: 500 });
+      return NextResponse.json(
+        { error: "Empty response from Gemini" },
+        { status: 500 },
+      );
     }
 
-    // Extract JSON object from response
-    const match = rawText.match(/\{[\s\S]*\}/);
-    if (!match) {
-      console.error("No JSON object in response:", rawText);
-      return NextResponse.json({ error: "Could not parse response" }, { status: 500 });
+    console.log("Gemini raw response:", rawText);
+
+    // Strip markdown fences (```json ... ``` or ``` ... ```)
+    const stripped = rawText
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```\s*$/, "")
+      .trim();
+
+    // Try parsing directly first, then fall back to regex extraction
+    let parsed: any = null;
+
+    try {
+      parsed = JSON.parse(stripped);
+    } catch {
+      // Fall back: find the first { ... } block
+      const match = stripped.match(/\{[\s\S]*\}/);
+      if (!match) {
+        console.error("No JSON object found in response:", rawText);
+        return NextResponse.json(
+          { error: "Could not parse response from AI" },
+          { status: 500 },
+        );
+      }
+      try {
+        parsed = JSON.parse(match[0]);
+      } catch (e) {
+        console.error("JSON.parse failed:", e, "on text:", match[0]);
+        return NextResponse.json(
+          { error: "Could not parse response from AI" },
+          { status: 500 },
+        );
+      }
     }
 
-    const parsed = JSON.parse(match[0]);
     return NextResponse.json(parsed);
   } catch (error: any) {
     console.error("extract-order error:", error);
     return NextResponse.json(
       { error: error.message || "Failed to process screenshots" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
