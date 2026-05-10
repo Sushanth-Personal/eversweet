@@ -354,23 +354,18 @@ export function SmartOrderModal({
         ),
       );
 
-      const productList = products
-        .filter((p) => p.is_available)
-        .map((p) => p.name)
-        .join(", ");
-      const boxList = boxes
-        .filter((b) => b.is_active)
-        .map((b) => `${b.label} (₹${b.price})`)
-        .join(", ");
+      const availableProducts = products.filter((p) => p.is_available);
 
       const response = await fetch("/api/extract-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           images: imagePayload,
-          productList,
-          boxList,
           slots: ALL_SLOTS,
+          products: availableProducts.map((p) => ({ id: p.id, name: p.name })),
+          boxes: boxes
+            .filter((b) => b.is_active)
+            .map((b) => ({ id: b.id, label: b.label, price: b.price })),
         }),
       });
 
@@ -381,7 +376,6 @@ export function SmartOrderModal({
 
       const extracted: AIExtracted = await response.json();
 
-      // Map extracted data → form fields + fill flags
       const newForm = { ...form };
       const newFilled: FilledFlags = {};
 
@@ -425,32 +419,17 @@ export function SmartOrderModal({
         newFilled.fulfillment_type = true;
       }
 
-      if (extracted.box_label) {
-        const matched = boxes.find(
-          (b) =>
-            b.label
-              .toLowerCase()
-              .includes(extracted.box_label!.toLowerCase()) ||
-            extracted.box_label!.toLowerCase().includes(b.label.toLowerCase()),
-        );
-        if (matched) {
-          newForm.box_size_id = matched.id;
-          newFilled.box_size_id = true;
-        }
+      // Box: server matched price → box ID directly
+      if ((extracted as any).box_size_id) {
+        newForm.box_size_id = (extracted as any).box_size_id;
+        newFilled.box_size_id = true;
       }
 
+      // Flavours: server already mapped numbered indices → product IDs, use directly
       const newFlavours: Record<string, number> = {};
       if (extracted.flavours && Object.keys(extracted.flavours).length > 0) {
-        Object.entries(extracted.flavours).forEach(([name, qty]) => {
-          const prod = products.find(
-            (p) =>
-              p.name.toLowerCase() === name.toLowerCase() ||
-              p.name.toLowerCase().includes(name.toLowerCase()) ||
-              name.toLowerCase().includes(p.name.toLowerCase()),
-          );
-          if (prod) newFlavours[prod.id] = qty;
-        });
-        if (Object.keys(newFlavours).length > 0) newFilled.flavours = true;
+        Object.assign(newFlavours, extracted.flavours);
+        newFilled.flavours = true;
       }
 
       setForm(newForm);
