@@ -1,13 +1,10 @@
 "use client";
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// SECTION 1 — IMPORTS & TYPES
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { SmartOrderModal, SmartOrderNavBtn } from "./SmartOrderModal";
 import { supabase } from "@/lib/supabase";
 import type { Product, BoxSize, Order } from "@/lib/types";
+import { TrivandrumAdminTab } from "./trivandrum-admin-section";
 
 type Tab =
   | "cook"
@@ -15,8 +12,8 @@ type Tab =
   | "orders"
   | "customers"
   | "dashboard"
-  | "more";
-
+  | "more"
+  | "trivandrum";
 type OrdersFilterPreset = "today_paid" | "period_paid" | null;
 type MoreTab = "products" | "boxes";
 
@@ -42,13 +39,8 @@ type ExtOrder = Order & {
   payment_confirmed_at?: string;
 };
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// SECTION 2 — CONSTANTS & CONFIG
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 const TRACKING_START_DATE = "2026-04-21";
 
-// All delivery time slots (customer-facing, 2-hour windows)
 const ALL_SLOTS = [
   "9–11 AM",
   "11–1 PM",
@@ -97,10 +89,6 @@ const CATEGORY_CONFIG: Record<string, { label: string; icon: string }> = {
   other: { label: "Other", icon: "📋" },
 };
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// SECTION 3 — DESIGN TOKENS (G)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 const G = {
   pageBg: "#0d1520",
   navBg: "rgba(8,15,26,0.96)",
@@ -127,7 +115,6 @@ const G = {
   active: "#60a5fa",
 };
 
-// Flavour colour map — used for pills and big-number cards
 const FLAVOUR_COLORS: Record<
   string,
   { bg: string; border: string; text: string; dot: string }
@@ -192,7 +179,6 @@ const FLAVOUR_COLORS: Record<
   },
 };
 
-
 function getFlavourColor(name: string) {
   const n = name.toLowerCase();
   for (const [key, val] of Object.entries(FLAVOUR_COLORS)) {
@@ -200,10 +186,6 @@ function getFlavourColor(name: string) {
   }
   return FLAVOUR_COLORS.default;
 }
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// SECTION 4 — SHARED UI PRIMITIVES
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function GlassInput({
   placeholder,
@@ -378,6 +360,7 @@ function GlassStatCard({
     </div>
   );
 }
+
 function StartDateEditor({
   trackingStart,
   setTrackingStart,
@@ -507,9 +490,6 @@ function StartDateEditor({
     </div>
   );
 }
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// SECTION 5 — FLAVOUR PILL (shared between cook view & order cards)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function FlavourPill({
   name,
@@ -569,10 +549,6 @@ function FlavourPill({
   );
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// SECTION 6 — COOK VIEW: BIG FLAVOUR SUMMARY CARD
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 function FlavourBigCard({ name, qty }: { name: string; qty: number }) {
   const c = getFlavourColor(name);
   return (
@@ -606,9 +582,6 @@ function FlavourBigCard({ name, qty }: { name: string; qty: number }) {
     </div>
   );
 }
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// FEATURE 1 — CALENDAR COMPONENT (add near SlotTabs)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function MonthCalendar({
   orders,
@@ -616,45 +589,36 @@ function MonthCalendar({
   onSelectDate,
 }: {
   orders: ExtOrder[];
-  selectedDate: string; // "YYYY-MM-DD"
+  selectedDate: string;
   onSelectDate: (date: string) => void;
 }) {
   const [viewMonth, setViewMonth] = useState(() => {
     const now = new Date();
-    return { year: now.getFullYear(), month: now.getMonth() }; // 0-indexed
+    return { year: now.getFullYear(), month: now.getMonth() };
   });
-
-  // Build order count per date
   const countByDate: Record<string, number> = {};
   orders.forEach((o) => {
     if (!PAID_STATUSES.includes(o.status) && o.status !== "pending") return;
     const d = o.delivery_date || o.order_date || o.created_at?.split("T")[0];
     if (d) countByDate[d] = (countByDate[d] || 0) + 1;
   });
-
   const { year, month } = viewMonth;
-  const firstDay = new Date(year, month, 1).getDay(); // 0=Sun
+  const firstDay = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const todayStr = new Date().toISOString().split("T")[0];
-
-  // Pad so week starts Monday
-  const startPad = (firstDay + 6) % 7; // Mon=0
+  const startPad = (firstDay + 6) % 7;
   const cells: (number | null)[] = [
     ...Array(startPad).fill(null),
     ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
   ];
-  // Fill to complete last row
   while (cells.length % 7 !== 0) cells.push(null);
-
   function toDateStr(day: number) {
     return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   }
-
   const monthName = new Date(year, month).toLocaleDateString("en-IN", {
     month: "long",
     year: "numeric",
   });
-
   return (
     <div
       style={{
@@ -665,7 +629,6 @@ function MonthCalendar({
         marginBottom: 14,
       }}
     >
-      {/* Month navigation */}
       <div
         style={{
           display: "flex",
@@ -724,8 +687,6 @@ function MonthCalendar({
           ›
         </button>
       </div>
-
-      {/* Day headers */}
       <div
         style={{
           display: "grid",
@@ -750,8 +711,6 @@ function MonthCalendar({
           </div>
         ))}
       </div>
-
-      {/* Day cells */}
       <div
         style={{
           display: "grid",
@@ -765,7 +724,6 @@ function MonthCalendar({
           const count = countByDate[dateStr] || 0;
           const isSelected = selectedDate === dateStr;
           const isToday = dateStr === todayStr;
-
           return (
             <button
               key={i}
@@ -821,7 +779,6 @@ function MonthCalendar({
           );
         })}
       </div>
-
       {selectedDate && (
         <div
           style={{
@@ -859,10 +816,6 @@ function MonthCalendar({
     </div>
   );
 }
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// SECTION 7 — COOK VIEW: SLOT TABS
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function SlotTabs({
   slots,
@@ -947,15 +900,13 @@ function SlotTabs({
   );
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// SECTION 8 — COOK VIEW: ORDER CARD (lean, cook-optimised)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 function CookOrderCard({
   order,
   productMap,
   boxes,
-  onPorterBook,
+  isExpanded,
+  onTogglePorter,
+  onPorterEmail,
   onDispatch,
   onEdit,
   onCancel,
@@ -963,24 +914,23 @@ function CookOrderCard({
   order: ExtOrder;
   productMap: Record<string, string>;
   boxes: BoxSize[];
-  onPorterBook: (order: ExtOrder) => Promise<void>;
+  isExpanded: boolean;
+  onTogglePorter: () => void;
+  onPorterEmail: (order: ExtOrder) => Promise<void>;
   onDispatch: (id: string) => Promise<void>;
   onEdit: (order: ExtOrder) => void;
   onCancel: (id: string) => Promise<void>;
 }) {
-  const [showInfo, setShowInfo] = useState(false);
-  const [bookingPorter, setBookingPorter] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
   const [dispatching, setDispatching] = useState(false);
-
   const flavours = order.flavours
     ? Object.entries(order.flavours as Record<string, number>).filter(
         ([, q]) => q > 0,
       )
     : [];
-
   const boxLabel = boxes.find((b) => b.id === order.box_size_id)?.label || null;
   const totalPieces = flavours.reduce((s, [, q]) => s + q, 0);
-
   return (
     <div
       style={{
@@ -991,7 +941,6 @@ function CookOrderCard({
         overflow: "hidden",
       }}
     >
-      {/* Header — name + box */}
       <div style={{ padding: "13px 14px 10px" }}>
         <div
           style={{
@@ -1029,15 +978,12 @@ function CookOrderCard({
             </span>
           )}
         </div>
-        {/* Piece count under name */}
         {totalPieces > 0 && (
           <p style={{ fontSize: 13, color: G.muted, fontWeight: 500 }}>
             {totalPieces} piece{totalPieces !== 1 ? "s" : ""}
           </p>
         )}
       </div>
-
-      {/* Flavour pills */}
       {flavours.length > 0 && (
         <div
           style={{
@@ -1056,14 +1002,12 @@ function CookOrderCard({
           ))}
         </div>
       )}
-
-      {/* Delivery info — shown when Book Porter tapped */}
-      {showInfo && (
+      {isExpanded && (
         <div
           style={{
             background: "rgba(167,139,250,0.06)",
             borderTop: `0.5px solid rgba(167,139,250,0.18)`,
-            padding: "10px 14px",
+            padding: "12px 14px",
           }}
         >
           {order.phone && (
@@ -1072,7 +1016,7 @@ function CookOrderCard({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                marginBottom: 7,
+                marginBottom: 8,
                 gap: 8,
               }}
             >
@@ -1089,6 +1033,7 @@ function CookOrderCard({
                 alignItems: "flex-start",
                 justifyContent: "space-between",
                 gap: 8,
+                marginBottom: 8,
               }}
             >
               <span style={{ color: G.sub, fontSize: 13, flex: 1 }}>
@@ -1103,39 +1048,61 @@ function CookOrderCard({
                 fontSize: 12,
                 color: "#86efac",
                 fontStyle: "italic" as const,
-                marginTop: 6,
+                marginBottom: 8,
               }}
             >
               💬 {order.remarks}
             </p>
           )}
+          <button
+            disabled={sendingEmail || emailSent}
+            onClick={async () => {
+              setSendingEmail(true);
+              await onPorterEmail(order);
+              setSendingEmail(false);
+              setEmailSent(true);
+            }}
+            style={{
+              width: "100%",
+              padding: "10px 14px",
+              borderRadius: 9,
+              border: "none",
+              background: emailSent ? G.greenGlass : "rgba(167,139,250,0.18)",
+              color: emailSent ? G.green : G.purple,
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: sendingEmail || emailSent ? "not-allowed" : "pointer",
+              opacity: sendingEmail ? 0.6 : 1,
+              fontFamily: "system-ui, sans-serif",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
+              transition: "all 0.2s",
+            }}
+          >
+            {emailSent
+              ? "✓ Alert Sent"
+              : sendingEmail
+                ? "Sending…"
+                : "📧 Send Porter Alert"}
+          </button>
         </div>
       )}
-
-      {/* Actions */}
       <div
         style={{ display: "flex", borderTop: `0.5px solid ${G.glassBorder}` }}
       >
         <button
-          disabled={bookingPorter}
-          onClick={async () => {
-            setShowInfo((v) => !v);
-            if (!showInfo) {
-              setBookingPorter(true);
-              await onPorterBook(order);
-              setBookingPorter(false);
-            }
-          }}
+          onClick={onTogglePorter}
           style={{
             flex: 1,
             padding: "12px 10px",
-            background: showInfo ? "rgba(167,139,250,0.14)" : G.purpleGlass,
             border: "none",
+            background: isExpanded ? "rgba(167,139,250,0.18)" : G.purpleGlass,
             color: G.purple,
             fontSize: 14,
             fontWeight: 600,
-            cursor: bookingPorter ? "not-allowed" : "pointer",
-            opacity: bookingPorter ? 0.5 : 1,
+            cursor: "pointer",
             fontFamily: "system-ui, sans-serif",
             display: "flex",
             alignItems: "center",
@@ -1143,7 +1110,7 @@ function CookOrderCard({
             gap: 6,
           }}
         >
-          📦 {bookingPorter ? "Booking..." : "Book Porter"}
+          📦 {isExpanded ? "Hide Info" : "Book Porter"}
         </button>
         <div
           style={{ width: "0.5px", background: G.glassBorder, flexShrink: 0 }}
@@ -1233,10 +1200,6 @@ function CookOrderCard({
   );
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// SECTION 9 — COOK TAB: FULL LAYOUT
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 const BATCHES = [
   { label: "Morning", range: "6 AM – 12 PM", slots: ["9–11 AM"] },
   {
@@ -1255,7 +1218,9 @@ function CookTab({
   orders,
   boxes,
   productMap,
-  onPorterBook,
+  expandedPorter,
+  onTogglePorter,
+  onPorterEmail,
   onDispatch,
   onEdit,
   onCancel,
@@ -1263,7 +1228,9 @@ function CookTab({
   orders: ExtOrder[];
   boxes: BoxSize[];
   productMap: Record<string, string>;
-  onPorterBook: (order: ExtOrder) => Promise<void>;
+  expandedPorter: Set<string>;
+  onTogglePorter: (id: string) => void;
+  onPorterEmail: (order: ExtOrder) => Promise<void>;
   onDispatch: (id: string) => Promise<void>;
   onEdit: (order: ExtOrder) => void;
   onCancel: (id: string) => Promise<void>;
@@ -1274,7 +1241,6 @@ function CookTab({
     const istMs = utcMs + 5.5 * 3600000;
     const ist = new Date(istMs);
     const h = ist.getHours() + ist.getMinutes() / 60;
-    if (h < 9) return "9–11 AM";
     if (h < 11) return "9–11 AM";
     if (h < 13) return "11–1 PM";
     if (h < 15) return "1–3 PM";
@@ -1284,20 +1250,16 @@ function CookTab({
     if (h < 23) return "9–11 PM";
     return "11 PM–12 AM";
   }
-
   const todayStr = new Date().toISOString().split("T")[0];
-
   type ViewMode = "all" | "batches" | "slots";
   const [viewMode, setViewMode] = useState<ViewMode>("slots");
   const [activeSlot, setActiveSlot] = useState<string>(getCurrentSlot);
   const [activeBatch, setActiveBatch] = useState<string>("Morning");
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [showCalendar, setShowCalendar] = useState(false);
-
   const activeOrders = orders.filter(
     (o) => PAID_STATUSES.includes(o.status) && o.status !== "dispatched",
   );
-
   const dateFilteredOrders = selectedDate
     ? activeOrders.filter((o) => {
         const d =
@@ -1305,8 +1267,6 @@ function CookTab({
         return d === selectedDate;
       })
     : activeOrders;
-
-  // ── Aggregation helpers ──────────────────────────────────────
   function aggregateFlavours(orderList: ExtOrder[]) {
     const totals: Record<string, number> = {};
     orderList.forEach((o) => {
@@ -1320,15 +1280,12 @@ function CookTab({
     });
     return Object.entries(totals).sort(([, a], [, b]) => b - a);
   }
-
-  // ── Slot view data ───────────────────────────────────────────
   const ordersBySlot: Record<string, ExtOrder[]> = {};
   dateFilteredOrders.forEach((o) => {
     const slot = o.delivery_slot || o.batch_label || "Unscheduled";
     if (!ordersBySlot[slot]) ordersBySlot[slot] = [];
     ordersBySlot[slot].push(o);
   });
-
   const nowSlot = getCurrentSlot();
   const slotMeta = ALL_SLOTS.map((label) => {
     const count = (ordersBySlot[label] || []).length;
@@ -1344,12 +1301,9 @@ function CookTab({
             : "upcoming";
     return { label, count, status };
   });
-
   const slotOrders = ordersBySlot[activeSlot] || [];
   const slotFlavours = aggregateFlavours(slotOrders);
   const slotTotal = slotFlavours.reduce((s, [, q]) => s + q, 0);
-
-  // ── Batch view data ──────────────────────────────────────────
   const currentBatch = BATCHES.find((b) => b.label === activeBatch)!;
   const batchOrders = dateFilteredOrders.filter((o) => {
     const slot = o.delivery_slot || o.batch_label || "";
@@ -1357,12 +1311,8 @@ function CookTab({
   });
   const batchFlavours = aggregateFlavours(batchOrders);
   const batchTotal = batchFlavours.reduce((s, [, q]) => s + q, 0);
-
-  // ── All view data ────────────────────────────────────────────
   const allFlavours = aggregateFlavours(dateFilteredOrders);
   const allTotal = allFlavours.reduce((s, [, q]) => s + q, 0);
-
-  // ── Friendly date label ──────────────────────────────────────
   const friendlyDate = (d: string) => {
     if (d === todayStr) return "Today";
     if (d === new Date(Date.now() + 86400000).toISOString().split("T")[0])
@@ -1373,8 +1323,6 @@ function CookTab({
       weekday: "short",
     });
   };
-
-  // ── Shared: flavour grid + order list ────────────────────────
   function FlavourSection({
     flavourEntries,
     totalPieces,
@@ -1388,11 +1336,10 @@ function CookTab({
   }) {
     return (
       <>
-        {/* Hero strip */}
         <div
           style={{
             background: "rgba(96,165,250,0.08)",
-            border: `1px solid rgba(96,165,250,0.2)`,
+            border: "1px solid rgba(96,165,250,0.2)",
             borderRadius: 10,
             padding: "12px 16px",
             display: "flex",
@@ -1457,7 +1404,6 @@ function CookTab({
             </p>
           </div>
         </div>
-
         <p
           style={{
             fontSize: "0.65rem",
@@ -1470,7 +1416,6 @@ function CookTab({
         >
           What to make
         </p>
-
         {flavourEntries.length > 0 ? (
           <div
             style={{
@@ -1501,7 +1446,6 @@ function CookTab({
             </p>
           </div>
         )}
-
         {orderList.length > 0 && (
           <>
             <div
@@ -1528,7 +1472,9 @@ function CookTab({
                 order={order}
                 productMap={productMap}
                 boxes={boxes}
-                onPorterBook={onPorterBook}
+                isExpanded={expandedPorter.has(order.id)}
+                onTogglePorter={() => onTogglePorter(order.id)}
+                onPorterEmail={onPorterEmail}
                 onDispatch={onDispatch}
                 onEdit={onEdit}
                 onCancel={onCancel}
@@ -1539,10 +1485,8 @@ function CookTab({
       </>
     );
   }
-
   return (
     <div>
-      {/* ── Date header + calendar toggle ── */}
       <div
         style={{
           display: "flex",
@@ -1594,8 +1538,6 @@ function CookTab({
           📅 {showCalendar ? "Hide Calendar" : "Calendar"}
         </button>
       </div>
-
-      {/* ── Calendar ── */}
       {showCalendar && (
         <div style={{ padding: "0 14px" }}>
           <MonthCalendar
@@ -1608,8 +1550,6 @@ function CookTab({
           />
         </div>
       )}
-
-      {/* ── View mode switcher: All | Batches | Slots ── */}
       <div
         style={{
           display: "flex",
@@ -1654,16 +1594,8 @@ function CookTab({
           </button>
         ))}
       </div>
-
-      {/* ── Batch sub-tabs (only when viewMode === "batches") ── */}
       {viewMode === "batches" && (
-        <div
-          style={{
-            display: "flex",
-            gap: 6,
-            padding: "10px 14px 0",
-          }}
-        >
+        <div style={{ display: "flex", gap: 6, padding: "10px 14px 0" }}>
           {BATCHES.map((b) => {
             const bOrders = dateFilteredOrders.filter((o) => {
               const slot = o.delivery_slot || o.batch_label || "";
@@ -1721,8 +1653,6 @@ function CookTab({
           })}
         </div>
       )}
-
-      {/* ── Slot tabs (only when viewMode === "slots") ── */}
       {viewMode === "slots" && (
         <SlotTabs
           slots={slotMeta}
@@ -1730,8 +1660,6 @@ function CookTab({
           onSelect={setActiveSlot}
         />
       )}
-
-      {/* ── Main content area ── */}
       <div style={{ padding: "14px 14px 20px" }}>
         {viewMode === "all" && (
           <FlavourSection
@@ -1741,7 +1669,6 @@ function CookTab({
             groupLabel={selectedDate ? friendlyDate(selectedDate) : "All Days"}
           />
         )}
-
         {viewMode === "batches" && (
           <FlavourSection
             flavourEntries={batchFlavours}
@@ -1750,7 +1677,6 @@ function CookTab({
             groupLabel={`${currentBatch.label} · ${currentBatch.range}`}
           />
         )}
-
         {viewMode === "slots" && (
           <FlavourSection
             flavourEntries={slotFlavours}
@@ -1763,10 +1689,6 @@ function CookTab({
     </div>
   );
 }
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// SECTION 10 — MANUAL ORDER FORM
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function ManualOrderForm({
   boxes,
@@ -1799,6 +1721,7 @@ function ManualOrderForm({
     payment_method: "upi",
     status: "pending",
     fulfillment_type: "delivery" as "delivery" | "pickup",
+    location: "kochi" as "kochi" | "trivandrum",
     custom_box_label: "",
   });
   const [boxRows, setBoxRows] = useState<
@@ -1867,7 +1790,10 @@ function ManualOrderForm({
           phone: form.phone.trim(),
           insta_id: form.insta_id.trim(),
           address: form.address.trim() || null,
-          remarks: form.remarks.trim(),
+          remarks:
+            form.location === "trivandrum"
+              ? `[TVM] ${form.remarks}`.trim()
+              : form.remarks.trim(),
           notes: isCustom
             ? `Custom box: ${row.custom_label || ""}${form.notes.trim() ? ` | ${form.notes.trim()}` : ""}`
             : form.notes.trim() || null,
@@ -1878,7 +1804,7 @@ function ManualOrderForm({
           payment_method: form.payment_method,
           total_price: Number(row.price),
           status: form.status,
-          source: "dm",
+          source: form.location === "trivandrum" ? "trivandrum" : "dm",
           order_date: form.order_date,
           fulfillment_type: form.fulfillment_type,
         })
@@ -1896,7 +1822,6 @@ function ManualOrderForm({
     savedOrderId && typeof window !== "undefined"
       ? `${window.location.origin}/pay/${savedOrderId}`
       : "";
-
   const selectStyle: React.CSSProperties = {
     width: "100%",
     background: G.glass,
@@ -1945,7 +1870,57 @@ function ManualOrderForm({
         </button>
       </div>
 
-      {/* Name with autocomplete */}
+      {/* LOCATION TOGGLE */}
+      <p
+        style={{
+          fontSize: "0.65rem",
+          color: G.muted,
+          letterSpacing: "0.1em",
+          textTransform: "uppercase" as const,
+          marginBottom: 6,
+          fontWeight: 600,
+        }}
+      >
+        📍 Order Location
+      </p>
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        {(["kochi", "trivandrum"] as const).map((loc) => (
+          <button
+            key={loc}
+            onClick={() => setForm((p) => ({ ...p, location: loc }))}
+            style={{
+              flex: 1,
+              padding: "9px 12px",
+              borderRadius: 9,
+              fontFamily: "system-ui, sans-serif",
+              border: `1px solid ${form.location === loc ? G.goldBorder : G.glassBorder}`,
+              background: form.location === loc ? G.goldGlass : G.glass,
+              color: form.location === loc ? G.gold : G.sub,
+              fontSize: "0.82rem",
+              fontWeight: form.location === loc ? 700 : 400,
+              cursor: "pointer",
+            }}
+          >
+            {loc === "kochi" ? "🍡 Kochi" : "🚂 Trivandrum"}
+          </button>
+        ))}
+      </div>
+      {form.location === "trivandrum" && (
+        <div
+          style={{
+            background: "rgba(240,176,64,0.06)",
+            border: `1px solid ${G.goldBorder}`,
+            borderRadius: 8,
+            padding: "8px 12px",
+            marginBottom: 12,
+            fontSize: "0.72rem",
+            color: G.gold,
+          }}
+        >
+          🚂 This order will appear in the Trivandrum tab
+        </div>
+      )}
+
       <div style={{ position: "relative" }}>
         <GlassInput
           placeholder="Customer Name *"
@@ -2033,7 +2008,6 @@ function ManualOrderForm({
         onChange={f("address")}
       />
 
-      {/* Fulfillment */}
       <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
         {(["delivery", "pickup"] as const).map((type) => (
           <button
@@ -2058,7 +2032,6 @@ function ManualOrderForm({
         ))}
       </div>
 
-      {/* Date + slot */}
       <div
         style={{
           display: "grid",
@@ -2087,7 +2060,6 @@ function ManualOrderForm({
         </select>
       </div>
 
-      {/* Box rows */}
       <p
         style={{
           fontSize: "0.72rem",
@@ -2099,7 +2071,6 @@ function ManualOrderForm({
       >
         📦 Boxes
       </p>
-
       {boxRows.map((row, i) => (
         <div key={i} style={{ marginBottom: 8 }}>
           <div
@@ -2184,8 +2155,6 @@ function ManualOrderForm({
               ✕
             </button>
           </div>
-
-          {/* Custom label input */}
           {row.box_size_label === "custom" && (
             <input
               type="text"
@@ -2214,7 +2183,6 @@ function ManualOrderForm({
           )}
         </div>
       ))}
-
       <div
         style={{
           display: "flex",
@@ -2248,7 +2216,6 @@ function ManualOrderForm({
         )}
       </div>
 
-      {/* Flavours */}
       {products.filter((p) => p.is_available).length > 0 && (
         <>
           <p
@@ -2422,7 +2389,6 @@ function ManualOrderForm({
           </option>
         </select>
       </div>
-
       <GlassInput
         placeholder="Remarks"
         value={form.remarks}
@@ -2540,10 +2506,6 @@ function ManualOrderForm({
   );
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// SECTION 11 — PENDING PAYMENT ORDER CARD (full details)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 function PendingOrderCard({
   order,
   productMap,
@@ -2561,7 +2523,6 @@ function PendingOrderCard({
         ([, q]) => q > 0,
       )
     : [];
-
   return (
     <div
       style={{
@@ -2615,7 +2576,6 @@ function PendingOrderCard({
           Payment Pending
         </span>
       </div>
-
       {flavours.length > 0 && (
         <div
           style={{
@@ -2633,7 +2593,6 @@ function PendingOrderCard({
           ))}
         </div>
       )}
-
       <div
         style={{
           display: "flex",
@@ -2679,15 +2638,12 @@ function PendingOrderCard({
           💬 {order.remarks}
         </p>
       )}
-
-      {/* Copy payment link */}
       <div style={{ marginBottom: 10 }}>
         <CopyBtn
           value={`${typeof window !== "undefined" ? window.location.origin : ""}/pay/${order.id}`}
           label="Payment Link"
         />
       </div>
-
       <div style={{ display: "flex", gap: 8 }}>
         <button
           disabled={updating}
@@ -2738,10 +2694,6 @@ function PendingOrderCard({
     </div>
   );
 }
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// SECTION 12 — BULK ORDER IMPORT
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function BulkOrderImport({
   onImport,
@@ -2849,10 +2801,6 @@ function BulkOrderImport({
   );
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// SECTION 13 — EXPENSE SCANNER (AI bill scan)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 function ExpenseScanner({
   onDataExtracted,
 }: {
@@ -2863,7 +2811,6 @@ function ExpenseScanner({
   const [results, setResults] = useState<unknown[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -2904,7 +2851,6 @@ function ExpenseScanner({
       setScanning(false);
     };
   };
-
   return (
     <div
       style={{
@@ -3129,10 +3075,6 @@ function ExpenseScanner({
   );
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// SECTION 14 — EXPENSE IMPORTER (JSON paste / upload)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 function ExpenseImporter({
   onImport,
 }: {
@@ -3142,7 +3084,6 @@ function ExpenseImporter({
   const [text, setText] = useState("");
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState("");
-
   async function run() {
     setError("");
     if (!text.trim()) {
@@ -3160,7 +3101,6 @@ function ExpenseImporter({
     setImporting(false);
     setText("");
   }
-
   return (
     <div
       style={{
@@ -3314,10 +3254,6 @@ function ExpenseImporter({
   );
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// ORDER EDIT MODAL
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 function OrderEditModal({
   order,
   products,
@@ -3354,9 +3290,7 @@ function OrderEditModal({
   );
   const [saving, setSaving] = useState(false);
   const [cancelling, setCancelling] = useState(false);
-
   const f = (k: string) => (v: string) => setForm((p) => ({ ...p, [k]: v }));
-
   const selectStyle: React.CSSProperties = {
     width: "100%",
     background: G.glass,
@@ -3369,7 +3303,6 @@ function OrderEditModal({
     fontFamily: "system-ui, sans-serif",
     outline: "none",
   };
-
   return (
     <div
       style={{
@@ -3397,7 +3330,6 @@ function OrderEditModal({
           overflowY: "auto" as const,
         }}
       >
-        {/* Header */}
         <div
           style={{
             display: "flex",
@@ -3422,8 +3354,6 @@ function OrderEditModal({
             ✕
           </button>
         </div>
-
-        {/* Fields */}
         <GlassInput
           placeholder="Customer Name *"
           value={form.customer_name}
@@ -3452,8 +3382,6 @@ function OrderEditModal({
           value={form.address}
           onChange={f("address")}
         />
-
-        {/* Fulfillment type */}
         <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
           {(["delivery", "pickup"] as const).map((type) => (
             <button
@@ -3477,8 +3405,6 @@ function OrderEditModal({
             </button>
           ))}
         </div>
-
-        {/* Date + slot */}
         <div
           style={{
             display: "grid",
@@ -3506,8 +3432,6 @@ function OrderEditModal({
             ))}
           </select>
         </div>
-
-        {/* Box size */}
         <select
           value={form.box_size_id}
           onChange={(e) =>
@@ -3532,8 +3456,6 @@ function OrderEditModal({
             ✏️ Custom size
           </option>
         </select>
-
-        {/* Custom box label — only when custom selected */}
         {form.box_size_id === "custom" && (
           <input
             type="text"
@@ -3557,8 +3479,6 @@ function OrderEditModal({
             }}
           />
         )}
-
-        {/* Price + status */}
         <div
           style={{
             display: "grid",
@@ -3584,7 +3504,6 @@ function OrderEditModal({
             ))}
           </select>
         </div>
-
         <GlassInput
           placeholder="Remarks"
           value={form.remarks}
@@ -3595,8 +3514,6 @@ function OrderEditModal({
           value={form.notes}
           onChange={f("notes")}
         />
-
-        {/* Flavours */}
         {products.filter((p) => p.is_available).length > 0 && (
           <>
             <p
@@ -3749,8 +3666,6 @@ function OrderEditModal({
             </div>
           </>
         )}
-
-        {/* Save button */}
         <button
           disabled={saving || !form.customer_name || !form.total_price}
           onClick={async () => {
@@ -3801,8 +3716,6 @@ function OrderEditModal({
         >
           {saving ? "Saving..." : "Save Changes"}
         </button>
-
-        {/* Cancel order button */}
         <button
           disabled={cancelling}
           onClick={async () => {
@@ -3838,10 +3751,6 @@ function OrderEditModal({
   );
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// SECTION 14b — ALL ORDERS TAB
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 function AllOrdersTab({
   orders,
   productMap,
@@ -3866,21 +3775,15 @@ function AllOrdersTab({
   trackingStart: string;
 }) {
   const todayStr = new Date().toISOString().split("T")[0];
-
-  // Date filter: "all" | "today" | "week" | specific date string
   const [dateFilter, setDateFilter] = React.useState<string>("all");
-  // Status filter: "all" | specific status
   const [statusFilter, setStatusFilter] = React.useState<string>("all");
   const [searchText, setSearchText] = React.useState("");
-
-  // Consume preset from dashboard click
   React.useEffect(() => {
     if (!filterPreset) return;
     if (filterPreset === "today_paid") {
       setDateFilter("today");
       setStatusFilter("paid");
     } else if (filterPreset === "period_paid") {
-      // mirror the dashboard's period filter
       if (dashPeriod === "today") setDateFilter("today");
       else if (dashPeriod === "week") setDateFilter("week");
       else if (dashPeriod === "month") setDateFilter("month");
@@ -3890,13 +3793,8 @@ function AllOrdersTab({
     }
     onFilterPresetConsumed();
   }, [filterPreset]);
-
-  // Filter logic
   const filtered = orders.filter((o) => {
-    // cancelled always hidden unless you pick it explicitly
     if (o.status === "cancelled" && statusFilter !== "cancelled") return false;
-
-    // date filter
     const orderDate =
       o.delivery_date || o.order_date || o.created_at?.split("T")[0] || "";
     if (dateFilter === "today") {
@@ -3908,22 +3806,21 @@ function AllOrdersTab({
       const diff = day === 0 ? 6 : day - 1;
       const monday = new Date(localNow);
       monday.setDate(localNow.getDate() - diff);
-      const mondayStr = monday.toISOString().split("T")[0];
-      if (orderDate < mondayStr || orderDate > todayStr) return false;
+      if (
+        orderDate < monday.toISOString().split("T")[0] ||
+        orderDate > todayStr
+      )
+        return false;
     } else if (dateFilter === "month") {
       if (!orderDate.startsWith(todayStr.substring(0, 7))) return false;
     } else if (dateFilter === "from_start") {
       if (orderDate < trackingStart) return false;
     }
-
-    // status filter
     if (statusFilter === "paid") {
       if (!PAID_STATUSES.includes(o.status)) return false;
     } else if (statusFilter !== "all") {
       if (o.status !== statusFilter) return false;
     }
-
-    // search
     if (searchText.trim()) {
       const q = searchText.toLowerCase();
       if (
@@ -3933,14 +3830,11 @@ function AllOrdersTab({
       )
         return false;
     }
-
     return true;
   });
-
   const filteredRevenue = filtered
     .filter((o) => PAID_STATUSES.includes(o.status))
     .reduce((s, o) => s + (o.total_price || 0), 0);
-
   const DATE_FILTERS = [
     { id: "all", label: "All Time" },
     { id: "today", label: "Today" },
@@ -3948,7 +3842,6 @@ function AllOrdersTab({
     { id: "month", label: "Month" },
     { id: "from_start", label: "📌 Since Start" },
   ];
-
   const STATUS_FILTERS = [
     { id: "all", label: "All" },
     { id: "paid", label: "✓ Paid" },
@@ -3957,10 +3850,8 @@ function AllOrdersTab({
     { id: "dispatched", label: "Dispatched" },
     { id: "cancelled", label: "Cancelled" },
   ];
-
   return (
     <div style={{ maxWidth: 900, margin: "0 auto", padding: "14px 14px 20px" }}>
-      {/* Search */}
       <div style={{ marginBottom: 10 }}>
         <input
           placeholder="Search name, phone, Instagram..."
@@ -3980,8 +3871,6 @@ function AllOrdersTab({
           }}
         />
       </div>
-
-      {/* Date filter chips */}
       <div
         style={{
           display: "flex",
@@ -4014,8 +3903,6 @@ function AllOrdersTab({
           </button>
         ))}
       </div>
-
-      {/* Status filter chips */}
       <div
         style={{
           display: "flex",
@@ -4055,8 +3942,6 @@ function AllOrdersTab({
           );
         })}
       </div>
-
-      {/* Summary strip */}
       <div
         style={{
           background: G.glassStrong,
@@ -4081,8 +3966,6 @@ function AllOrdersTab({
           </p>
         )}
       </div>
-
-      {/* Order list */}
       {filtered.length === 0 ? (
         <div
           style={{
@@ -4098,11 +3981,9 @@ function AllOrdersTab({
         </div>
       ) : (
         filtered.map((o) => {
-          const isPaid = PAID_STATUSES.includes(o.status);
-          const isDispatched = o.status === "dispatched";
           const isPending = o.status === "pending";
           const isCancelled = o.status === "cancelled";
-
+          const isDispatched = o.status === "dispatched";
           const statusColor = isPending
             ? G.gold
             : isCancelled
@@ -4117,13 +3998,11 @@ function AllOrdersTab({
               : isDispatched
                 ? G.greenGlass
                 : G.blueGlass;
-
           const flavours = o.flavours
             ? Object.entries(o.flavours as Record<string, number>).filter(
                 ([, q]) => q > 0,
               )
             : [];
-
           return (
             <div
               key={o.id}
@@ -4208,6 +4087,23 @@ function AllOrdersTab({
                       💬 {o.remarks}
                     </p>
                   )}
+                  {o.source === "trivandrum" && (
+                    <span
+                      style={{
+                        fontSize: "0.6rem",
+                        padding: "2px 7px",
+                        borderRadius: 6,
+                        background: G.goldGlass,
+                        color: G.gold,
+                        fontWeight: 700,
+                        border: `1px solid ${G.goldBorder}`,
+                        display: "inline-block",
+                        marginTop: 4,
+                      }}
+                    >
+                      🚂 TVM
+                    </span>
+                  )}
                   {flavours.length > 0 && (
                     <div
                       style={{
@@ -4277,10 +4173,6 @@ function AllOrdersTab({
   );
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// SECTION 15 — MAIN APP COMPONENT
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 export default function AdminPage() {
   const [showSmartOrder, setShowSmartOrder] = useState(false);
   const [authed, setAuthed] = useState(false);
@@ -4290,13 +4182,11 @@ export default function AdminPage() {
   const [ordersFilterPreset, setOrdersFilterPreset] =
     useState<OrdersFilterPreset>(null);
   const [moreTab, setMoreTab] = useState<MoreTab>("products");
-
   const [orders, setOrders] = useState<ExtOrder[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [boxes, setBoxes] = useState<BoxSize[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [repeatPhones, setRepeatPhones] = useState<Set<string>>(new Set());
-
   const [showManualForm, setShowManualForm] = useState(false);
   const [customerSearch, setCustomerSearch] = useState("");
   const [editingCustomer, setEditingCustomer] = useState<string | null>(null);
@@ -4324,7 +4214,6 @@ export default function AdminPage() {
     date: new Date().toISOString().split("T")[0],
     note: "",
   });
-
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ text: string; type: "success" | "error" }>({
     text: "",
@@ -4338,6 +4227,27 @@ export default function AdminPage() {
       ? localStorage.getItem("es_tracking_start") || TRACKING_START_DATE
       : TRACKING_START_DATE,
   );
+  const [expandedPorter, setExpandedPorter] = useState<Set<string>>(new Set());
+
+  // TVM state
+  const [tvmOrders, setTvmOrders] = useState<ExtOrder[]>([]);
+  const [tvmSettings, setTvmSettings] = useState({
+    pickup_name: "",
+    pickup_address: "",
+    pickup_maps_url: "",
+    min_orders: 8,
+    is_active: true,
+  });
+  const [tvmSettingsDraft, setTvmSettingsDraft] = useState({
+    pickup_name: "",
+    pickup_address: "",
+    pickup_maps_url: "",
+    min_orders: 8,
+    is_active: true,
+  });
+  const [tvmSettingsId, setTvmSettingsId] = useState<string>("");
+  const [savingTvm, setSavingTvm] = useState(false);
+
   useEffect(() => {
     if (localStorage.getItem("es_admin") === "true") setAuthed(true);
   }, []);
@@ -4347,22 +4257,30 @@ export default function AdminPage() {
     productMap[p.id] = p.name;
   });
 
-  // ── Data loading ───────────────────────────────────────────
   const load = useCallback(async () => {
-    const [{ data: o }, { data: p }, { data: b }, { data: ex }] =
-      await Promise.all([
-        supabase
-          .from("orders")
-          .select("*")
-          .order("created_at", { ascending: false })
-          .limit(500),
-        supabase.from("products").select("*").order("sort_order"),
-        supabase.from("box_sizes").select("*").order("sort_order"),
-        supabase
-          .from("expenses")
-          .select("*")
-          .order("date", { ascending: false }),
-      ]);
+    const [
+      { data: o },
+      { data: p },
+      { data: b },
+      { data: ex },
+      { data: tvmO },
+      { data: tvmS },
+    ] = await Promise.all([
+      supabase
+        .from("orders")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(500),
+      supabase.from("products").select("*").order("sort_order"),
+      supabase.from("box_sizes").select("*").order("sort_order"),
+      supabase.from("expenses").select("*").order("date", { ascending: false }),
+      supabase
+        .from("orders")
+        .select("*")
+        .eq("source", "trivandrum")
+        .order("created_at", { ascending: false }),
+      supabase.from("trivandrum_settings").select("*").single(),
+    ]);
     if (o) {
       setOrders(o as ExtOrder[]);
       const counts: Record<string, number> = {};
@@ -4380,6 +4298,19 @@ export default function AdminPage() {
     if (p) setProducts(p as Product[]);
     if (b) setBoxes(b as BoxSize[]);
     if (ex) setExpenses(ex as Expense[]);
+    if (tvmO) setTvmOrders(tvmO as ExtOrder[]);
+    if (tvmS) {
+      const s = {
+        pickup_name: tvmS.pickup_name || "",
+        pickup_address: tvmS.pickup_address || "",
+        pickup_maps_url: tvmS.pickup_maps_url || "",
+        min_orders: tvmS.min_orders || 8,
+        is_active: tvmS.is_active ?? true,
+      };
+      setTvmSettings(s);
+      setTvmSettingsDraft(s);
+      setTvmSettingsId(tvmS.id);
+    }
   }, []);
 
   useEffect(() => {
@@ -4391,12 +4322,10 @@ export default function AdminPage() {
     setTimeout(() => setMsg({ text: "", type: "success" }), 3500);
   }
 
-  // ── Order actions ──────────────────────────────────────────
   async function handleStatusChange(id: string, status: string) {
     const updatePayload: Record<string, unknown> = { status };
-    if (status === "confirmed") {
+    if (status === "confirmed")
       updatePayload.payment_confirmed_at = new Date().toISOString();
-    }
     const { error } = await supabase
       .from("orders")
       .update(updatePayload)
@@ -4413,14 +4342,6 @@ export default function AdminPage() {
     await supabase.from("orders").update({ status: "cancelled" }).eq("id", id);
     await load();
     flash("Order cancelled");
-  }
-
-  async function handleDeleteCustomer(customerOrders: ExtOrder[]) {
-    for (const o of customerOrders) {
-      await supabase.from("orders").delete().eq("id", o.id);
-    }
-    await load();
-    flash("Customer deleted ✓");
   }
 
   async function handlePorterEmail(order: ExtOrder) {
@@ -4506,13 +4427,11 @@ export default function AdminPage() {
     }
   }
 
-  // ── Dashboard helpers ──────────────────────────────────────
   function filterRevenueByPeriod(items: ExtOrder[]): ExtOrder[] {
     const now = new Date();
     const localNow = new Date(now.getTime() + 5.5 * 3600000);
     const todayStr = localNow.toISOString().split("T")[0];
     return items.filter((item) => {
-      // Use payment_confirmed_at as the income date; fall back to order_date
       const confirmedAt = item.payment_confirmed_at;
       const dateStr = confirmedAt
         ? new Date(confirmedAt).toISOString().split("T")[0]
@@ -4536,6 +4455,7 @@ export default function AdminPage() {
       return true;
     });
   }
+
   function filterExpByPeriod(items: Expense[]): Expense[] {
     const now = new Date();
     const localNow = new Date(now.getTime() + 5.5 * 3600000);
@@ -4590,7 +4510,6 @@ export default function AdminPage() {
     totalMochis > 0 ? Math.round(totalExpenses / totalMochis) : 0;
   const revenuePerMochi =
     totalMochis > 0 ? Math.round(totalRevenue / totalMochis) : 0;
-
   const flavourCounts: Record<string, number> = {};
   paidOrders.forEach((o) => {
     if (!o.flavours) return;
@@ -4604,7 +4523,6 @@ export default function AdminPage() {
   const topFlavours = Object.entries(flavourCounts)
     .sort(([, a], [, b]) => b - a)
     .slice(0, 8);
-
   const boxRevenue: Record<string, { count: number; revenue: number }> = {};
   paidOrders.forEach((o) => {
     const label = boxes.find((b) => b.id === o.box_size_id)?.label || "Unknown";
@@ -4613,11 +4531,25 @@ export default function AdminPage() {
     boxRevenue[label].revenue += o.total_price || 0;
   });
 
-  const pendingPaymentOrders = orders.filter((o) => o.status === "pending");
-  const dispatchedOrders = orders.filter((o) => o.status === "dispatched");
+  const pendingPaymentOrders = orders.filter(
+    (o) => o.status === "pending" && o.source !== "trivandrum",
+  );
   const pendingCount = pendingPaymentOrders.length;
 
-  // ── Customer map ───────────────────────────────────────────
+  // TVM computed
+  const tvmPaid = tvmOrders.filter((o) => PAID_STATUSES.includes(o.status));
+  const tvmPending = tvmOrders.filter((o) => o.status === "pending");
+  const tvmRevenue = tvmPaid.reduce((s, o) => s + (o.total_price || 0), 0);
+  const tvmProgress = Math.min(
+    (tvmPaid.length / (tvmSettings.min_orders || 8)) * 100,
+    100,
+  );
+  const tvmMet = tvmPaid.length >= (tvmSettings.min_orders || 8);
+  const tvmSpotsLeft = Math.max(
+    0,
+    (tvmSettings.min_orders || 8) - tvmPaid.length,
+  );
+
   const customerMap: Record<
     string,
     {
@@ -4656,7 +4588,6 @@ export default function AdminPage() {
       (c.insta_id || "").toLowerCase().includes(customerSearch.toLowerCase()),
   );
 
-  // ── Nav button ─────────────────────────────────────────────
   function NavBtn({
     id,
     icon,
@@ -4755,10 +4686,6 @@ export default function AdminPage() {
     outline: "none",
   };
 
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // SECTION 16 — LOGIN SCREEN
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
   if (!authed) {
     return (
       <main
@@ -4833,10 +4760,6 @@ export default function AdminPage() {
     );
   }
 
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // SECTION 17 — APP SHELL (top bar + content + bottom nav)
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
   return (
     <main
       style={{
@@ -4885,6 +4808,21 @@ export default function AdminPage() {
                 {pendingCount} unpaid
               </span>
             )}
+            {tvmMet && (
+              <span
+                style={{
+                  background: "rgba(240,176,64,0.2)",
+                  color: G.gold,
+                  borderRadius: 10,
+                  padding: "2px 8px",
+                  fontSize: "0.68rem",
+                  fontWeight: 700,
+                  border: `1px solid ${G.goldBorder}`,
+                }}
+              >
+                🚂 TVM ready!
+              </span>
+            )}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <SmartOrderNavBtn onClick={() => setShowSmartOrder(true)} />
@@ -4923,7 +4861,7 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {/* Flash message */}
+      {/* Flash */}
       <div style={{ maxWidth: 900, margin: "0 auto" }}>
         {msg.text && (
           <div
@@ -4943,16 +4881,22 @@ export default function AdminPage() {
         )}
       </div>
 
-      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          SECTION 18 — COOK TAB
-          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {/* COOK TAB */}
       {tab === "cook" && (
         <div style={{ maxWidth: 900, margin: "0 auto" }}>
           <CookTab
             orders={orders}
             boxes={boxes}
             productMap={productMap}
-            onPorterBook={handlePorterEmail}
+            expandedPorter={expandedPorter}
+            onTogglePorter={(id) =>
+              setExpandedPorter((prev) => {
+                const next = new Set(prev);
+                next.has(id) ? next.delete(id) : next.add(id);
+                return next;
+              })
+            }
+            onPorterEmail={handlePorterEmail}
             onDispatch={async (id) => {
               await handleStatusChange(id, "dispatched");
             }}
@@ -4988,7 +4932,7 @@ export default function AdminPage() {
                     remarks: c.remarks || "",
                   }))}
                   products={products}
-                  onSave={(orderId) => {
+                  onSave={() => {
                     load();
                     setShowManualForm(false);
                     flash("Order saved ✓");
@@ -5004,9 +4948,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          SECTION 19 — PENDING PAYMENT TAB
-          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {/* PENDING PAYMENT TAB */}
       {tab === "pending_payment" && (
         <div style={{ maxWidth: 900, margin: "0 auto", padding: "16px 14px" }}>
           <div
@@ -5052,9 +4994,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          SECTION 20 — DISPATCHED TAB
-          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {/* ORDERS TAB */}
       {tab === "orders" && (
         <AllOrdersTab
           orders={orders}
@@ -5070,9 +5010,7 @@ export default function AdminPage() {
         />
       )}
 
-      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          SECTION 21 — CUSTOMERS TAB
-          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {/* CUSTOMERS TAB */}
       {tab === "customers" && (
         <div style={{ maxWidth: 900, margin: "0 auto", padding: "16px 14px" }}>
           <div style={{ marginBottom: 14 }}>
@@ -5176,7 +5114,6 @@ export default function AdminPage() {
                     alignItems: "flex-start",
                   }}
                 >
-                  {/* Customer info */}
                   <div style={{ flex: 1 }}>
                     <div
                       style={{
@@ -5252,8 +5189,6 @@ export default function AdminPage() {
                       </p>
                     )}
                   </div>
-
-                  {/* Action buttons */}
                   <div
                     style={{
                       display: "flex",
@@ -5281,15 +5216,10 @@ export default function AdminPage() {
                           )
                         )
                           return;
-
                         const ids = c.orders.map((o) => o.id);
-
-                        // Chunk into groups of 5 to avoid hitting limits
                         const chunks = [];
-                        for (let i = 0; i < ids.length; i += 5) {
+                        for (let i = 0; i < ids.length; i += 5)
                           chunks.push(ids.slice(i, i + 5));
-                        }
-
                         let hasError = false;
                         for (const chunk of chunks) {
                           const { error } = await supabase
@@ -5297,12 +5227,10 @@ export default function AdminPage() {
                             .delete()
                             .in("id", chunk);
                           if (error) {
-                            console.error("Delete error:", error);
                             hasError = true;
                             break;
                           }
                         }
-
                         if (hasError) {
                           flash(
                             "Delete failed — check Supabase RLS policy",
@@ -5310,7 +5238,6 @@ export default function AdminPage() {
                           );
                           return;
                         }
-
                         await load();
                         flash("Customer deleted ✓");
                       }}
@@ -5325,12 +5252,9 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          SECTION 22 — DASHBOARD TAB
-          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {/* DASHBOARD TAB */}
       {tab === "dashboard" && (
         <div style={{ maxWidth: 900, margin: "0 auto", padding: "16px 14px" }}>
-          {/* Period filter */}
           <div
             style={{
               display: "flex",
@@ -5383,8 +5307,6 @@ export default function AdminPage() {
               await handleExpenseImport(JSON.stringify(data));
             }}
           />
-
-          {/* Stat grid */}
           <div
             style={{
               display: "grid",
@@ -5457,8 +5379,6 @@ export default function AdminPage() {
               color={G.green}
             />
           </div>
-
-          {/* Expense category breakdown */}
           <div
             style={{
               display: "grid",
@@ -5526,8 +5446,6 @@ export default function AdminPage() {
               </div>
             ))}
           </div>
-
-          {/* Expense log + add form */}
           <div
             style={{
               background: G.glass,
@@ -5634,8 +5552,6 @@ export default function AdminPage() {
                 );
               })
             )}
-
-            {/* Add expense form */}
             <div
               style={{
                 marginTop: 16,
@@ -5742,8 +5658,6 @@ export default function AdminPage() {
               <ExpenseImporter onImport={handleExpenseImport} />
             </div>
           </div>
-
-          {/* Top flavours chart */}
           {topFlavours.length > 0 && (
             <div
               style={{
@@ -5828,8 +5742,6 @@ export default function AdminPage() {
               })}
             </div>
           )}
-
-          {/* Sales by box */}
           {Object.keys(boxRevenue).length > 0 && (
             <div
               style={{
@@ -5895,12 +5807,9 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          SECTION 23 — MORE TAB (Products + Boxes)
-          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {/* MORE TAB */}
       {tab === "more" && (
         <div style={{ maxWidth: 900, margin: "0 auto", padding: "16px 14px" }}>
-          {/* Sub-tab toggle */}
           <div
             style={{
               display: "flex",
@@ -5931,8 +5840,6 @@ export default function AdminPage() {
               </button>
             ))}
           </div>
-
-          {/* Products list */}
           {moreTab === "products" && (
             <div>
               {products.map((prod) => (
@@ -6184,8 +6091,6 @@ export default function AdminPage() {
                   )}
                 </div>
               ))}
-
-              {/* Add product form */}
               <div
                 style={{
                   background: G.glass,
@@ -6283,8 +6188,6 @@ export default function AdminPage() {
               </div>
             </div>
           )}
-
-          {/* Box sizes */}
           {moreTab === "boxes" && (
             <div>
               {boxes.map((box) => (
@@ -6336,8 +6239,6 @@ export default function AdminPage() {
                   </GlassBtn>
                 </div>
               ))}
-
-              {/* Add box form */}
               <div
                 style={{
                   background: G.glass,
@@ -6412,6 +6313,439 @@ export default function AdminPage() {
           )}
         </div>
       )}
+
+      {/* TRIVANDRUM TAB */}
+      {tab === "trivandrum" && (
+        <div
+          style={{ maxWidth: 900, margin: "0 auto", padding: "16px 14px 20px" }}
+        >
+          {/* Threshold card */}
+          <div
+            style={{
+              background: tvmMet ? G.greenGlass : G.goldGlass,
+              border: `1px solid ${tvmMet ? "rgba(52,217,123,0.35)" : G.goldBorder}`,
+              borderRadius: 14,
+              padding: "16px 18px",
+              marginBottom: 16,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                marginBottom: 12,
+              }}
+            >
+              <div>
+                <p
+                  style={{
+                    fontSize: "0.65rem",
+                    color: tvmMet ? G.green : G.gold,
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase" as const,
+                    fontWeight: 700,
+                    marginBottom: 4,
+                  }}
+                >
+                  Trivandrum Pre-order Status
+                </p>
+                <p
+                  style={{
+                    fontSize: "1.4rem",
+                    fontWeight: 700,
+                    color: tvmMet ? G.green : G.text,
+                    lineHeight: 1,
+                  }}
+                >
+                  {tvmMet
+                    ? "🎉 Trip Confirmed!"
+                    : `${tvmSpotsLeft} more orders needed`}
+                </p>
+              </div>
+              <div style={{ textAlign: "right" as const }}>
+                <p
+                  style={{
+                    fontSize: "1.8rem",
+                    fontWeight: 700,
+                    color: G.text,
+                    lineHeight: 1,
+                  }}
+                >
+                  {tvmPaid.length}
+                  <span style={{ fontSize: "1rem", color: G.muted }}>
+                    /{tvmSettings.min_orders}
+                  </span>
+                </p>
+                <p
+                  style={{ fontSize: "0.65rem", color: G.muted, marginTop: 2 }}
+                >
+                  paid orders
+                </p>
+              </div>
+            </div>
+            <div
+              style={{
+                height: 8,
+                background: "rgba(255,255,255,0.08)",
+                borderRadius: 99,
+                overflow: "hidden",
+                marginBottom: 10,
+              }}
+            >
+              <div
+                style={{
+                  height: "100%",
+                  borderRadius: 99,
+                  width: `${tvmProgress}%`,
+                  background: tvmMet
+                    ? "linear-gradient(90deg,#34d97b,#22c55e)"
+                    : "linear-gradient(90deg,rgba(240,176,64,0.6),#f0b040)",
+                  transition: "width 0.4s ease",
+                }}
+              />
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <p style={{ fontSize: "0.72rem", color: G.muted }}>
+                {tvmPending.length} pending payment · {tvmOrders.length} total
+                pre-orders
+              </p>
+              <p
+                style={{ fontSize: "0.78rem", fontWeight: 700, color: G.green }}
+              >
+                ₹{tvmRevenue.toLocaleString()} collected
+              </p>
+            </div>
+          </div>
+
+          {/* Settings */}
+          <div
+            style={{
+              background: G.glassStrong,
+              border: `1px solid ${G.glassBorderStrong}`,
+              borderRadius: 14,
+              padding: 16,
+              marginBottom: 16,
+            }}
+          >
+            <p
+              style={{
+                fontSize: "0.65rem",
+                color: G.muted,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase" as const,
+                marginBottom: 14,
+                fontWeight: 700,
+              }}
+            >
+              ⚙️ Trivandrum Settings
+            </p>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 14,
+                padding: "10px 14px",
+                background: G.glass,
+                borderRadius: 10,
+                border: `1px solid ${G.glassBorder}`,
+              }}
+            >
+              <div>
+                <p
+                  style={{
+                    fontSize: "0.85rem",
+                    color: G.text,
+                    fontWeight: 600,
+                  }}
+                >
+                  Pre-orders Active
+                </p>
+                <p style={{ fontSize: "0.7rem", color: G.muted }}>
+                  Pause to stop new orders from /trivandrum page
+                </p>
+              </div>
+              <GlassBtn
+                variant={tvmSettings.is_active ? "success" : "danger"}
+                onClick={async () => {
+                  await supabase
+                    .from("trivandrum_settings")
+                    .update({ is_active: !tvmSettings.is_active })
+                    .eq("id", tvmSettingsId);
+                  load();
+                }}
+              >
+                {tvmSettings.is_active ? "Active" : "Paused"}
+              </GlassBtn>
+            </div>
+            <p style={{ fontSize: "0.68rem", color: G.muted, marginBottom: 4 }}>
+              Pickup Location Name
+            </p>
+            <GlassInput
+              placeholder="e.g. Café Aromas, Kowdiar"
+              value={tvmSettingsDraft.pickup_name}
+              onChange={(v) =>
+                setTvmSettingsDraft((d) => ({ ...d, pickup_name: v }))
+              }
+            />
+            <p style={{ fontSize: "0.68rem", color: G.muted, marginBottom: 4 }}>
+              Pickup Address
+            </p>
+            <GlassInput
+              placeholder="Full address shown to customers"
+              value={tvmSettingsDraft.pickup_address}
+              onChange={(v) =>
+                setTvmSettingsDraft((d) => ({ ...d, pickup_address: v }))
+              }
+            />
+            <p style={{ fontSize: "0.68rem", color: G.muted, marginBottom: 4 }}>
+              Google Maps URL
+            </p>
+            <GlassInput
+              placeholder="https://maps.google.com/..."
+              value={tvmSettingsDraft.pickup_maps_url}
+              onChange={(v) =>
+                setTvmSettingsDraft((d) => ({ ...d, pickup_maps_url: v }))
+              }
+            />
+            <GlassBtn
+              variant="primary"
+              fullWidth
+              disabled={savingTvm}
+              onClick={async () => {
+                setSavingTvm(true);
+                await supabase
+                  .from("trivandrum_settings")
+                  .update({
+                    pickup_name: tvmSettingsDraft.pickup_name,
+                    pickup_address: tvmSettingsDraft.pickup_address,
+                    pickup_maps_url: tvmSettingsDraft.pickup_maps_url,
+                  })
+                  .eq("id", tvmSettingsId);
+                setSavingTvm(false);
+                load();
+                flash("Trivandrum settings saved ✓");
+              }}
+            >
+              {savingTvm ? "Saving…" : "Save Settings"}
+            </GlassBtn>
+          </div>
+
+          {/* Pending TVM payments */}
+          {tvmPending.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <p
+                style={{
+                  fontSize: "0.65rem",
+                  color: G.gold,
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase" as const,
+                  marginBottom: 12,
+                  fontWeight: 700,
+                }}
+              >
+                💳 Awaiting Payment ({tvmPending.length})
+              </p>
+              {tvmPending.map((o) => (
+                <div
+                  key={o.id}
+                  style={{
+                    background: G.glassStrong,
+                    border: `1px solid ${G.goldBorder}`,
+                    borderRadius: 12,
+                    padding: "12px 14px",
+                    marginBottom: 8,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      marginBottom: 6,
+                    }}
+                  >
+                    <p
+                      style={{
+                        fontSize: "0.95rem",
+                        fontWeight: 700,
+                        color: G.text,
+                      }}
+                    >
+                      {o.customer_name}
+                    </p>
+                    <p
+                      style={{
+                        fontSize: "0.88rem",
+                        fontWeight: 700,
+                        color: G.gold,
+                      }}
+                    >
+                      ₹{o.total_price}
+                    </p>
+                  </div>
+                  <p
+                    style={{
+                      fontSize: "0.75rem",
+                      color: G.muted,
+                      marginBottom: 8,
+                    }}
+                  >
+                    📞 {o.phone}
+                  </p>
+                  {o.flavours && (
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap" as const,
+                        marginBottom: 8,
+                      }}
+                    >
+                      {Object.entries(o.flavours as Record<string, number>)
+                        .filter(([, q]) => q > 0)
+                        .map(([id, qty]) => (
+                          <FlavourPill
+                            key={id}
+                            name={productMap[id] || "Unknown"}
+                            qty={qty}
+                          />
+                        ))}
+                    </div>
+                  )}
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <GlassBtn
+                      variant="success"
+                      onClick={async () => {
+                        await supabase
+                          .from("orders")
+                          .update({
+                            status: "confirmed",
+                            payment_confirmed_at: new Date().toISOString(),
+                          })
+                          .eq("id", o.id);
+                        load();
+                        flash("TVM payment confirmed ✓");
+                      }}
+                    >
+                      ✓ Confirm Payment
+                    </GlassBtn>
+                    <GlassBtn
+                      variant="danger"
+                      onClick={async () => {
+                        if (!confirm(`Cancel order for ${o.customer_name}?`))
+                          return;
+                        await supabase
+                          .from("orders")
+                          .update({ status: "cancelled" })
+                          .eq("id", o.id);
+                        load();
+                        flash("Order cancelled");
+                      }}
+                    >
+                      Cancel
+                    </GlassBtn>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Confirmed TVM orders */}
+          <p
+            style={{
+              fontSize: "0.65rem",
+              color: G.muted,
+              letterSpacing: "0.12em",
+              textTransform: "uppercase" as const,
+              marginBottom: 12,
+              fontWeight: 700,
+            }}
+          >
+            ✓ Confirmed Orders ({tvmPaid.length})
+          </p>
+          {tvmPaid.length === 0 ? (
+            <div
+              style={{
+                background: G.glass,
+                border: `1px solid ${G.glassBorder}`,
+                borderRadius: 12,
+                padding: "32px 20px",
+                textAlign: "center" as const,
+              }}
+            >
+              <p style={{ fontSize: "1.5rem", marginBottom: 8 }}>🚂</p>
+              <p style={{ color: G.muted }}>
+                No confirmed Trivandrum orders yet
+              </p>
+            </div>
+          ) : (
+            tvmPaid.map((o) => (
+              <div
+                key={o.id}
+                style={{
+                  background: G.glassStrong,
+                  border: "1px solid rgba(52,217,123,0.2)",
+                  borderLeft: "3px solid rgba(52,217,123,0.5)",
+                  borderRadius: 12,
+                  padding: "12px 14px",
+                  marginBottom: 8,
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    marginBottom: 4,
+                  }}
+                >
+                  <p
+                    style={{
+                      fontSize: "0.95rem",
+                      fontWeight: 700,
+                      color: G.text,
+                    }}
+                  >
+                    {o.customer_name}
+                  </p>
+                  <p
+                    style={{
+                      fontSize: "0.85rem",
+                      fontWeight: 700,
+                      color: G.green,
+                    }}
+                  >
+                    ₹{o.total_price}
+                  </p>
+                </div>
+                <p
+                  style={{
+                    fontSize: "0.75rem",
+                    color: G.muted,
+                    marginBottom: 6,
+                  }}
+                >
+                  📞 {o.phone}
+                </p>
+                {o.flavours && (
+                  <div style={{ display: "flex", flexWrap: "wrap" as const }}>
+                    {Object.entries(o.flavours as Record<string, number>)
+                      .filter(([, q]) => q > 0)
+                      .map(([id, qty]) => (
+                        <FlavourPill
+                          key={id}
+                          name={productMap[id] || "Unknown"}
+                          qty={qty}
+                        />
+                      ))}
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* Modals */}
       {editingOrder && (
         <OrderEditModal
           order={editingOrder}
@@ -6424,7 +6758,6 @@ export default function AdminPage() {
           }}
           onClose={() => setEditingOrder(null)}
           onCancel={async (id) => {
-            // ← add this
             await handleCancel(id);
             setEditingOrder(null);
           }}
@@ -6448,9 +6781,8 @@ export default function AdminPage() {
           }}
         />
       )}
-      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          SECTION 24 — BOTTOM NAV
-          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+
+      {/* BOTTOM NAV */}
       <div
         style={{
           position: "fixed" as const,
@@ -6478,9 +6810,15 @@ export default function AdminPage() {
             label="Payment"
             badge={pendingCount}
           />
-          <NavBtn id="orders" icon="📋" label="Orders" />{" "}
+          <NavBtn id="orders" icon="📋" label="Orders" />
           <NavBtn id="customers" icon="👥" label="Customers" />
           <NavBtn id="dashboard" icon="📊" label="Dash" />
+          <NavBtn
+            id="trivandrum"
+            icon="🚂"
+            label="TVM"
+            badge={tvmPending.length || undefined}
+          />
           <NavBtn id="more" icon="⚙️" label="More" />
         </div>
       </div>
