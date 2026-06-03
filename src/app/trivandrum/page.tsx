@@ -7,7 +7,7 @@ import type { Product } from "@/lib/types";
 
 const WHATSAPP_NUMBER = "917907044368";
 const TRAVEL_CHARGE = 200;
-const TRIP_DATE = ""; // Set this in admin or hardcode e.g. "Saturday, 14 June"
+const TRIP_DATE = "";
 const PICKUP_LOCATIONS = [
   { name: "Thampanoor", area: "Railway Station area · South Trivandrum" },
   { name: "Pattom", area: "Pattom Junction · Central Trivandrum" },
@@ -258,7 +258,8 @@ export default function TrivandrumPage() {
             textTransform: "uppercase",
           }}
         >
-          We're coming to Trivandrum{tripDate ? ` · ${tripDate}` : " . Sunday, 14 June"}
+          We're coming to Trivandrum
+          {tripDate ? ` · ${tripDate}` : " · Sunday, 14 June"}
         </p>
       </div>
 
@@ -272,6 +273,7 @@ export default function TrivandrumPage() {
               key={p.id}
               src={p.image_url!}
               alt={p.name}
+              loading="eager" // ← above the fold, load immediately
               style={{
                 position: "absolute",
                 inset: 0,
@@ -433,7 +435,6 @@ export default function TrivandrumPage() {
             fontSize: "0.85rem",
             color: "var(--cream-dim)",
             lineHeight: 1.9,
-            marginBottom: 14,
             maxWidth: 360,
             margin: "0 auto 14px",
           }}
@@ -447,7 +448,6 @@ export default function TrivandrumPage() {
             fontSize: "0.85rem",
             color: "var(--cream-dim)",
             lineHeight: 1.9,
-            marginBottom: 14,
             maxWidth: 360,
             margin: "0 auto 14px",
           }}
@@ -475,7 +475,7 @@ export default function TrivandrumPage() {
         </p>
       </section>
 
-      {/* HOW IT WORKS - inline, not popup */}
+      {/* HOW IT WORKS */}
       <section
         style={{
           padding: "28px 24px",
@@ -880,6 +880,7 @@ export default function TrivandrumPage() {
                     <img
                       src={getImg(p.name, p.image_url)}
                       alt={p.name}
+                      loading="lazy" // ← below the fold, defer loading
                       style={{
                         width: "100%",
                         height: 130,
@@ -1134,7 +1135,7 @@ export default function TrivandrumPage() {
             </div>
           )}
 
-        {/* Place Order button - appears when box is filled */}
+        {/* Place Order button */}
         {canShowPanel && (
           <button
             onClick={() => {
@@ -1610,7 +1611,7 @@ export default function TrivandrumPage() {
               boxShadow: "0 4px 20px rgba(37,211,102,0.25)",
             }}
           >
-            <span style={{ fontSize: "1.3rem" }}></span>
+            <span style={{ fontSize: "1.3rem" }}>📲</span>
             Order via WhatsApp - ₹{grandTotal}
           </button>
           <p
@@ -1776,20 +1777,6 @@ export default function TrivandrumPage() {
     </main>
   );
 }
-
-const fieldStyle: React.CSSProperties = {
-  width: "100%",
-  background: "rgba(255,255,255,0.04)",
-  border: "1px solid rgba(255,255,255,0.1)",
-  color: "#f5ede0",
-  padding: "14px 16px",
-  borderRadius: 10,
-  fontSize: "1rem",
-  marginBottom: 12,
-  outline: "none",
-  fontFamily: "'DM Sans', system-ui, sans-serif",
-  boxSizing: "border-box",
-};
 
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&display=swap');
