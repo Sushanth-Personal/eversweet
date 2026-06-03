@@ -110,11 +110,12 @@ export default function TrivandrumPage() {
   const [loading, setLoading] = useState(true);
   const [flavours, setFlavours] = useState<Record<string, number>>({});
   const [targetBox, setTargetBox] = useState<4 | 6>(6);
-  const [showOrderPanel, setShowOrderPanel] = useState(false);
-  const [selectedLocation, setSelectedLocation] = useState("");
+  const [showOrderSection, setShowOrderSection] = useState(false);
+  const [selectedLocation, setSelectedLocation] = useState("Thampanoor");
   const [homeDelivery, setHomeDelivery] = useState(false);
   const [showMore, setShowMore] = useState(false);
   const [tripDate, setTripDate] = useState(TRIP_DATE);
+  const [pickupLocations, setPickupLocations] = useState(PICKUP_LOCATIONS);
 
   const totalPicked = Object.values(flavours).reduce((a, b) => a + b, 0);
   const resolved = resolveBoxes(totalPicked);
@@ -140,6 +141,16 @@ export default function TrivandrumPage() {
       if (p) setProducts(p);
       if (s) {
         if (s.trip_date) setTripDate(s.trip_date);
+        if (s.pickup_locations) {
+          const locs = s.pickup_locations
+            .split("|")
+            .map((x: string) => {
+              const [name, area] = x.split("::");
+              return { name: name.trim(), area: (area || "").trim() };
+            })
+            .filter((l: any) => l.name);
+          if (locs.length > 0) setPickupLocations(locs);
+        }
       }
       setLoading(false);
     }
@@ -178,14 +189,12 @@ export default function TrivandrumPage() {
     const lines = [
       `Hi! I'd like to pre-order from Eversweet Trivandrum 🍡`,
       ``,
-      totalPicked > 0
-        ? `📦 ${boxSummary}`
-        : `📦 I haven't finalized my box yet`,
-      (resolved as any).isClean ? `🚂 Travel charge — ₹${TRAVEL_CHARGE}` : ``,
-      (resolved as any).isClean ? `💰 Total — ₹${grandTotal}` : ``,
+      totalPicked > 0 ? `${boxSummary}` : `📦 I haven't finalized my box yet`,
+      (resolved as any).isClean ? `Travel charge - ₹${TRAVEL_CHARGE}` : ``,
+      (resolved as any).isClean ? `💰 Total - ₹${grandTotal}` : ``,
       ``,
-      totalPicked > 0 ? `🍡 Flavours:\n${flavourLines}` : ``,
-      selectedLocation ? `📍 Preferred pickup: ${selectedLocation}` : ``,
+      totalPicked > 0 ? `Flavours:\n${flavourLines}` : ``,
+      selectedLocation ? `Pickup: ${selectedLocation}` : ``,
       homeDelivery ? `🛵 I need home delivery (Porter)` : ``,
       ``,
       `Please share details to confirm my order!`,
@@ -234,8 +243,7 @@ export default function TrivandrumPage() {
             textTransform: "uppercase",
           }}
         >
-          🚂 &nbsp; We're coming to Trivandrum{tripDate ? ` · ${tripDate}` : ""}{" "}
-          &nbsp; 🚂
+          We're coming to Trivandrum{tripDate ? ` · ${tripDate}` : ""}
         </p>
       </div>
 
@@ -359,7 +367,7 @@ export default function TrivandrumPage() {
           }}
         >
           After receiving requests from several of you in Trivandrum, we're
-          bringing Eversweet mochi to your city — made fresh in Kochi the same
+          bringing Eversweet mochi to your city - made fresh in Kochi the same
           morning and hand-carried by train.
         </p>
         <p
@@ -374,7 +382,85 @@ export default function TrivandrumPage() {
         </p>
       </section>
 
-      {/* HOW IT WORKS — inline, not popup */}
+      {/* PRODUCT STORY */}
+      <section
+        style={{
+          padding: "36px 24px",
+          borderBottom: "1px solid var(--border2)",
+          textAlign: "center",
+        }}
+      >
+        <p
+          style={{
+            fontFamily: "Cormorant Garamond, serif",
+            fontSize: "1.7rem",
+            fontWeight: 300,
+            lineHeight: 1.3,
+            color: "var(--cream)",
+            marginBottom: 16,
+          }}
+        >
+          Most mochi is made weeks ago.
+          <br />
+          <em style={{ color: "var(--gold)" }}>Ours was made this morning.</em>
+        </p>
+        <div
+          style={{
+            width: 32,
+            height: 1,
+            background: "var(--gold)",
+            opacity: 0.35,
+            margin: "0 auto 20px",
+          }}
+        />
+        <p
+          style={{
+            fontSize: "0.85rem",
+            color: "var(--cream-dim)",
+            lineHeight: 1.9,
+            marginBottom: 14,
+            maxWidth: 360,
+            margin: "0 auto 14px",
+          }}
+        >
+          {
+            "You've had frozen mochi before. That odd, chewy-but-cold bite that never quite felt right. The rice flour skin that tears instead of yielding. The filling that tastes like a memory of fruit."
+          }
+        </p>
+        <p
+          style={{
+            fontSize: "0.85rem",
+            color: "var(--cream-dim)",
+            lineHeight: 1.9,
+            marginBottom: 14,
+            maxWidth: 360,
+            margin: "0 auto 14px",
+          }}
+        >
+          {"Eversweet is built on one belief: "}
+          <strong style={{ color: "var(--cream)", fontWeight: 500 }}>
+            {"mochi eaten the day it's made is a completely different food."}
+          </strong>
+          {
+            " The skin is impossibly soft. The filling is cold but not frozen. Every texture is intentional."
+          }
+        </p>
+        <p
+          style={{
+            fontSize: "0.85rem",
+            color: "var(--cream-dim)",
+            lineHeight: 1.9,
+            maxWidth: 360,
+            margin: "0 auto 28px",
+          }}
+        >
+          {
+            "We make each batch fresh in Kochi the same morning it reaches you. Nothing sits. Nothing is refrigerated overnight."
+          }
+        </p>
+      </section>
+
+      {/* HOW IT WORKS - inline, not popup */}
       <section
         style={{
           padding: "28px 24px",
@@ -398,13 +484,13 @@ export default function TrivandrumPage() {
           {(
             [
               ["1", "Pick your flavours and box size below"],
-              ["2", "Tap Place Order — it opens WhatsApp with your selection"],
+              ["2", "Tap Place Order - it opens WhatsApp with your selection"],
               ["3", "We confirm your order and share payment details"],
               [
                 "4",
                 tripDate
                   ? `Collect your fresh mochi on ${tripDate}`
-                  : "Collect your fresh mochi on the trip date — we confirm on WhatsApp",
+                  : "Collect your fresh mochi on the trip date - we confirm on WhatsApp",
               ],
             ] as [string, string][]
           ).map(([n, t]) => (
@@ -487,7 +573,7 @@ export default function TrivandrumPage() {
             }}
           />
           <p style={{ fontSize: "0.78rem", color: "var(--cream-dim)" }}>
-            Mix freely — the right box is worked out for you.
+            Mix freely - the right box is worked out for you.
           </p>
         </div>
 
@@ -563,15 +649,6 @@ export default function TrivandrumPage() {
               </p>
               <p style={{ fontSize: "0.68rem", color: "var(--cream-dim)" }}>
                 4 mochis
-              </p>
-              <p
-                style={{
-                  fontSize: "0.62rem",
-                  color: "rgba(200,184,154,0.4)",
-                  marginTop: 3,
-                }}
-              >
-                ₹150 per mochi
               </p>
             </div>
           </button>
@@ -661,17 +738,6 @@ export default function TrivandrumPage() {
               <p style={{ fontSize: "0.68rem", color: "var(--cream-dim)" }}>
                 6 mochis
               </p>
-              <p
-                style={{
-                  fontSize: "0.62rem",
-                  color:
-                    targetBox === 6 ? "var(--gold)" : "rgba(201,168,76,0.5)",
-                  marginTop: 3,
-                  fontWeight: 600,
-                }}
-              >
-                ₹141/mochi · save ₹54
-              </p>
             </div>
           </button>
         </div>
@@ -684,6 +750,7 @@ export default function TrivandrumPage() {
             background: "rgba(255,255,255,0.03)",
             border: "1px solid rgba(255,255,255,0.07)",
             borderRadius: 12,
+            minHeight: 90,
           }}
         >
           <div
@@ -752,7 +819,7 @@ export default function TrivandrumPage() {
                 marginTop: 8,
               }}
             >
-              ✓ Box of {targetBox} ready — tap Place Order below
+              Box of {targetBox} ready - tap Place Order below
             </p>
           )}
         </div>
@@ -786,12 +853,12 @@ export default function TrivandrumPage() {
                   style={{
                     borderRadius: 12,
                     overflow: "hidden",
-                    border: `1.5px solid ${qty > 0 ? "var(--gold)" : "rgba(255,255,255,0.07)"}`,
+                    border: `2px solid ${qty > 0 ? "var(--gold)" : "rgba(255,255,255,0.07)"}`,
                     background:
                       qty > 0
-                        ? "rgba(201,168,76,0.05)"
+                        ? "rgba(201,168,76,0.1)"
                         : "rgba(255,255,255,0.02)",
-                    transition: "all 0.2s",
+                    transition: "border-color 0.2s, background 0.2s",
                   }}
                 >
                   <div style={{ position: "relative" }}>
@@ -845,17 +912,29 @@ export default function TrivandrumPage() {
                       </div>
                     )}
                   </div>
-                  <div style={{ padding: "10px 12px 14px" }}>
+                  <div style={{ padding: "10px 12px 14px", minHeight: 90 }}>
                     <p
                       style={{
                         fontSize: "0.95rem",
-                        fontWeight: 600,
-                        marginBottom: 10,
+                        fontWeight: qty > 0 ? 700 : 600,
+                        marginBottom: p.description ? 6 : 10,
                         color: qty > 0 ? "var(--gold)" : "var(--cream)",
                       }}
                     >
                       {p.name}
                     </p>
+                    {p.description && (
+                      <p
+                        style={{
+                          fontSize: "0.68rem",
+                          color: "var(--cream-dim)",
+                          lineHeight: 1.5,
+                          marginBottom: 10,
+                        }}
+                      >
+                        {p.description}
+                      </p>
+                    )}
                     <div
                       style={{
                         display: "flex",
@@ -950,7 +1029,7 @@ export default function TrivandrumPage() {
                   marginBottom: 12,
                 }}
               >
-                {totalPicked} mochis — adjust to fit a box:
+                {totalPicked} mochis - adjust to fit a box:
               </p>
               <div style={{ display: "flex", gap: 8 }}>
                 <button
@@ -1040,10 +1119,19 @@ export default function TrivandrumPage() {
             </div>
           )}
 
-        {/* Place Order button — appears when box is filled */}
+        {/* Place Order button - appears when box is filled */}
         {canShowPanel && (
           <button
-            onClick={() => setShowOrderPanel(true)}
+            onClick={() => {
+              setShowOrderSection(true);
+              setTimeout(
+                () =>
+                  document
+                    .getElementById("order-section")
+                    ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+                50,
+              );
+            }}
             style={{
               marginTop: 16,
               width: "100%",
@@ -1066,6 +1154,436 @@ export default function TrivandrumPage() {
           </button>
         )}
       </section>
+
+      {/* INLINE ORDER SECTION */}
+      {showOrderSection && (
+        <section
+          id="order-section"
+          style={{
+            padding: "36px 24px",
+            borderBottom: "1px solid var(--border2)",
+            background: "rgba(201,168,76,0.03)",
+          }}
+        >
+          <div style={{ textAlign: "center", marginBottom: 24 }}>
+            <p
+              style={{
+                fontSize: "0.58rem",
+                letterSpacing: "0.22em",
+                textTransform: "uppercase",
+                color: "var(--gold)",
+                marginBottom: 6,
+                opacity: 0.75,
+              }}
+            >
+              Your Order
+            </p>
+            <h2
+              style={{
+                fontFamily: "Cormorant Garamond, serif",
+                fontSize: "1.8rem",
+                fontWeight: 300,
+                color: "var(--cream)",
+                marginBottom: 6,
+              }}
+            >
+              Review & Order
+            </h2>
+            <div
+              style={{
+                width: 32,
+                height: 1,
+                background: "var(--gold)",
+                margin: "0 auto",
+                opacity: 0.35,
+              }}
+            />
+          </div>
+
+          {/* Order summary */}
+          <div
+            style={{
+              background: "rgba(255,255,255,0.03)",
+              border: "1px solid rgba(255,255,255,0.07)",
+              borderRadius: 12,
+              padding: "18px",
+              marginBottom: 20,
+            }}
+          >
+            {(resolved as any).boxes.map((b: any, i: number) => (
+              <div
+                key={i}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  marginBottom: 8,
+                }}
+              >
+                <span
+                  style={{ fontSize: "0.88rem", color: "var(--cream-dim)" }}
+                >
+                  {b.qty > 1 ? `${b.qty}× ` : ""}
+                  {b.label}
+                </span>
+                <span style={{ fontSize: "0.88rem", color: "var(--cream)" }}>
+                  ₹{b.price * b.qty}
+                </span>
+              </div>
+            ))}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                marginBottom: 14,
+              }}
+            >
+              <span style={{ fontSize: "0.88rem", color: "var(--cream-dim)" }}>
+                Travel charge
+              </span>
+              <span style={{ fontSize: "0.88rem", color: "var(--cream)" }}>
+                ₹{TRAVEL_CHARGE}
+              </span>
+            </div>
+            <div
+              style={{
+                borderTop: "1px solid rgba(255,255,255,0.07)",
+                paddingTop: 12,
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "baseline",
+              }}
+            >
+              <span
+                style={{
+                  fontSize: "0.95rem",
+                  fontWeight: 700,
+                  color: "var(--cream)",
+                }}
+              >
+                Total
+              </span>
+              <span
+                style={{
+                  fontSize: "2rem",
+                  fontWeight: 700,
+                  color: "var(--gold)",
+                }}
+              >
+                ₹{grandTotal}
+              </span>
+            </div>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 6,
+                marginTop: 12,
+              }}
+            >
+              {Object.entries(flavours)
+                .filter(([, q]) => q > 0)
+                .map(([id, qty]) => {
+                  const p = products.find((pr) => pr.id === id);
+                  return p ? (
+                    <span
+                      key={id}
+                      style={{
+                        fontSize: "0.75rem",
+                        fontWeight: 600,
+                        color: "var(--gold)",
+                        background: "rgba(201,168,76,0.12)",
+                        border: "1px solid rgba(201,168,76,0.3)",
+                        borderRadius: 20,
+                        padding: "4px 12px",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 5,
+                      }}
+                    >
+                      {p.name}
+                      <span
+                        style={{
+                          fontSize: "0.68rem",
+                          color: "rgba(201,168,76,0.7)",
+                          fontWeight: 400,
+                        }}
+                      >
+                        ×{qty}
+                      </span>
+                    </span>
+                  ) : null;
+                })}
+            </div>
+          </div>
+
+          {/* Pickup location */}
+          <p
+            style={{
+              fontSize: "0.72rem",
+              fontWeight: 600,
+              letterSpacing: "0.1em",
+              textTransform: "uppercase" as const,
+              color: "var(--gold)",
+              marginBottom: 6,
+              opacity: 0.8,
+            }}
+          >
+            Choose pickup location
+          </p>
+          <p
+            style={{
+              fontSize: "0.76rem",
+              color: "var(--cream-dim)",
+              marginBottom: 12,
+              lineHeight: 1.6,
+            }}
+          >
+            Pick the location nearest to you - exact spot and time confirmed on
+            WhatsApp.
+          </p>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              marginBottom: 20,
+            }}
+          >
+            {pickupLocations.map((loc) => (
+              <button
+                key={loc.name}
+                onClick={() =>
+                  setSelectedLocation((l) => (l === loc.name ? "" : loc.name))
+                }
+                style={{
+                  padding: "14px 18px",
+                  textAlign: "left" as const,
+                  width: "100%",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  border: `1.5px solid ${selectedLocation === loc.name ? "var(--gold)" : "rgba(255,255,255,0.08)"}`,
+                  background:
+                    selectedLocation === loc.name
+                      ? "rgba(201,168,76,0.06)"
+                      : "rgba(255,255,255,0.02)",
+                  borderRadius: 10,
+                  cursor: "pointer",
+                  fontFamily: "'DM Sans', system-ui, sans-serif",
+                  transition: "all 0.18s",
+                }}
+              >
+                <div>
+                  <p
+                    style={{
+                      fontSize: "0.95rem",
+                      fontWeight: 600,
+                      color:
+                        selectedLocation === loc.name
+                          ? "var(--gold)"
+                          : "var(--cream)",
+                      marginBottom: 2,
+                    }}
+                  >
+                    {loc.name}
+                  </p>
+                  <p style={{ fontSize: "0.68rem", color: "var(--cream-dim)" }}>
+                    {loc.area}
+                  </p>
+                </div>
+                {selectedLocation === loc.name && (
+                  <span
+                    style={{
+                      fontSize: "0.72rem",
+                      padding: "3px 10px",
+                      borderRadius: 20,
+                      background: "rgba(201,168,76,0.18)",
+                      color: "var(--gold)",
+                      fontWeight: 700,
+                      flexShrink: 0,
+                    }}
+                  >
+                    ✓
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Home delivery */}
+          <div style={{ marginBottom: 24 }}>
+            <button
+              onClick={() => setHomeDelivery((v) => !v)}
+              style={{
+                width: "100%",
+                padding: "14px 16px",
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 12,
+                background: homeDelivery
+                  ? "rgba(201,168,76,0.06)"
+                  : "rgba(255,255,255,0.02)",
+                border: `1.5px solid ${homeDelivery ? "var(--gold)" : "rgba(255,255,255,0.08)"}`,
+                borderRadius: 10,
+                cursor: "pointer",
+                fontFamily: "'DM Sans', system-ui, sans-serif",
+                textAlign: "left" as const,
+                transition: "all 0.18s",
+              }}
+            >
+              <div
+                style={{
+                  width: 20,
+                  height: 20,
+                  borderRadius: 5,
+                  border: `2px solid ${homeDelivery ? "var(--gold)" : "rgba(255,255,255,0.2)"}`,
+                  background: homeDelivery ? "var(--gold)" : "transparent",
+                  flexShrink: 0,
+                  marginTop: 2,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  transition: "all 0.18s",
+                }}
+              >
+                {homeDelivery && (
+                  <span
+                    style={{
+                      color: "#160c08",
+                      fontSize: "0.7rem",
+                      fontWeight: 900,
+                    }}
+                  >
+                    ✓
+                  </span>
+                )}
+              </div>
+              <div>
+                <p
+                  style={{
+                    fontSize: "0.95rem",
+                    fontWeight: 600,
+                    color: homeDelivery ? "var(--gold)" : "var(--cream)",
+                    marginBottom: 3,
+                  }}
+                >
+                  I need home delivery
+                </p>
+                <p
+                  style={{
+                    fontSize: "0.72rem",
+                    color: "var(--cream-dim)",
+                    lineHeight: 1.6,
+                  }}
+                >
+                  Porter delivery from your nearest pickup point. Additional
+                  charge applies - approximate rates below.
+                </p>
+              </div>
+            </button>
+            {homeDelivery && (
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: "14px 16px",
+                  background: "rgba(255,255,255,0.03)",
+                  border: "1px solid rgba(255,255,255,0.07)",
+                  borderRadius: 10,
+                }}
+              >
+                <p
+                  style={{
+                    fontSize: "0.75rem",
+                    fontWeight: 600,
+                    color: "var(--cream)",
+                    marginBottom: 8,
+                  }}
+                >
+                  🛵 Approximate Porter charges
+                </p>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 6,
+                    marginBottom: 10,
+                  }}
+                >
+                  {[
+                    ["~1.5 km", "≈ ₹55"],
+                    ["~4 km", "≈ ₹80"],
+                    ["~7 km", "≈ ₹110"],
+                    ["~13 km", "≈ ₹170"],
+                  ].map(([dist, charge]) => (
+                    <div
+                      key={dist}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        fontSize: "0.75rem",
+                      }}
+                    >
+                      <span style={{ color: "var(--cream-dim)" }}>
+                        {dist} from pickup
+                      </span>
+                      <span style={{ color: "var(--gold)", fontWeight: 600 }}>
+                        {charge}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <p
+                  style={{
+                    fontSize: "0.68rem",
+                    color: "rgba(200,184,154,0.5)",
+                    lineHeight: 1.6,
+                  }}
+                >
+                  Approx ₹40 base + ₹10/km. Share your address on WhatsApp - we
+                  confirm the exact charge and include it in your total. Nothing
+                  to pay on delivery.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* WhatsApp CTA */}
+          <button
+            onClick={openWhatsApp}
+            style={{
+              width: "100%",
+              padding: "16px",
+              borderRadius: 12,
+              border: "none",
+              background: "linear-gradient(135deg, #25d366, #128c4a)",
+              color: "#fff",
+              fontSize: "1.05rem",
+              fontWeight: 700,
+              cursor: "pointer",
+              fontFamily: "'DM Sans', system-ui, sans-serif",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 10,
+              boxShadow: "0 4px 20px rgba(37,211,102,0.25)",
+            }}
+          >
+            <span style={{ fontSize: "1.3rem" }}></span>
+            Order via WhatsApp - ₹{grandTotal}
+          </button>
+          <p
+            style={{
+              fontSize: "0.7rem",
+              color: "var(--cream-dim)",
+              marginTop: 10,
+              textAlign: "center",
+              lineHeight: 1.7,
+            }}
+          >
+            We'll confirm pickup details and payment on WhatsApp.
+          </p>
+        </section>
+      )}
 
       {/* FAQ */}
       <div style={{ padding: "32px 24px 40px" }}>
@@ -1102,7 +1620,7 @@ export default function TrivandrumPage() {
             {[
               [
                 "What is Mochi?",
-                "A Japanese dessert — soft, chewy rice flour on the outside, cold creamy fruit filling inside. Made fresh in Kochi the same morning it reaches you.",
+                "A Japanese dessert - soft, chewy rice flour on the outside, cold creamy fruit filling inside. Made fresh in Kochi the same morning it reaches you.",
               ],
               [
                 "Why the travel charge?",
@@ -1114,15 +1632,15 @@ export default function TrivandrumPage() {
               ],
               [
                 "Can I get home delivery?",
-                "Yes — Porter delivery from your nearest pickup point. Share your address on WhatsApp, we confirm the exact charge and add it to your total. No separate payment on delivery.",
+                "Yes - Porter delivery from your nearest pickup point. Share your address on WhatsApp, we confirm the exact charge and add it to your total. No separate payment on delivery.",
               ],
               [
                 "Can I cancel?",
-                "Message us on WhatsApp — we'll work something out.",
+                "Message us on WhatsApp - we'll work something out.",
               ],
               [
                 "Will you come to TVM regularly?",
-                "If this run goes well — yes! We're planning regular trips.",
+                "If this run goes well - yes! We're planning regular trips.",
               ],
             ].map(([q, a]) => (
               <div
@@ -1201,7 +1719,7 @@ export default function TrivandrumPage() {
             fontWeight: 600,
           }}
         >
-          📲 Chat on WhatsApp
+          Chat on WhatsApp
         </a>
         <p
           style={{
@@ -1213,423 +1731,6 @@ export default function TrivandrumPage() {
           © {new Date().getFullYear()} Eversweet Company
         </p>
       </footer>
-
-      {/* ORDER PANEL — slides up from bottom */}
-      {showOrderPanel && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 200,
-            background: "rgba(0,0,0,0.7)",
-            display: "flex",
-            alignItems: "flex-end",
-            justifyContent: "center",
-          }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setShowOrderPanel(false);
-          }}
-        >
-          <div
-            style={{
-              background: "#1e1009",
-              border: "1px solid rgba(201,168,76,0.25)",
-              borderRadius: "20px 20px 0 0",
-              width: "100%",
-              maxWidth: 480,
-              padding: "28px 24px 40px",
-              maxHeight: "90vh",
-              overflowY: "auto",
-            }}
-          >
-            {/* Handle */}
-            <div
-              style={{
-                width: 40,
-                height: 4,
-                borderRadius: 99,
-                background: "rgba(255,255,255,0.15)",
-                margin: "0 auto 24px",
-              }}
-            />
-
-            {/* Order summary */}
-            <div style={{ marginBottom: 22 }}>
-              <p
-                style={{
-                  fontSize: "0.6rem",
-                  letterSpacing: "0.16em",
-                  textTransform: "uppercase",
-                  color: "var(--gold)",
-                  marginBottom: 10,
-                  opacity: 0.8,
-                }}
-              >
-                Your order
-              </p>
-              {(resolved as any).boxes.map((b: any, i: number) => (
-                <div
-                  key={i}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    marginBottom: 5,
-                  }}
-                >
-                  <span
-                    style={{ fontSize: "0.85rem", color: "var(--cream-dim)" }}
-                  >
-                    {b.qty > 1 ? `${b.qty}× ` : ""}
-                    {b.label}
-                  </span>
-                  <span style={{ fontSize: "0.85rem", color: "var(--cream)" }}>
-                    ₹{b.price * b.qty}
-                  </span>
-                </div>
-              ))}
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  marginBottom: 12,
-                }}
-              >
-                <span
-                  style={{ fontSize: "0.85rem", color: "var(--cream-dim)" }}
-                >
-                  Travel charge 🚂
-                </span>
-                <span style={{ fontSize: "0.85rem", color: "var(--cream)" }}>
-                  ₹{TRAVEL_CHARGE}
-                </span>
-              </div>
-              <div
-                style={{
-                  borderTop: "1px solid rgba(255,255,255,0.07)",
-                  paddingTop: 10,
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "baseline",
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: "0.95rem",
-                    fontWeight: 700,
-                    color: "var(--cream)",
-                  }}
-                >
-                  Total
-                </span>
-                <span
-                  style={{
-                    fontSize: "2rem",
-                    fontWeight: 700,
-                    color: "var(--gold)",
-                  }}
-                >
-                  ₹{grandTotal}
-                </span>
-              </div>
-              <p
-                style={{
-                  fontSize: "0.72rem",
-                  color: "var(--cream-dim)",
-                  marginTop: 8,
-                  lineHeight: 1.6,
-                }}
-              >
-                🍡{" "}
-                {Object.entries(flavours)
-                  .filter(([, q]) => q > 0)
-                  .map(([id, qty]) => {
-                    const p = products.find((p) => p.id === id);
-                    return p ? `${p.name} ×${qty}` : null;
-                  })
-                  .filter(Boolean)
-                  .join(", ")}
-              </p>
-            </div>
-
-            {/* Pickup location */}
-            <div style={{ marginBottom: 22 }}>
-              <p
-                style={{
-                  fontSize: "0.6rem",
-                  letterSpacing: "0.16em",
-                  textTransform: "uppercase",
-                  color: "var(--gold)",
-                  marginBottom: 6,
-                  opacity: 0.8,
-                }}
-              >
-                Choose your pickup location
-              </p>
-              <p
-                style={{
-                  fontSize: "0.72rem",
-                  color: "var(--cream-dim)",
-                  marginBottom: 10,
-                  lineHeight: 1.6,
-                }}
-              >
-                Pick the location nearest to you — we'll confirm the exact spot
-                and time on WhatsApp.
-              </p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {PICKUP_LOCATIONS.map((loc) => (
-                  <button
-                    key={loc.name}
-                    onClick={() =>
-                      setSelectedLocation((l) =>
-                        l === loc.name ? "" : loc.name,
-                      )
-                    }
-                    style={{
-                      padding: "12px 16px",
-                      textAlign: "left" as const,
-                      width: "100%",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      border: `1.5px solid ${selectedLocation === loc.name ? "var(--gold)" : "rgba(255,255,255,0.08)"}`,
-                      background:
-                        selectedLocation === loc.name
-                          ? "rgba(201,168,76,0.06)"
-                          : "rgba(255,255,255,0.02)",
-                      borderRadius: 10,
-                      cursor: "pointer",
-                      fontFamily: "'DM Sans', system-ui, sans-serif",
-                      transition: "all 0.18s",
-                    }}
-                  >
-                    <div>
-                      <p
-                        style={{
-                          fontSize: "0.95rem",
-                          fontWeight: 600,
-                          color:
-                            selectedLocation === loc.name
-                              ? "var(--gold)"
-                              : "var(--cream)",
-                          marginBottom: 2,
-                        }}
-                      >
-                        {loc.name}
-                      </p>
-                      <p
-                        style={{
-                          fontSize: "0.68rem",
-                          color: "var(--cream-dim)",
-                        }}
-                      >
-                        {loc.area}
-                      </p>
-                    </div>
-                    {selectedLocation === loc.name && (
-                      <span
-                        style={{
-                          fontSize: "0.72rem",
-                          padding: "3px 10px",
-                          borderRadius: 20,
-                          background: "rgba(201,168,76,0.18)",
-                          color: "var(--gold)",
-                          fontWeight: 700,
-                          flexShrink: 0,
-                        }}
-                      >
-                        ✓
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Home delivery */}
-            <div style={{ marginBottom: 22 }}>
-              <button
-                onClick={() => setHomeDelivery((v) => !v)}
-                style={{
-                  width: "100%",
-                  padding: "14px 16px",
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: 12,
-                  background: homeDelivery
-                    ? "rgba(201,168,76,0.06)"
-                    : "rgba(255,255,255,0.02)",
-                  border: `1.5px solid ${homeDelivery ? "var(--gold)" : "rgba(255,255,255,0.08)"}`,
-                  borderRadius: 10,
-                  cursor: "pointer",
-                  fontFamily: "'DM Sans', system-ui, sans-serif",
-                  textAlign: "left" as const,
-                  transition: "all 0.18s",
-                }}
-              >
-                <div
-                  style={{
-                    width: 20,
-                    height: 20,
-                    borderRadius: 5,
-                    border: `2px solid ${homeDelivery ? "var(--gold)" : "rgba(255,255,255,0.2)"}`,
-                    background: homeDelivery ? "var(--gold)" : "transparent",
-                    flexShrink: 0,
-                    marginTop: 2,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    transition: "all 0.18s",
-                  }}
-                >
-                  {homeDelivery && (
-                    <span
-                      style={{
-                        color: "#160c08",
-                        fontSize: "0.7rem",
-                        fontWeight: 900,
-                      }}
-                    >
-                      ✓
-                    </span>
-                  )}
-                </div>
-                <div>
-                  <p
-                    style={{
-                      fontSize: "0.95rem",
-                      fontWeight: 600,
-                      color: homeDelivery ? "var(--gold)" : "var(--cream)",
-                      marginBottom: 3,
-                    }}
-                  >
-                    I need home delivery
-                  </p>
-                  <p
-                    style={{
-                      fontSize: "0.72rem",
-                      color: "var(--cream-dim)",
-                      lineHeight: 1.6,
-                    }}
-                  >
-                    Porter delivers from your nearest pickup point. Charge is
-                    calculated and included in your total — nothing to pay on
-                    delivery.
-                  </p>
-                </div>
-              </button>
-              {homeDelivery && (
-                <div
-                  style={{
-                    marginTop: 10,
-                    padding: "14px 16px",
-                    background: "rgba(255,255,255,0.03)",
-                    border: "1px solid rgba(255,255,255,0.07)",
-                    borderRadius: 10,
-                  }}
-                >
-                  <p
-                    style={{
-                      fontSize: "0.75rem",
-                      fontWeight: 600,
-                      color: "var(--cream)",
-                      marginBottom: 8,
-                    }}
-                  >
-                    🛵 Porter delivery charges
-                  </p>
-                  <p
-                    style={{
-                      fontSize: "0.72rem",
-                      color: "var(--cream-dim)",
-                      lineHeight: 1.75,
-                      marginBottom: 8,
-                    }}
-                  >
-                    Charges depend on your distance from the pickup point.
-                    There's a minimum charge regardless of how close you are —
-                    so short distances aren't necessarily cheaper.
-                  </p>
-                  <div
-                    style={{ display: "flex", flexDirection: "column", gap: 6 }}
-                  >
-                    {[
-                      ["~1.5 km", "≈ ₹55"],
-                      ["~4 km", "≈ ₹80"],
-                      ["~7 km", "≈ ₹110"],
-                      ["~13 km", "≈ ₹170"],
-                    ].map(([dist, charge]) => (
-                      <div
-                        key={dist}
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          fontSize: "0.75rem",
-                        }}
-                      >
-                        <span style={{ color: "var(--cream-dim)" }}>
-                          {dist} from pickup
-                        </span>
-                        <span style={{ color: "var(--gold)", fontWeight: 600 }}>
-                          {charge}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                  <p
-                    style={{
-                      fontSize: "0.68rem",
-                      color: "rgba(200,184,154,0.5)",
-                      marginTop: 10,
-                      lineHeight: 1.6,
-                    }}
-                  >
-                    Approx ₹40 base + ₹10/km. Share your address on WhatsApp —
-                    we confirm the exact Porter charge and include it in your
-                    total payment. Nothing to pay on delivery.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* WhatsApp CTA */}
-            <button
-              onClick={openWhatsApp}
-              style={{
-                width: "100%",
-                padding: "16px",
-                borderRadius: 12,
-                border: "none",
-                background: "linear-gradient(135deg, #25d366, #128c4a)",
-                color: "#fff",
-                fontSize: "1.05rem",
-                fontWeight: 700,
-                cursor: "pointer",
-                fontFamily: "'DM Sans', system-ui, sans-serif",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 10,
-                boxShadow: "0 4px 20px rgba(37,211,102,0.25)",
-              }}
-            >
-              <span style={{ fontSize: "1.3rem" }}>📲</span>
-              Order via WhatsApp — ₹{grandTotal}
-            </button>
-            <p
-              style={{
-                fontSize: "0.7rem",
-                color: "var(--cream-dim)",
-                marginTop: 10,
-                textAlign: "center",
-                lineHeight: 1.7,
-              }}
-            >
-              We'll confirm availability and payment details on WhatsApp.
-            </p>
-          </div>
-        </div>
-      )}
     </main>
   );
 }
