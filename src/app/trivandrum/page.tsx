@@ -361,6 +361,7 @@ export default function TrivandrumPage() {
           padding: "30px 24px 32px",
           background: "rgba(255,248,230,0.02)",
           borderBottom: "1px solid var(--border2)",
+          textAlign: "center",
         }}
       >
         <p
