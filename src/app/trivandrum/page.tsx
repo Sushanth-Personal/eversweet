@@ -140,7 +140,22 @@ export default function TrivandrumPage() {
       ]);
       if (p) setProducts(p);
       if (s) {
-        if (s.trip_date) setTripDate(s.trip_date);
+        if (s.trip_date) {
+          try {
+            const d = new Date(s.trip_date + "T00:00:00");
+            setTripDate(
+              isNaN(d.getTime())
+                ? s.trip_date
+                : d.toLocaleDateString("en-IN", {
+                    weekday: "long",
+                    day: "numeric",
+                    month: "long",
+                  }),
+            );
+          } catch {
+            setTripDate(s.trip_date);
+          }
+        }
         if (s.pickup_locations) {
           const locs = s.pickup_locations
             .split("|")
@@ -243,7 +258,7 @@ export default function TrivandrumPage() {
             textTransform: "uppercase",
           }}
         >
-          We're coming to Trivandrum{tripDate ? ` · ${tripDate}` : ""}
+          We're coming to Trivandrum{tripDate ? ` · ${tripDate}` : " . Sunday, 14 June"}
         </p>
       </div>
 
@@ -1314,6 +1329,33 @@ export default function TrivandrumPage() {
                   ) : null;
                 })}
             </div>
+            {tripDate && (
+              <div
+                style={{
+                  marginTop: 14,
+                  paddingTop: 12,
+                  borderTop: "1px solid rgba(255,255,255,0.06)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <span
+                  style={{ fontSize: "0.72rem", color: "var(--cream-dim)" }}
+                >
+                  Pickup date
+                </span>
+                <span
+                  style={{
+                    fontSize: "0.82rem",
+                    fontWeight: 600,
+                    color: "var(--gold)",
+                  }}
+                >
+                  {tripDate}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Pickup location */}

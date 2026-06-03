@@ -4235,15 +4235,9 @@ export default function AdminPage() {
     pickup_name: "",
     pickup_address: "",
     pickup_maps_url: "",
-    min_orders: 8,
     is_active: true,
-  });
-  const [tvmSettingsDraft, setTvmSettingsDraft] = useState({
-    pickup_name: "",
-    pickup_address: "",
-    pickup_maps_url: "",
-    min_orders: 8,
-    is_active: true,
+    trip_date: "",
+    pickup_locations: "",
   });
   const [tvmSettingsId, setTvmSettingsId] = useState<string>("");
   const [savingTvm, setSavingTvm] = useState(false);
@@ -4300,15 +4294,14 @@ export default function AdminPage() {
     if (ex) setExpenses(ex as Expense[]);
     if (tvmO) setTvmOrders(tvmO as ExtOrder[]);
     if (tvmS) {
-      const s = {
+      setTvmSettings({
         pickup_name: tvmS.pickup_name || "",
         pickup_address: tvmS.pickup_address || "",
         pickup_maps_url: tvmS.pickup_maps_url || "",
-        min_orders: tvmS.min_orders || 8,
         is_active: tvmS.is_active ?? true,
-      };
-      setTvmSettings(s);
-      setTvmSettingsDraft(s);
+        trip_date: tvmS.trip_date || "",
+        pickup_locations: tvmS.pickup_locations || "",
+      });
       setTvmSettingsId(tvmS.id);
     }
   }, []);
@@ -4540,15 +4533,9 @@ export default function AdminPage() {
   const tvmPaid = tvmOrders.filter((o) => PAID_STATUSES.includes(o.status));
   const tvmPending = tvmOrders.filter((o) => o.status === "pending");
   const tvmRevenue = tvmPaid.reduce((s, o) => s + (o.total_price || 0), 0);
-  const tvmProgress = Math.min(
-    (tvmPaid.length / (tvmSettings.min_orders || 8)) * 100,
-    100,
-  );
-  const tvmMet = tvmPaid.length >= (tvmSettings.min_orders || 8);
-  const tvmSpotsLeft = Math.max(
-    0,
-    (tvmSettings.min_orders || 8) - tvmPaid.length,
-  );
+  const tvmProgress = Math.min((tvmPaid.length / 10) * 100, 100);
+  const tvmMet = tvmPaid.length >= 10;
+  const tvmSpotsLeft = Math.max(0, 10 - tvmPaid.length);
 
   const customerMap: Record<
     string,
@@ -6316,433 +6303,21 @@ export default function AdminPage() {
 
       {/* TRIVANDRUM TAB */}
       {tab === "trivandrum" && (
-        <div
-          style={{ maxWidth: 900, margin: "0 auto", padding: "16px 14px 20px" }}
-        >
-          {/* Threshold card */}
-          <div
-            style={{
-              background: tvmMet ? G.greenGlass : G.goldGlass,
-              border: `1px solid ${tvmMet ? "rgba(52,217,123,0.35)" : G.goldBorder}`,
-              borderRadius: 14,
-              padding: "16px 18px",
-              marginBottom: 16,
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "flex-start",
-                marginBottom: 12,
-              }}
-            >
-              <div>
-                <p
-                  style={{
-                    fontSize: "0.65rem",
-                    color: tvmMet ? G.green : G.gold,
-                    letterSpacing: "0.12em",
-                    textTransform: "uppercase" as const,
-                    fontWeight: 700,
-                    marginBottom: 4,
-                  }}
-                >
-                  Trivandrum Pre-order Status
-                </p>
-                <p
-                  style={{
-                    fontSize: "1.4rem",
-                    fontWeight: 700,
-                    color: tvmMet ? G.green : G.text,
-                    lineHeight: 1,
-                  }}
-                >
-                  {tvmMet
-                    ? "🎉 Trip Confirmed!"
-                    : `${tvmSpotsLeft} more orders needed`}
-                </p>
-              </div>
-              <div style={{ textAlign: "right" as const }}>
-                <p
-                  style={{
-                    fontSize: "1.8rem",
-                    fontWeight: 700,
-                    color: G.text,
-                    lineHeight: 1,
-                  }}
-                >
-                  {tvmPaid.length}
-                  <span style={{ fontSize: "1rem", color: G.muted }}>
-                    /{tvmSettings.min_orders}
-                  </span>
-                </p>
-                <p
-                  style={{ fontSize: "0.65rem", color: G.muted, marginTop: 2 }}
-                >
-                  paid orders
-                </p>
-              </div>
-            </div>
-            <div
-              style={{
-                height: 8,
-                background: "rgba(255,255,255,0.08)",
-                borderRadius: 99,
-                overflow: "hidden",
-                marginBottom: 10,
-              }}
-            >
-              <div
-                style={{
-                  height: "100%",
-                  borderRadius: 99,
-                  width: `${tvmProgress}%`,
-                  background: tvmMet
-                    ? "linear-gradient(90deg,#34d97b,#22c55e)"
-                    : "linear-gradient(90deg,rgba(240,176,64,0.6),#f0b040)",
-                  transition: "width 0.4s ease",
-                }}
-              />
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <p style={{ fontSize: "0.72rem", color: G.muted }}>
-                {tvmPending.length} pending payment · {tvmOrders.length} total
-                pre-orders
-              </p>
-              <p
-                style={{ fontSize: "0.78rem", fontWeight: 700, color: G.green }}
-              >
-                ₹{tvmRevenue.toLocaleString()} collected
-              </p>
-            </div>
-          </div>
-
-          {/* Settings */}
-          <div
-            style={{
-              background: G.glassStrong,
-              border: `1px solid ${G.glassBorderStrong}`,
-              borderRadius: 14,
-              padding: 16,
-              marginBottom: 16,
-            }}
-          >
-            <p
-              style={{
-                fontSize: "0.65rem",
-                color: G.muted,
-                letterSpacing: "0.12em",
-                textTransform: "uppercase" as const,
-                marginBottom: 14,
-                fontWeight: 700,
-              }}
-            >
-              ⚙️ Trivandrum Settings
-            </p>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: 14,
-                padding: "10px 14px",
-                background: G.glass,
-                borderRadius: 10,
-                border: `1px solid ${G.glassBorder}`,
-              }}
-            >
-              <div>
-                <p
-                  style={{
-                    fontSize: "0.85rem",
-                    color: G.text,
-                    fontWeight: 600,
-                  }}
-                >
-                  Pre-orders Active
-                </p>
-                <p style={{ fontSize: "0.7rem", color: G.muted }}>
-                  Pause to stop new orders from /trivandrum page
-                </p>
-              </div>
-              <GlassBtn
-                variant={tvmSettings.is_active ? "success" : "danger"}
-                onClick={async () => {
-                  await supabase
-                    .from("trivandrum_settings")
-                    .update({ is_active: !tvmSettings.is_active })
-                    .eq("id", tvmSettingsId);
-                  load();
-                }}
-              >
-                {tvmSettings.is_active ? "Active" : "Paused"}
-              </GlassBtn>
-            </div>
-            <p style={{ fontSize: "0.68rem", color: G.muted, marginBottom: 4 }}>
-              Pickup Location Name
-            </p>
-            <GlassInput
-              placeholder="e.g. Café Aromas, Kowdiar"
-              value={tvmSettingsDraft.pickup_name}
-              onChange={(v) =>
-                setTvmSettingsDraft((d) => ({ ...d, pickup_name: v }))
-              }
-            />
-            <p style={{ fontSize: "0.68rem", color: G.muted, marginBottom: 4 }}>
-              Pickup Address
-            </p>
-            <GlassInput
-              placeholder="Full address shown to customers"
-              value={tvmSettingsDraft.pickup_address}
-              onChange={(v) =>
-                setTvmSettingsDraft((d) => ({ ...d, pickup_address: v }))
-              }
-            />
-            <p style={{ fontSize: "0.68rem", color: G.muted, marginBottom: 4 }}>
-              Google Maps URL
-            </p>
-            <GlassInput
-              placeholder="https://maps.google.com/..."
-              value={tvmSettingsDraft.pickup_maps_url}
-              onChange={(v) =>
-                setTvmSettingsDraft((d) => ({ ...d, pickup_maps_url: v }))
-              }
-            />
-            <GlassBtn
-              variant="primary"
-              fullWidth
-              disabled={savingTvm}
-              onClick={async () => {
-                setSavingTvm(true);
-                await supabase
-                  .from("trivandrum_settings")
-                  .update({
-                    pickup_name: tvmSettingsDraft.pickup_name,
-                    pickup_address: tvmSettingsDraft.pickup_address,
-                    pickup_maps_url: tvmSettingsDraft.pickup_maps_url,
-                  })
-                  .eq("id", tvmSettingsId);
-                setSavingTvm(false);
-                load();
-                flash("Trivandrum settings saved ✓");
-              }}
-            >
-              {savingTvm ? "Saving…" : "Save Settings"}
-            </GlassBtn>
-          </div>
-
-          {/* Pending TVM payments */}
-          {tvmPending.length > 0 && (
-            <div style={{ marginBottom: 16 }}>
-              <p
-                style={{
-                  fontSize: "0.65rem",
-                  color: G.gold,
-                  letterSpacing: "0.12em",
-                  textTransform: "uppercase" as const,
-                  marginBottom: 12,
-                  fontWeight: 700,
-                }}
-              >
-                💳 Awaiting Payment ({tvmPending.length})
-              </p>
-              {tvmPending.map((o) => (
-                <div
-                  key={o.id}
-                  style={{
-                    background: G.glassStrong,
-                    border: `1px solid ${G.goldBorder}`,
-                    borderRadius: 12,
-                    padding: "12px 14px",
-                    marginBottom: 8,
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      marginBottom: 6,
-                    }}
-                  >
-                    <p
-                      style={{
-                        fontSize: "0.95rem",
-                        fontWeight: 700,
-                        color: G.text,
-                      }}
-                    >
-                      {o.customer_name}
-                    </p>
-                    <p
-                      style={{
-                        fontSize: "0.88rem",
-                        fontWeight: 700,
-                        color: G.gold,
-                      }}
-                    >
-                      ₹{o.total_price}
-                    </p>
-                  </div>
-                  <p
-                    style={{
-                      fontSize: "0.75rem",
-                      color: G.muted,
-                      marginBottom: 8,
-                    }}
-                  >
-                    📞 {o.phone}
-                  </p>
-                  {o.flavours && (
-                    <div
-                      style={{
-                        display: "flex",
-                        flexWrap: "wrap" as const,
-                        marginBottom: 8,
-                      }}
-                    >
-                      {Object.entries(o.flavours as Record<string, number>)
-                        .filter(([, q]) => q > 0)
-                        .map(([id, qty]) => (
-                          <FlavourPill
-                            key={id}
-                            name={productMap[id] || "Unknown"}
-                            qty={qty}
-                          />
-                        ))}
-                    </div>
-                  )}
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <GlassBtn
-                      variant="success"
-                      onClick={async () => {
-                        await supabase
-                          .from("orders")
-                          .update({
-                            status: "confirmed",
-                            payment_confirmed_at: new Date().toISOString(),
-                          })
-                          .eq("id", o.id);
-                        load();
-                        flash("TVM payment confirmed ✓");
-                      }}
-                    >
-                      ✓ Confirm Payment
-                    </GlassBtn>
-                    <GlassBtn
-                      variant="danger"
-                      onClick={async () => {
-                        if (!confirm(`Cancel order for ${o.customer_name}?`))
-                          return;
-                        await supabase
-                          .from("orders")
-                          .update({ status: "cancelled" })
-                          .eq("id", o.id);
-                        load();
-                        flash("Order cancelled");
-                      }}
-                    >
-                      Cancel
-                    </GlassBtn>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Confirmed TVM orders */}
-          <p
-            style={{
-              fontSize: "0.65rem",
-              color: G.muted,
-              letterSpacing: "0.12em",
-              textTransform: "uppercase" as const,
-              marginBottom: 12,
-              fontWeight: 700,
-            }}
-          >
-            ✓ Confirmed Orders ({tvmPaid.length})
-          </p>
-          {tvmPaid.length === 0 ? (
-            <div
-              style={{
-                background: G.glass,
-                border: `1px solid ${G.glassBorder}`,
-                borderRadius: 12,
-                padding: "32px 20px",
-                textAlign: "center" as const,
-              }}
-            >
-              <p style={{ fontSize: "1.5rem", marginBottom: 8 }}>🚂</p>
-              <p style={{ color: G.muted }}>
-                No confirmed Trivandrum orders yet
-              </p>
-            </div>
-          ) : (
-            tvmPaid.map((o) => (
-              <div
-                key={o.id}
-                style={{
-                  background: G.glassStrong,
-                  border: "1px solid rgba(52,217,123,0.2)",
-                  borderLeft: "3px solid rgba(52,217,123,0.5)",
-                  borderRadius: 12,
-                  padding: "12px 14px",
-                  marginBottom: 8,
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    marginBottom: 4,
-                  }}
-                >
-                  <p
-                    style={{
-                      fontSize: "0.95rem",
-                      fontWeight: 700,
-                      color: G.text,
-                    }}
-                  >
-                    {o.customer_name}
-                  </p>
-                  <p
-                    style={{
-                      fontSize: "0.85rem",
-                      fontWeight: 700,
-                      color: G.green,
-                    }}
-                  >
-                    ₹{o.total_price}
-                  </p>
-                </div>
-                <p
-                  style={{
-                    fontSize: "0.75rem",
-                    color: G.muted,
-                    marginBottom: 6,
-                  }}
-                >
-                  📞 {o.phone}
-                </p>
-                {o.flavours && (
-                  <div style={{ display: "flex", flexWrap: "wrap" as const }}>
-                    {Object.entries(o.flavours as Record<string, number>)
-                      .filter(([, q]) => q > 0)
-                      .map(([id, qty]) => (
-                        <FlavourPill
-                          key={id}
-                          name={productMap[id] || "Unknown"}
-                          qty={qty}
-                        />
-                      ))}
-                  </div>
-                )}
-              </div>
-            ))
-          )}
-        </div>
+        <TrivandrumAdminTab
+          tvmOrders={tvmOrders}
+          tvmSettings={tvmSettings}
+          setTvmSettings={setTvmSettings}
+          tvmSettingsId={tvmSettingsId}
+          savingTvm={savingTvm}
+          setSavingTvm={setSavingTvm}
+          tvmFlash={(text: string) => flash(text)}
+          load={load}
+          supabase={supabase}
+          productMap={productMap}
+          FlavourPill={FlavourPill}
+          GlassInput={GlassInput}
+          G={G}
+        />
       )}
 
       {/* Modals */}
