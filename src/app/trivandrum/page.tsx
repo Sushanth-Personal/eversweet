@@ -1,12 +1,11 @@
 "use client";
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import type { Product } from "@/lib/types";
 
 const WHATSAPP_NUMBER = "917907044368";
-const TRAVEL_CHARGE = 200;
 const TRIP_DATE = "";
 const PICKUP_LOCATIONS = [
   { name: "Thampanoor", area: "Railway Station area · South Trivandrum" },
@@ -14,8 +13,8 @@ const PICKUP_LOCATIONS = [
   { name: "Kazhakkoottam", area: "Near Technopark · North Trivandrum" },
 ];
 const BOXES = [
-  { count: 4, price: 599, label: "Box of 4" },
-  { count: 6, price: 849, label: "Box of 6" },
+  { count: 4, price: 699, label: "Box of 4" },
+  { count: 6, price: 899, label: "Box of 6" },
 ];
 
 function resolveBoxes(total: number) {
@@ -25,7 +24,7 @@ function resolveBoxes(total: number) {
   for (let b6 = Math.floor(total / 6); b6 >= 0; b6--) {
     const rem = total - b6 * 6;
     if (rem >= 0 && rem % 4 === 0) {
-      const price = (rem / 4) * 599 + b6 * 849;
+      const price = (rem / 4) * 699 + b6 * 899;
       if (!best || price < best.price) best = { b4: rem / 4, b6, price };
     }
   }
@@ -38,7 +37,7 @@ function resolveBoxes(total: number) {
   const rPrice = (n: number) => {
     for (let b6 = Math.floor(n / 6); b6 >= 0; b6--) {
       const r = n - b6 * 6;
-      if (r >= 0 && r % 4 === 0) return b6 * 849 + (r / 4) * 599;
+      if (r >= 0 && r % 4 === 0) return b6 * 899 + (r / 4) * 699;
     }
     return 0;
   };
@@ -116,17 +115,15 @@ export default function TrivandrumPage() {
   const [showMore, setShowMore] = useState(false);
   const [tripDate, setTripDate] = useState(TRIP_DATE);
   const [pickupLocations, setPickupLocations] = useState(PICKUP_LOCATIONS);
+  const flavourSectionRef = useRef<HTMLElement>(null);
+  const [inFlavourSection, setInFlavourSection] = useState(false);
 
   const totalPicked = Object.values(flavours).reduce((a, b) => a + b, 0);
   const resolved = resolveBoxes(totalPicked);
   const grandTotal = (resolved as any).isClean
-    ? (resolved as any).totalBoxPrice + TRAVEL_CHARGE
+    ? (resolved as any).totalBoxPrice
     : 0;
-  const boxLabel = (resolved as any).isClean
-    ? (resolved as any).boxes
-        .map((b: any) => `${b.qty > 1 ? b.qty + "× " : ""}${b.label}`)
-        .join(" + ")
-    : "";
+  const canShowPanel = totalPicked >= targetBox && (resolved as any).isClean;
 
   useEffect(() => {
     async function load() {
@@ -172,6 +169,18 @@ export default function TrivandrumPage() {
     load();
   }, []);
 
+  useEffect(() => {
+    function onScroll() {
+      const el = flavourSectionRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      setInFlavourSection(rect.top <= 0 && rect.bottom > 80);
+    }
+    window.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
   function adjust(id: string, delta: number) {
     setFlavours((prev) => {
       const next = (prev[id] || 0) + delta;
@@ -191,7 +200,6 @@ export default function TrivandrumPage() {
       })
       .filter(Boolean)
       .join("\n");
-
     const boxSummary = (resolved as any).isClean
       ? (resolved as any).boxes
           .map(
@@ -200,30 +208,29 @@ export default function TrivandrumPage() {
           )
           .join(", ")
       : `${totalPicked} mochis selected`;
-
     const lines = [
       `Hi! I'd like to pre-order from Eversweet Trivandrum 🍡`,
       ``,
       totalPicked > 0 ? `${boxSummary}` : `📦 I haven't finalized my box yet`,
-      (resolved as any).isClean ? `Travel charge - ₹${TRAVEL_CHARGE}` : ``,
-      (resolved as any).isClean ? `💰 Total - ₹${grandTotal}` : ``,
+      homeDelivery
+        ? `🛵 I need home delivery (Porter - charge to be confirmed)`
+        : ``,
+      !homeDelivery && selectedLocation ? `📍 Pickup: ${selectedLocation}` : ``,
+      (resolved as any).isClean
+        ? `💰 Mochi total - ₹${grandTotal}${homeDelivery ? " + Porter delivery" : ""}`
+        : ``,
       ``,
       totalPicked > 0 ? `Flavours:\n${flavourLines}` : ``,
-      selectedLocation ? `Pickup: ${selectedLocation}` : ``,
-      homeDelivery ? `🛵 I need home delivery (Porter)` : ``,
       ``,
       `Please share details to confirm my order!`,
     ]
       .filter((l) => l !== "")
       .join("\n");
-
     window.open(
       `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(lines)}`,
       "_blank",
     );
   }
-
-  const canShowPanel = totalPicked >= targetBox && (resolved as any).isClean;
 
   return (
     <main
@@ -258,8 +265,7 @@ export default function TrivandrumPage() {
             textTransform: "uppercase",
           }}
         >
-          We're coming to Trivandrum
-          {tripDate ? ` · ${tripDate}` : " · Sunday, 07 June"}
+          We're coming to Trivandrum{tripDate ? ` · ${tripDate}` : ""}
         </p>
       </div>
 
@@ -273,7 +279,6 @@ export default function TrivandrumPage() {
               key={p.id}
               src={p.image_url!}
               alt={p.name}
-              loading="eager" // ← above the fold, load immediately
               style={{
                 position: "absolute",
                 inset: 0,
@@ -361,7 +366,6 @@ export default function TrivandrumPage() {
           padding: "30px 24px 32px",
           background: "rgba(255,248,230,0.02)",
           borderBottom: "1px solid var(--border2)",
-          textAlign: "center",
         }}
       >
         <p
@@ -381,13 +385,36 @@ export default function TrivandrumPage() {
             fontSize: "0.84rem",
             color: "var(--cream-dim)",
             lineHeight: 1.85,
-            marginBottom: 12,
+            marginBottom: 20,
           }}
         >
           After receiving requests from several of you in Trivandrum, we're
           bringing Eversweet mochi to your city - made fresh in Kochi the same
           morning and hand-carried by train.
         </p>
+        <button
+          onClick={() =>
+            document
+              .getElementById("flavours-section")
+              ?.scrollIntoView({ behavior: "smooth", block: "start" })
+          }
+          style={{
+            width: "100%",
+            padding: "15px",
+            borderRadius: 12,
+            border: "2px solid var(--gold)",
+            background: "rgba(201,168,76,0.12)",
+            color: "var(--gold)",
+            fontSize: "1rem",
+            fontWeight: 700,
+            cursor: "pointer",
+            fontFamily: "'DM Sans', system-ui, sans-serif",
+            letterSpacing: "0.04em",
+            marginBottom: 16,
+          }}
+        >
+          Order Now →
+        </button>
         <p
           style={{
             fontSize: "0.84rem",
@@ -548,11 +575,14 @@ export default function TrivandrumPage() {
         </div>
       </section>
 
-      {/* STEP 1: FLAVOURS */}
+      {/* FLAVOURS */}
       <section
+        id="flavours-section"
+        ref={flavourSectionRef}
         style={{
           padding: "36px 24px",
           borderBottom: "1px solid var(--border2)",
+          paddingBottom: 100,
         }}
       >
         <div style={{ textAlign: "center", marginBottom: 22 }}>
@@ -661,7 +691,7 @@ export default function TrivandrumPage() {
                   marginBottom: 4,
                 }}
               >
-                ₹599
+                ₹699
               </p>
               <p style={{ fontSize: "0.68rem", color: "var(--cream-dim)" }}>
                 4 mochis
@@ -749,95 +779,13 @@ export default function TrivandrumPage() {
                   marginBottom: 4,
                 }}
               >
-                ₹849
+                ₹899
               </p>
               <p style={{ fontSize: "0.68rem", color: "var(--cream-dim)" }}>
                 6 mochis
               </p>
             </div>
           </button>
-        </div>
-
-        {/* Progress bar */}
-        <div
-          style={{
-            marginBottom: 16,
-            padding: "14px 18px",
-            background: "rgba(255,255,255,0.03)",
-            border: "1px solid rgba(255,255,255,0.07)",
-            borderRadius: 12,
-            minHeight: 90,
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 10,
-            }}
-          >
-            <span
-              style={{
-                fontSize: "0.82rem",
-                color:
-                  totalPicked >= targetBox ? "var(--gold)" : "var(--cream-dim)",
-                fontWeight: totalPicked >= targetBox ? 700 : 400,
-              }}
-            >
-              {totalPicked === 0
-                ? "Pick your mochis below"
-                : `${totalPicked} of ${targetBox} selected`}
-            </span>
-            <span
-              style={{
-                fontSize: "0.75rem",
-                color:
-                  totalPicked >= targetBox ? "var(--gold)" : "var(--cream-dim)",
-                fontWeight: 600,
-              }}
-            >
-              {targetBox === 6 ? "Box of 6 · ₹849" : "Box of 4 · ₹599"}
-            </span>
-          </div>
-          <div style={{ display: "flex", gap: 5 }}>
-            {Array.from({ length: targetBox }).map((_, i) => (
-              <div
-                key={i}
-                style={{
-                  flex: 1,
-                  height: 7,
-                  borderRadius: 99,
-                  background:
-                    i < totalPicked ? "var(--gold)" : "rgba(201,168,76,0.12)",
-                  transition: "background 0.25s",
-                }}
-              />
-            ))}
-          </div>
-          {totalPicked > 0 && totalPicked < targetBox && (
-            <p
-              style={{
-                fontSize: "0.7rem",
-                color: "var(--cream-dim)",
-                marginTop: 8,
-              }}
-            >
-              {targetBox - totalPicked} more to fill your box
-            </p>
-          )}
-          {totalPicked >= targetBox && (resolved as any).isClean && (
-            <p
-              style={{
-                fontSize: "0.75rem",
-                color: "var(--gold)",
-                fontWeight: 700,
-                marginTop: 8,
-              }}
-            >
-              Box of {targetBox} ready - tap Place Order below
-            </p>
-          )}
         </div>
 
         {/* Flavour grid */}
@@ -881,7 +829,6 @@ export default function TrivandrumPage() {
                     <img
                       src={getImg(p.name, p.image_url)}
                       alt={p.name}
-                      loading="lazy" // ← below the fold, defer loading
                       style={{
                         width: "100%",
                         height: 130,
@@ -1024,7 +971,7 @@ export default function TrivandrumPage() {
           </div>
         )}
 
-        {/* Awkward number nudge */}
+        {/* Nudge for awkward numbers */}
         {totalPicked > 0 &&
           !(resolved as any).isClean &&
           totalPicked >= 4 &&
@@ -1081,7 +1028,7 @@ export default function TrivandrumPage() {
                     {(resolved as any).nudge.addLabel}
                   </p>
                   <p style={{ fontSize: "1rem", fontWeight: 700 }}>
-                    ₹{(resolved as any).nudge.addPrice + TRAVEL_CHARGE}
+                    ₹{(resolved as any).nudge.addPrice}
                   </p>
                 </button>
                 <button
@@ -1129,50 +1076,15 @@ export default function TrivandrumPage() {
                     {(resolved as any).nudge.removeLabel}
                   </p>
                   <p style={{ fontSize: "1rem", fontWeight: 700 }}>
-                    ₹{(resolved as any).nudge.removePrice + TRAVEL_CHARGE}
+                    ₹{(resolved as any).nudge.removePrice}
                   </p>
                 </button>
               </div>
             </div>
           )}
-
-        {/* Place Order button */}
-        {canShowPanel && (
-          <button
-            onClick={() => {
-              setShowOrderSection(true);
-              setTimeout(
-                () =>
-                  document
-                    .getElementById("order-section")
-                    ?.scrollIntoView({ behavior: "smooth", block: "start" }),
-                50,
-              );
-            }}
-            style={{
-              marginTop: 16,
-              width: "100%",
-              padding: "16px",
-              borderRadius: 12,
-              border: "2px solid var(--gold)",
-              background: "rgba(201,168,76,0.1)",
-              color: "var(--gold)",
-              fontSize: "1.05rem",
-              fontWeight: 700,
-              cursor: "pointer",
-              fontFamily: "'DM Sans', system-ui, sans-serif",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 10,
-            }}
-          >
-            Place Order →
-          </button>
-        )}
       </section>
 
-      {/* INLINE ORDER SECTION */}
+      {/* ORDER SECTION - shown after Place Order tapped */}
       {showOrderSection && (
         <section
           id="order-section"
@@ -1217,7 +1129,7 @@ export default function TrivandrumPage() {
             />
           </div>
 
-          {/* Order summary */}
+          {/* Order summary card */}
           <div
             style={{
               background: "rgba(255,255,255,0.03)",
@@ -1255,10 +1167,16 @@ export default function TrivandrumPage() {
               }}
             >
               <span style={{ fontSize: "0.88rem", color: "var(--cream-dim)" }}>
-                Travel charge
+                {homeDelivery ? "🛵 Home delivery" : "📍 Pickup"}
               </span>
-              <span style={{ fontSize: "0.88rem", color: "var(--cream)" }}>
-                ₹{TRAVEL_CHARGE}
+              <span
+                style={{
+                  fontSize: "0.88rem",
+                  color: homeDelivery ? "rgba(200,184,154,0.6)" : "var(--gold)",
+                  fontWeight: 600,
+                }}
+              >
+                {homeDelivery ? "Confirmed on WhatsApp" : "Free"}
               </span>
             </div>
             <div
@@ -1287,8 +1205,10 @@ export default function TrivandrumPage() {
                 }}
               >
                 ₹{grandTotal}
+                {homeDelivery ? " + delivery" : ""}
               </span>
             </div>
+            {/* Flavour pills */}
             <div
               style={{
                 display: "flex",
@@ -1360,236 +1280,205 @@ export default function TrivandrumPage() {
             )}
           </div>
 
-          {/* Pickup location */}
-          <p
-            style={{
-              fontSize: "0.72rem",
-              fontWeight: 600,
-              letterSpacing: "0.1em",
-              textTransform: "uppercase" as const,
-              color: "var(--gold)",
-              marginBottom: 6,
-              opacity: 0.8,
-            }}
-          >
-            Choose pickup location
-          </p>
-          <p
-            style={{
-              fontSize: "0.76rem",
-              color: "var(--cream-dim)",
-              marginBottom: 12,
-              lineHeight: 1.6,
-            }}
-          >
-            Pick the location nearest to you - exact spot and time confirmed on
-            WhatsApp.
-          </p>
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              marginBottom: 20,
-            }}
-          >
-            {pickupLocations.map((loc) => (
-              <button
-                key={loc.name}
-                onClick={() =>
-                  setSelectedLocation((l) => (l === loc.name ? "" : loc.name))
-                }
-                style={{
-                  padding: "14px 18px",
-                  textAlign: "left" as const,
-                  width: "100%",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  border: `1.5px solid ${selectedLocation === loc.name ? "var(--gold)" : "rgba(255,255,255,0.08)"}`,
-                  background:
-                    selectedLocation === loc.name
-                      ? "rgba(201,168,76,0.06)"
-                      : "rgba(255,255,255,0.02)",
-                  borderRadius: 10,
-                  cursor: "pointer",
-                  fontFamily: "'DM Sans', system-ui, sans-serif",
-                  transition: "all 0.18s",
-                }}
-              >
-                <div>
-                  <p
-                    style={{
-                      fontSize: "0.95rem",
-                      fontWeight: 600,
-                      color:
-                        selectedLocation === loc.name
-                          ? "var(--gold)"
-                          : "var(--cream)",
-                      marginBottom: 2,
-                    }}
-                  >
-                    {loc.name}
-                  </p>
-                  <p style={{ fontSize: "0.68rem", color: "var(--cream-dim)" }}>
-                    {loc.area}
-                  </p>
-                </div>
-                {selectedLocation === loc.name && (
-                  <span
-                    style={{
-                      fontSize: "0.72rem",
-                      padding: "3px 10px",
-                      borderRadius: 20,
-                      background: "rgba(201,168,76,0.18)",
-                      color: "var(--gold)",
-                      fontWeight: 700,
-                      flexShrink: 0,
-                    }}
-                  >
-                    ✓
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-
-          {/* Home delivery */}
-          <div style={{ marginBottom: 24 }}>
+          {/* Pickup / Delivery toggle */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
             <button
-              onClick={() => setHomeDelivery((v) => !v)}
+              onClick={() => setHomeDelivery(false)}
               style={{
-                width: "100%",
-                padding: "14px 16px",
-                display: "flex",
-                alignItems: "flex-start",
-                gap: 12,
-                background: homeDelivery
-                  ? "rgba(201,168,76,0.06)"
-                  : "rgba(255,255,255,0.02)",
-                border: `1.5px solid ${homeDelivery ? "var(--gold)" : "rgba(255,255,255,0.08)"}`,
+                flex: 1,
+                padding: "12px",
                 borderRadius: 10,
+                border: `2px solid ${!homeDelivery ? "var(--gold)" : "rgba(255,255,255,0.08)"}`,
+                background: !homeDelivery
+                  ? "rgba(201,168,76,0.07)"
+                  : "rgba(255,255,255,0.02)",
+                color: !homeDelivery ? "var(--gold)" : "var(--cream-dim)",
+                fontSize: "0.88rem",
+                fontWeight: !homeDelivery ? 700 : 400,
                 cursor: "pointer",
                 fontFamily: "'DM Sans', system-ui, sans-serif",
-                textAlign: "left" as const,
+                textAlign: "center" as const,
                 transition: "all 0.18s",
               }}
             >
-              <div
+              📍 Pickup
+              <p
                 style={{
-                  width: 20,
-                  height: 20,
-                  borderRadius: 5,
-                  border: `2px solid ${homeDelivery ? "var(--gold)" : "rgba(255,255,255,0.2)"}`,
-                  background: homeDelivery ? "var(--gold)" : "transparent",
-                  flexShrink: 0,
-                  marginTop: 2,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  transition: "all 0.18s",
+                  fontSize: "0.65rem",
+                  marginTop: 3,
+                  fontWeight: 400,
+                  color: !homeDelivery
+                    ? "rgba(201,168,76,0.7)"
+                    : "rgba(200,184,154,0.4)",
                 }}
               >
-                {homeDelivery && (
-                  <span
+                Free · at pickup point
+              </p>
+            </button>
+            <button
+              onClick={() => setHomeDelivery(true)}
+              style={{
+                flex: 1,
+                padding: "12px",
+                borderRadius: 10,
+                border: `2px solid ${homeDelivery ? "var(--gold)" : "rgba(255,255,255,0.08)"}`,
+                background: homeDelivery
+                  ? "rgba(201,168,76,0.07)"
+                  : "rgba(255,255,255,0.02)",
+                color: homeDelivery ? "var(--gold)" : "var(--cream-dim)",
+                fontSize: "0.88rem",
+                fontWeight: homeDelivery ? 700 : 400,
+                cursor: "pointer",
+                fontFamily: "'DM Sans', system-ui, sans-serif",
+                textAlign: "center" as const,
+                transition: "all 0.18s",
+              }}
+            >
+              🛵 Home Delivery
+              <p
+                style={{
+                  fontSize: "0.65rem",
+                  marginTop: 3,
+                  fontWeight: 400,
+                  color: homeDelivery
+                    ? "rgba(201,168,76,0.7)"
+                    : "rgba(200,184,154,0.4)",
+                }}
+              >
+                Extra charge · Porter
+              </p>
+            </button>
+          </div>
+
+          {/* Pickup location selector */}
+          {!homeDelivery && (
+            <>
+              <p
+                style={{
+                  fontSize: "0.72rem",
+                  fontWeight: 600,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase" as const,
+                  color: "var(--gold)",
+                  marginBottom: 6,
+                  opacity: 0.8,
+                }}
+              >
+                Choose pickup location
+              </p>
+              <p
+                style={{
+                  fontSize: "0.76rem",
+                  color: "var(--cream-dim)",
+                  marginBottom: 12,
+                  lineHeight: 1.6,
+                }}
+              >
+                Pick the nearest one — exact spot and time confirmed on
+                WhatsApp.
+              </p>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                  marginBottom: 24,
+                }}
+              >
+                {pickupLocations.map((loc) => (
+                  <button
+                    key={loc.name}
+                    onClick={() =>
+                      setSelectedLocation((l) =>
+                        l === loc.name ? "" : loc.name,
+                      )
+                    }
                     style={{
-                      color: "#160c08",
-                      fontSize: "0.7rem",
-                      fontWeight: 900,
+                      padding: "14px 18px",
+                      textAlign: "left" as const,
+                      width: "100%",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      border: `1.5px solid ${selectedLocation === loc.name ? "var(--gold)" : "rgba(255,255,255,0.08)"}`,
+                      background:
+                        selectedLocation === loc.name
+                          ? "rgba(201,168,76,0.06)"
+                          : "rgba(255,255,255,0.02)",
+                      borderRadius: 10,
+                      cursor: "pointer",
+                      fontFamily: "'DM Sans', system-ui, sans-serif",
+                      transition: "all 0.18s",
                     }}
                   >
-                    ✓
-                  </span>
-                )}
+                    <div>
+                      <p
+                        style={{
+                          fontSize: "0.95rem",
+                          fontWeight: 600,
+                          color:
+                            selectedLocation === loc.name
+                              ? "var(--gold)"
+                              : "var(--cream)",
+                          marginBottom: 2,
+                        }}
+                      >
+                        {loc.name}
+                      </p>
+                      <p
+                        style={{
+                          fontSize: "0.68rem",
+                          color: "var(--cream-dim)",
+                        }}
+                      >
+                        {loc.area}
+                      </p>
+                    </div>
+                    {selectedLocation === loc.name && (
+                      <span
+                        style={{
+                          fontSize: "0.72rem",
+                          padding: "3px 10px",
+                          borderRadius: 20,
+                          background: "rgba(201,168,76,0.18)",
+                          color: "var(--gold)",
+                          fontWeight: 700,
+                          flexShrink: 0,
+                        }}
+                      >
+                        ✓
+                      </span>
+                    )}
+                  </button>
+                ))}
               </div>
-              <div>
-                <p
-                  style={{
-                    fontSize: "0.95rem",
-                    fontWeight: 600,
-                    color: homeDelivery ? "var(--gold)" : "var(--cream)",
-                    marginBottom: 3,
-                  }}
-                >
-                  I need home delivery
-                </p>
-                <p
-                  style={{
-                    fontSize: "0.72rem",
-                    color: "var(--cream-dim)",
-                    lineHeight: 1.6,
-                  }}
-                >
-                  Porter delivery from your nearest pickup point. Additional
-                  charge applies - approximate rates below.
-                </p>
-              </div>
-            </button>
-            {homeDelivery && (
-              <div
+            </>
+          )}
+
+          {/* Home delivery note */}
+          {homeDelivery && (
+            <div
+              style={{
+                marginBottom: 24,
+                padding: "14px 16px",
+                background: "rgba(255,255,255,0.03)",
+                border: "1px solid rgba(201,168,76,0.2)",
+                borderRadius: 10,
+              }}
+            >
+              <p
                 style={{
-                  marginTop: 10,
-                  padding: "14px 16px",
-                  background: "rgba(255,255,255,0.03)",
-                  border: "1px solid rgba(255,255,255,0.07)",
-                  borderRadius: 10,
+                  fontSize: "0.82rem",
+                  color: "var(--cream-dim)",
+                  lineHeight: 1.7,
                 }}
               >
-                <p
-                  style={{
-                    fontSize: "0.75rem",
-                    fontWeight: 600,
-                    color: "var(--cream)",
-                    marginBottom: 8,
-                  }}
-                >
-                  🛵 Approximate Porter charges
-                </p>
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 6,
-                    marginBottom: 10,
-                  }}
-                >
-                  {[
-                    ["~1.5 km", "≈ ₹55"],
-                    ["~4 km", "≈ ₹80"],
-                    ["~7 km", "≈ ₹110"],
-                    ["~13 km", "≈ ₹170"],
-                  ].map(([dist, charge]) => (
-                    <div
-                      key={dist}
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        fontSize: "0.75rem",
-                      }}
-                    >
-                      <span style={{ color: "var(--cream-dim)" }}>
-                        {dist} from pickup
-                      </span>
-                      <span style={{ color: "var(--gold)", fontWeight: 600 }}>
-                        {charge}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-                <p
-                  style={{
-                    fontSize: "0.68rem",
-                    color: "rgba(200,184,154,0.5)",
-                    lineHeight: 1.6,
-                  }}
-                >
-                  Approx ₹40 base + ₹10/km. Share your address on WhatsApp - we
-                  confirm the exact charge and include it in your total. Nothing
-                  to pay on delivery.
-                </p>
-              </div>
-            )}
-          </div>
+                🛵 Share your address on WhatsApp after placing your order.
+                We'll confirm the exact Porter delivery charge and include it in
+                your total. Nothing to pay separately on delivery.
+              </p>
+            </div>
+          )}
 
           {/* WhatsApp CTA */}
           <button
@@ -1613,7 +1502,8 @@ export default function TrivandrumPage() {
             }}
           >
             <span style={{ fontSize: "1.3rem" }}>📲</span>
-            Order via WhatsApp - ₹{grandTotal}
+            Order via WhatsApp · ₹{grandTotal}
+            {homeDelivery ? " + delivery" : ""}
           </button>
           <p
             style={{
@@ -1627,6 +1517,126 @@ export default function TrivandrumPage() {
             We'll confirm pickup details and payment on WhatsApp.
           </p>
         </section>
+      )}
+
+      {/* STICKY TOP — progress bar */}
+      {!showOrderSection && inFlavourSection && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: "50%",
+            transform: "translateX(-50%)",
+            width: "100%",
+            maxWidth: 480,
+            zIndex: 200,
+            background: "rgba(22,12,8,0.97)",
+            borderBottom: "1px solid rgba(201,168,76,0.2)",
+            padding: "10px 20px",
+            backdropFilter: "blur(12px)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 7,
+            }}
+          >
+            <span
+              style={{
+                fontSize: "0.82rem",
+                color:
+                  totalPicked >= targetBox ? "var(--gold)" : "var(--cream-dim)",
+                fontWeight: totalPicked >= targetBox ? 700 : 400,
+              }}
+            >
+              {totalPicked === 0
+                ? "Pick your mochis below"
+                : `${totalPicked} of ${targetBox} selected`}
+            </span>
+            <span
+              style={{
+                fontSize: "0.75rem",
+                color:
+                  totalPicked >= targetBox ? "var(--gold)" : "var(--cream-dim)",
+                fontWeight: 600,
+              }}
+            >
+              {targetBox === 6 ? "Box of 6 · ₹899" : "Box of 4 · ₹699"}
+            </span>
+          </div>
+          <div style={{ display: "flex", gap: 4 }}>
+            {Array.from({ length: targetBox }).map((_, i) => (
+              <div
+                key={i}
+                style={{
+                  flex: 1,
+                  height: 5,
+                  borderRadius: 99,
+                  background:
+                    i < totalPicked ? "var(--gold)" : "rgba(201,168,76,0.15)",
+                  transition: "background 0.25s",
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* STICKY BOTTOM — Place Order */}
+      {!showOrderSection && inFlavourSection && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 0,
+            left: "50%",
+            transform: "translateX(-50%)",
+            width: "100%",
+            maxWidth: 480,
+            zIndex: 200,
+            padding: "12px 20px 20px",
+            background: "rgba(22,12,8,0.97)",
+            borderTop: "1px solid rgba(201,168,76,0.15)",
+            backdropFilter: "blur(12px)",
+          }}
+        >
+          <button
+            onClick={() => {
+              if (!canShowPanel) return;
+              setShowOrderSection(true);
+              setTimeout(
+                () =>
+                  document
+                    .getElementById("order-section")
+                    ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+                50,
+              );
+            }}
+            style={{
+              width: "100%",
+              padding: "15px",
+              borderRadius: 12,
+              border: "none",
+              background: canShowPanel
+                ? "linear-gradient(135deg, rgba(201,168,76,0.95), rgba(180,148,55,0.9))"
+                : "rgba(201,168,76,0.12)",
+              color: canShowPanel ? "#160c08" : "rgba(201,168,76,0.4)",
+              fontSize: "1rem",
+              fontWeight: 700,
+              cursor: canShowPanel ? "pointer" : "default",
+              fontFamily: "'DM Sans', system-ui, sans-serif",
+              transition: "all 0.2s",
+            }}
+          >
+            {canShowPanel
+              ? `Place Order · ₹${(resolved as any).totalBoxPrice}`
+              : totalPicked === 0
+                ? "Select flavours to order →"
+                : `${targetBox - Math.min(totalPicked, targetBox)} more to fill your box`}
+          </button>
+        </div>
       )}
 
       {/* FAQ */}
@@ -1667,8 +1677,8 @@ export default function TrivandrumPage() {
                 "A Japanese dessert - soft, chewy rice flour on the outside, cold creamy fruit filling inside. Made fresh in Kochi the same morning it reaches you.",
               ],
               [
-                "Why the travel charge?",
-                "We travel from Kochi to Trivandrum by train, carrying your mochi fresh. The ₹200 is a one-time charge per order, not per box.",
+                "Is pickup free?",
+                "Yes! Pickup at any of our Trivandrum locations is completely free. Home delivery via Porter is available at an extra charge based on your distance.",
               ],
               [
                 "How does pickup work?",
@@ -1676,7 +1686,7 @@ export default function TrivandrumPage() {
               ],
               [
                 "Can I get home delivery?",
-                "Yes - Porter delivery from your nearest pickup point. Share your address on WhatsApp, we confirm the exact charge and add it to your total. No separate payment on delivery.",
+                "Yes - Porter delivery from your nearest pickup point. Share your address on WhatsApp after ordering, we confirm the exact charge and include it in your total.",
               ],
               [
                 "Can I cancel?",
