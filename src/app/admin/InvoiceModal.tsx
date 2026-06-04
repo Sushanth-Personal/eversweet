@@ -422,34 +422,82 @@ export function InvoiceModal({ onClose }: { onClose: () => void }) {
             )}
           </div>
 
-          {/* Delivery date + slot — full row tappable */}
-          <label style={lbl}>Delivery date & time</label>
+          {/* Delivery date chips */}
+          <label style={lbl}>Delivery date</label>
           <div
             style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 8,
-              marginBottom: 10,
+              display: "flex",
+              gap: 6,
+              marginBottom: 8,
+              flexWrap: "wrap" as const,
             }}
           >
-            <input
-              type="date"
-              style={{ ...inp, marginBottom: 0, colorScheme: "dark" as const }}
-              value={deliveryDate}
-              onChange={(e) => setDeliveryDate(e.target.value)}
-            />
-            <select
-              style={{ ...inp, marginBottom: 0, colorScheme: "dark" as const }}
-              value={deliverySlot}
-              onChange={(e) => setDeliverySlot(e.target.value)}
-            >
-              {ALL_SLOTS.map((s) => (
-                <option key={s} value={s} style={{ background: "#0d1520" }}>
-                  {s}
-                </option>
-              ))}
-            </select>
+            {[0, 1, 2, 3].map((offset) => {
+              const d = new Date(Date.now() + offset * 86400000);
+              const val = d.toISOString().split("T")[0];
+              const label =
+                offset === 0
+                  ? "Today"
+                  : offset === 1
+                    ? "Tomorrow"
+                    : d.toLocaleDateString("en-IN", {
+                        weekday: "short",
+                        day: "numeric",
+                        month: "short",
+                      });
+              return (
+                <button
+                  key={val}
+                  onClick={() => setDeliveryDate(val)}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: 20,
+                    border: `1px solid ${deliveryDate === val ? G.goldBorder : G.glassBorder}`,
+                    background: deliveryDate === val ? G.goldGlass : G.glass,
+                    color: deliveryDate === val ? G.gold : G.sub,
+                    fontSize: "0.8rem",
+                    fontWeight: deliveryDate === val ? 700 : 400,
+                    cursor: "pointer",
+                    fontFamily: "system-ui",
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
+
+          {/* Slot chips */}
+          <label style={lbl}>Time slot</label>
+          <div
+            style={{
+              display: "flex",
+              gap: 6,
+              marginBottom: 14,
+              flexWrap: "wrap" as const,
+            }}
+          >
+            {ALL_SLOTS.map((s) => (
+              <button
+                key={s}
+                onClick={() => setDeliverySlot(s)}
+                style={{
+                  padding: "7px 12px",
+                  borderRadius: 20,
+                  border: `1px solid ${deliverySlot === s ? G.goldBorder : G.glassBorder}`,
+                  background: deliverySlot === s ? G.goldGlass : G.glass,
+                  color: deliverySlot === s ? G.gold : G.sub,
+                  fontSize: "0.78rem",
+                  fontWeight: deliverySlot === s ? 700 : 400,
+                  cursor: "pointer",
+                  fontFamily: "system-ui",
+                }}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+
           {deliveryDate && (
             <p
               style={{
@@ -654,16 +702,20 @@ export function InvoiceNavBtn({ onClick }: { onClick: () => void }) {
       style={{
         display: "flex",
         alignItems: "center",
-        padding: "6px 10px",
+        gap: 7,
+        padding: "6px 14px",
         borderRadius: 9,
         border: "1px solid rgba(240,176,64,0.45)",
         background: "rgba(240,176,64,0.12)",
         color: "#f0b040",
-        fontSize: "1.2rem",
+        fontSize: "0.8rem",
+        fontWeight: 700,
         cursor: "pointer",
+        fontFamily: "system-ui, sans-serif",
+        whiteSpace: "nowrap" as const,
       }}
     >
-      🧾
+      🧾 <span>Invoice</span>
     </button>
   );
 }
