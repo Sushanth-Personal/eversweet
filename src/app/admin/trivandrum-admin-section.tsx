@@ -59,6 +59,13 @@ export function TrivandrumAdminTab({
     description: "",
     amount: "",
   });
+  const [analytics, setAnalytics] = React.useState<{
+    page_view: number;
+    order_now_tap: number;
+    reached_flavours: number;
+    place_order_tap: number;
+    whatsapp_open: number;
+  } | null>(null);
 
   React.useEffect(() => {
     // Store trip_date in ISO format in Supabase (YYYY-MM-DD), format for display separately
@@ -86,7 +93,28 @@ export function TrivandrumAdminTab({
         .order("date", { ascending: false });
       if (data) setTvmExpenses(data);
     }
+    async function loadAnalytics() {
+      const events = [
+        "page_view",
+        "order_now_tap",
+        "reached_flavours",
+        "place_order_tap",
+        "whatsapp_open",
+      ];
+      const counts: any = {};
+      await Promise.all(
+        events.map(async (ev) => {
+          const { count } = await supabase
+            .from("trivandrum_events")
+            .select("*", { count: "exact", head: true })
+            .eq("event", ev);
+          counts[ev] = count || 0;
+        }),
+      );
+      setAnalytics(counts);
+    }
     loadExpenses();
+    loadAnalytics();
   }, []);
 
   const totalExpenses = tvmExpenses.reduce(
@@ -108,7 +136,7 @@ export function TrivandrumAdminTab({
     const { error } = await supabase
       .from("trivandrum_settings")
       .update(payload)
-      .eq("id", tvmSettingsId);
+      .eq("id", tvmSettingsId || "0c62e1c2-4d73-457b-bf49-bb077ebdba3e");
     if (error) {
       tvmFlash("Save failed: " + error.message);
     } else {
@@ -220,6 +248,194 @@ export function TrivandrumAdminTab({
           </p>
           <p style={S.sub}>After mochi + trip expenses</p>
         </div>
+      </div>
+
+      {/* ── Funnel analytics ─────────────────────────────────── */}
+      <div style={{ ...S.card, marginBottom: 14 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 14,
+          }}
+        >
+          <p style={{ ...S.label, marginBottom: 0 }}>Customer Funnel</p>
+          <button
+            onClick={async () => {
+              const events = [
+                "page_view",
+                "order_now_tap",
+                "reached_flavours",
+                "place_order_tap",
+                "whatsapp_open",
+              ];
+              const counts: any = {};
+              await Promise.all(
+                events.map(async (ev) => {
+                  const { count } = await supabase
+                    .from("trivandrum_events")
+                    .select("*", { count: "exact", head: true })
+                    .eq("event", ev);
+                  counts[ev] = count || 0;
+                }),
+              );
+              setAnalytics(counts);
+            }}
+            style={{
+              fontSize: "0.7rem",
+              color: "#60a5fa",
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              fontFamily: "system-ui",
+            }}
+          >
+            ↻ Refresh
+          </button>
+        </div>
+        {analytics === null ? (
+          <p
+            style={{
+              fontSize: "0.78rem",
+              color: "#5a6a80",
+              textAlign: "center",
+              padding: "8px 0",
+            }}
+          >
+            Loading…
+          </p>
+        ) : (
+          (() => {
+            const steps = [
+              { label: "Visited page", key: "page_view", icon: "👁" },
+              {
+                label: "Reached flavours",
+                key: "reached_flavours",
+                icon: "🍡",
+              },
+              { label: "Tapped Order Now", key: "order_now_tap", icon: "👆" },
+              {
+                label: "Tapped Place Order",
+                key: "place_order_tap",
+                icon: "✅",
+              },
+              { label: "Opened WhatsApp", key: "whatsapp_open", icon: "📲" },
+            ];
+            const base = analytics.page_view || 1;
+            return (
+              <div>
+                {steps.map((step, i) => {
+                  const count = (analytics as any)[step.key] || 0;
+                  const pct = Math.round((count / base) * 100);
+                  const dropPct =
+                    i > 0
+                      ? Math.round(
+                          (((analytics as any)[steps[i - 1].key] - count) /
+                            Math.max((analytics as any)[steps[i - 1].key], 1)) *
+                            100,
+                        )
+                      : 0;
+                  return (
+                    <div key={step.key} style={{ marginBottom: 14 }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          marginBottom: 5,
+                        }}
+                      >
+                        <span style={{ fontSize: "0.8rem", color: "#f0f4ff" }}>
+                          {step.icon} {step.label}
+                        </span>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                          }}
+                        >
+                          {i > 0 && dropPct > 0 && (
+                            <span
+                              style={{ fontSize: "0.65rem", color: "#ff5c6c" }}
+                            >
+                              -{dropPct}%
+                            </span>
+                          )}
+                          <span
+                            style={{
+                              fontSize: "0.88rem",
+                              fontWeight: 700,
+                              color:
+                                i === 0
+                                  ? "#f0f4ff"
+                                  : pct > 50
+                                    ? "#34d97b"
+                                    : pct > 20
+                                      ? "#f0b040"
+                                      : "#ff5c6c",
+                            }}
+                          >
+                            {count}
+                          </span>
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          height: 6,
+                          background: "rgba(255,255,255,0.06)",
+                          borderRadius: 99,
+                          overflow: "hidden",
+                        }}
+                      >
+                        <div
+                          style={{
+                            height: "100%",
+                            width: `${pct}%`,
+                            background:
+                              i === 0
+                                ? "rgba(96,165,250,0.6)"
+                                : i === steps.length - 1
+                                  ? "#34d97b"
+                                  : "rgba(240,176,64,0.6)",
+                            borderRadius: 99,
+                            transition: "width 0.4s",
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+                <div
+                  style={{
+                    marginTop: 10,
+                    paddingTop: 10,
+                    borderTop: "1px solid rgba(255,255,255,0.07)",
+                    display: "flex",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <span style={{ fontSize: "0.72rem", color: "#5a6a80" }}>
+                    WhatsApp conversion
+                  </span>
+                  <span
+                    style={{
+                      fontSize: "0.88rem",
+                      fontWeight: 700,
+                      color: "#34d97b",
+                    }}
+                  >
+                    {base > 0
+                      ? Math.round((analytics.whatsapp_open / base) * 100)
+                      : 0}
+                    %
+                  </span>
+                </div>
+              </div>
+            );
+          })()
+        )}
       </div>
 
       {/* Profit breakdown */}
@@ -443,7 +659,10 @@ export function TrivandrumAdminTab({
               await supabase
                 .from("trivandrum_settings")
                 .update({ is_active: next })
-                .eq("id", tvmSettingsId);
+                .eq(
+                  "id",
+                  tvmSettingsId || "0c62e1c2-4d73-457b-bf49-bb077ebdba3e",
+                );
               tvmFlash(next ? "Pre-orders active" : "Pre-orders paused");
             }}
             style={{

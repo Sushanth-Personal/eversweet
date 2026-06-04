@@ -125,6 +125,10 @@ export default function TrivandrumPage() {
     : 0;
   const canShowPanel = totalPicked >= targetBox && (resolved as any).isClean;
 
+  async function track(event: string) {
+    await supabase.from("trivandrum_events").insert({ event });
+  }
+
   useEffect(() => {
     async function load() {
       const [{ data: p }, { data: s }] = await Promise.all([
@@ -167,14 +171,22 @@ export default function TrivandrumPage() {
       setLoading(false);
     }
     load();
+    track("page_view");
   }, []);
+
+  const reachedFlavoursRef = useRef(false);
 
   useEffect(() => {
     function onScroll() {
       const el = flavourSectionRef.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
-      setInFlavourSection(rect.top <= 0 && rect.bottom > 80);
+      const inSection = rect.top <= 0 && rect.bottom > 80;
+      setInFlavourSection(inSection);
+      if (inSection && !reachedFlavoursRef.current) {
+        reachedFlavoursRef.current = true;
+        track("reached_flavours");
+      }
     }
     window.addEventListener("scroll", onScroll, { passive: true });
     onScroll();
@@ -226,6 +238,7 @@ export default function TrivandrumPage() {
     ]
       .filter((l) => l !== "")
       .join("\n");
+    track("whatsapp_open");
     window.open(
       `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(lines)}`,
       "_blank",
@@ -268,8 +281,7 @@ export default function TrivandrumPage() {
             textTransform: "uppercase",
           }}
         >
-          We're coming to Trivandrum
-          {tripDate ? ` · ${tripDate}` : " . Sunday 7th June"}
+          We're coming to Trivandrum{tripDate ? ` · ${tripDate}` : " . Sunday 7th June"}
         </p>
       </div>
 
@@ -397,11 +409,12 @@ export default function TrivandrumPage() {
           morning and hand-carried by train.
         </p>
         <button
-          onClick={() =>
+          onClick={() => {
+            track("order_now_tap");
             document
               .getElementById("flavours-section")
-              ?.scrollIntoView({ behavior: "smooth", block: "start" })
-          }
+              ?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }}
           style={{
             width: "100%",
             padding: "15px",
@@ -1609,6 +1622,7 @@ export default function TrivandrumPage() {
           <button
             onClick={() => {
               if (!canShowPanel) return;
+              track("place_order_tap");
               setShowOrderSection(true);
               setTimeout(
                 () =>
