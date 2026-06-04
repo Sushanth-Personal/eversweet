@@ -254,6 +254,9 @@ export default function TrivandrumPage() {
           background: "var(--gold)",
           padding: "10px 20px",
           textAlign: "center",
+          position: "sticky",
+          top: 0,
+          zIndex: 300,
         }}
       >
         <p
@@ -265,7 +268,8 @@ export default function TrivandrumPage() {
             textTransform: "uppercase",
           }}
         >
-          We're coming to Trivandrum{tripDate ? ` · ${tripDate}` : ""}
+          We're coming to Trivandrum
+          {tripDate ? ` · ${tripDate}` : " . Sunday 7th June"}
         </p>
       </div>
 
