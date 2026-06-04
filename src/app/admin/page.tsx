@@ -5,7 +5,7 @@ import { SmartOrderModal, SmartOrderNavBtn } from "./SmartOrderModal";
 import { supabase } from "@/lib/supabase";
 import type { Product, BoxSize, Order } from "@/lib/types";
 import { TrivandrumAdminTab } from "./trivandrum-admin-section";
-
+import { InvoiceModal, InvoiceNavBtn } from "./InvoiceModal";
 type Tab =
   | "cook"
   | "pending_payment"
@@ -4193,6 +4193,8 @@ export default function AdminPage() {
   const [editRemarks, setEditRemarks] = useState("");
   const [editInsta, setEditInsta] = useState("");
   const [editingOrder, setEditingOrder] = useState<ExtOrder | null>(null);
+  const [showInvoice, setShowInvoice] = useState(false);
+
   const [np, setNp] = useState({
     name: "",
     description: "",
@@ -4743,6 +4745,7 @@ export default function AdminPage() {
             Sign In
           </button>
         </div>
+        {showInvoice && <InvoiceModal onClose={() => setShowInvoice(false)} />}
       </main>
     );
   }
@@ -4813,6 +4816,7 @@ export default function AdminPage() {
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <SmartOrderNavBtn onClick={() => setShowSmartOrder(true)} />
+            <InvoiceNavBtn onClick={() => setShowInvoice(true)} />
             <button
               onClick={load}
               style={{
@@ -6356,6 +6360,8 @@ export default function AdminPage() {
           }}
         />
       )}
+
+      {showInvoice && <InvoiceModal onClose={() => setShowInvoice(false)} />}
 
       {/* BOTTOM NAV */}
       <div

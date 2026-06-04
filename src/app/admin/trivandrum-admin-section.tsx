@@ -59,6 +59,7 @@ export function TrivandrumAdminTab({
     description: "",
     amount: "",
   });
+  const [timeData, setTimeData] = React.useState<Record<string, number>>({});
   const [analytics, setAnalytics] = React.useState<{
     page_view: number;
     order_now_tap: number;
@@ -113,8 +114,36 @@ export function TrivandrumAdminTab({
       );
       setAnalytics(counts);
     }
+    async function loadTimeData() {
+      const sections = [
+        "page_exit",
+        "section_story",
+        "section_product_story",
+        "section_how_it_works",
+        "section_flavours",
+      ];
+      const avgs: Record<string, number> = {};
+      await Promise.all(
+        sections.map(async (ev) => {
+          const { data } = await supabase
+            .from("trivandrum_events")
+            .select("seconds")
+            .eq("event", ev)
+            .not("seconds", "is", null);
+          if (data && data.length > 0) {
+            const avg = Math.round(
+              data.reduce((s: number, r: any) => s + (r.seconds || 0), 0) /
+                data.length,
+            );
+            avgs[ev] = avg;
+          }
+        }),
+      );
+      setTimeData(avgs);
+    }
     loadExpenses();
     loadAnalytics();
+    loadTimeData();
   }, []);
 
   const totalExpenses = tvmExpenses.reduce(
@@ -281,6 +310,31 @@ export function TrivandrumAdminTab({
                 }),
               );
               setAnalytics(counts);
+              const sections = [
+                "page_exit",
+                "section_story",
+                "section_product_story",
+                "section_how_it_works",
+                "section_flavours",
+              ];
+              const avgs: Record<string, number> = {};
+              await Promise.all(
+                sections.map(async (ev) => {
+                  const { data } = await supabase
+                    .from("trivandrum_events")
+                    .select("seconds")
+                    .eq("event", ev)
+                    .not("seconds", "is", null);
+                  if (data && data.length > 0)
+                    avgs[ev] = Math.round(
+                      data.reduce(
+                        (s: number, r: any) => s + (r.seconds || 0),
+                        0,
+                      ) / data.length,
+                    );
+                }),
+              );
+              setTimeData(avgs);
             }}
             style={{
               fontSize: "0.7rem",
@@ -432,6 +486,80 @@ export function TrivandrumAdminTab({
                     %
                   </span>
                 </div>
+
+                {/* Time on page */}
+                {Object.keys(timeData).length > 0 && (
+                  <div
+                    style={{
+                      marginTop: 14,
+                      paddingTop: 14,
+                      borderTop: "1px solid rgba(255,255,255,0.07)",
+                    }}
+                  >
+                    <p
+                      style={{
+                        fontSize: "0.62rem",
+                        color: "#5a6a80",
+                        letterSpacing: "0.12em",
+                        textTransform: "uppercase" as const,
+                        fontWeight: 700,
+                        marginBottom: 12,
+                      }}
+                    >
+                      Avg Time Spent
+                    </p>
+                    {[
+                      { key: "page_exit", label: "⏱ Total on page" },
+                      { key: "section_story", label: "📖 Story section" },
+                      {
+                        key: "section_product_story",
+                        label: "✨ Product story",
+                      },
+                      { key: "section_how_it_works", label: "📋 How it works" },
+                      { key: "section_flavours", label: "🍡 Flavours section" },
+                    ]
+                      .filter((s) => timeData[s.key])
+                      .map((s) => {
+                        const secs = timeData[s.key];
+                        const display =
+                          secs >= 60
+                            ? `${Math.floor(secs / 60)}m ${secs % 60}s`
+                            : `${secs}s`;
+                        const quality =
+                          secs >= 30
+                            ? "#34d97b"
+                            : secs >= 10
+                              ? "#f0b040"
+                              : "#ff5c6c";
+                        return (
+                          <div
+                            key={s.key}
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              marginBottom: 8,
+                            }}
+                          >
+                            <span
+                              style={{ fontSize: "0.78rem", color: "#a8b4cc" }}
+                            >
+                              {s.label}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: "0.88rem",
+                                fontWeight: 700,
+                                color: quality,
+                              }}
+                            >
+                              {display}
+                            </span>
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
               </div>
             );
           })()
