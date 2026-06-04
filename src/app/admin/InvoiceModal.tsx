@@ -153,49 +153,85 @@ export function InvoiceModal({ onClose }: { onClose: () => void }) {
 
   async function generateImage(): Promise<Blob | null> {
     const canvas = document.createElement("canvas");
-    const scale = 2;
-    const W = 540,
-      PAD = 48;
+    const scale = 3;
+    const W = 600;
+    const PAD_X = 44;
+    const PAD_Y = 52;
+    const GOLD_BAR = 10;
+    const LINE_H = 30;
+    const FONT_SIZE = 15;
+
     const lines = billText.split("\n");
-    const lineH = 36;
-    const H = PAD * 2 + lines.length * lineH + 40;
+
+    // Calculate exact height needed
+    const contentH = lines.length * LINE_H;
+    const H = GOLD_BAR * 2 + PAD_Y * 2 + contentH;
+
     canvas.width = W * scale;
     canvas.height = H * scale;
     const ctx = canvas.getContext("2d")!;
     ctx.scale(scale, scale);
 
-    // Background
+    // White background
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, W, H);
 
     // Gold top bar
     ctx.fillStyle = "#c9a84c";
-    ctx.fillRect(0, 0, W, 8);
-
-    // Text
-    ctx.font = "14px 'Courier New', monospace";
-    ctx.fillStyle = "#111111";
-    lines.forEach((line, i) => {
-      // Center the header lines
-      if (i < 2) {
-        ctx.textAlign = "center";
-        ctx.font =
-          i === 0
-            ? "bold 16px 'Courier New', monospace"
-            : "14px 'Courier New', monospace";
-        ctx.fillText(line, W / 2, PAD + 16 + i * lineH);
-      } else {
-        ctx.textAlign = "left";
-        ctx.font = "13px 'Courier New', monospace";
-        ctx.fillText(line, PAD, PAD + 16 + i * lineH);
-      }
-    });
+    ctx.fillRect(0, 0, W, GOLD_BAR);
 
     // Gold bottom bar
     ctx.fillStyle = "#c9a84c";
-    ctx.fillRect(0, H - 8, W, 8);
+    ctx.fillRect(0, H - GOLD_BAR, W, GOLD_BAR);
 
-    return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    // Render lines
+    ctx.fillStyle = "#111111";
+    lines.forEach((line, i) => {
+      const y = GOLD_BAR + PAD_Y + i * LINE_H + FONT_SIZE;
+      const trimmed = line.trim();
+      if (i === 0) {
+        // EVERSWEET — big centered bold
+        ctx.textAlign = "center";
+        ctx.font = `bold 20px 'Courier New', monospace`;
+        ctx.fillText(trimmed, W / 2, y);
+      } else if (i === 1) {
+        // subtitle — centered
+        ctx.textAlign = "center";
+        ctx.font = `${FONT_SIZE}px 'Courier New', monospace`;
+        ctx.fillText(trimmed, W / 2, y);
+      } else if (trimmed.startsWith("─")) {
+        // Divider line
+        ctx.strokeStyle = "#cccccc";
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.moveTo(PAD_X, y - FONT_SIZE / 2);
+        ctx.lineTo(W - PAD_X, y - FONT_SIZE / 2);
+        ctx.stroke();
+      } else {
+        ctx.font = `${FONT_SIZE}px 'Courier New', monospace`;
+        // If line has ₹ amount — split and right-align the amount
+        const rupeeIdx = line.lastIndexOf("₹");
+        if (rupeeIdx > 4) {
+          const leftPart = line.substring(0, rupeeIdx).trimEnd();
+          const rightPart = line.substring(rupeeIdx);
+          ctx.textAlign = "left";
+          ctx.fillText(leftPart, PAD_X, y);
+          ctx.textAlign = "right";
+          ctx.fillText(rightPart, W - PAD_X, y);
+        } else if (
+          line.startsWith("Payment to:") ||
+          line.startsWith("  Eversweet")
+        ) {
+          ctx.textAlign = "center";
+          ctx.fillText(trimmed, W / 2, y);
+        } else {
+          ctx.textAlign = "left";
+          ctx.fillText(line, PAD_X, y);
+        }
+      }
+    });
+
+    return new Promise((resolve) => canvas.toBlob(resolve, "image/png", 1.0));
   }
 
   async function generate() {
