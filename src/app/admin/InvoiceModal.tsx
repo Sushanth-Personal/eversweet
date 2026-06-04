@@ -151,6 +151,53 @@ export function InvoiceModal({ onClose }: { onClose: () => void }) {
     .filter((l) => l !== "")
     .join("\n");
 
+  async function generateImage(): Promise<Blob | null> {
+    const canvas = document.createElement("canvas");
+    const scale = 2;
+    const W = 540,
+      PAD = 48;
+    const lines = billText.split("\n");
+    const lineH = 36;
+    const H = PAD * 2 + lines.length * lineH + 40;
+    canvas.width = W * scale;
+    canvas.height = H * scale;
+    const ctx = canvas.getContext("2d")!;
+    ctx.scale(scale, scale);
+
+    // Background
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, W, H);
+
+    // Gold top bar
+    ctx.fillStyle = "#c9a84c";
+    ctx.fillRect(0, 0, W, 8);
+
+    // Text
+    ctx.font = "14px 'Courier New', monospace";
+    ctx.fillStyle = "#111111";
+    lines.forEach((line, i) => {
+      // Center the header lines
+      if (i < 2) {
+        ctx.textAlign = "center";
+        ctx.font =
+          i === 0
+            ? "bold 16px 'Courier New', monospace"
+            : "14px 'Courier New', monospace";
+        ctx.fillText(line, W / 2, PAD + 16 + i * lineH);
+      } else {
+        ctx.textAlign = "left";
+        ctx.font = "13px 'Courier New', monospace";
+        ctx.fillText(line, PAD, PAD + 16 + i * lineH);
+      }
+    });
+
+    // Gold bottom bar
+    ctx.fillStyle = "#c9a84c";
+    ctx.fillRect(0, H - 8, W, 8);
+
+    return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+  }
+
   async function generate() {
     if (totalMochis === 0) return;
     setGenerating(true);
@@ -172,11 +219,27 @@ export function InvoiceModal({ onClose }: { onClose: () => void }) {
         notes: `Auto-created invoice. Boxes: ${boxes.map((b) => `${b.qty > 1 ? b.qty + "×" : ""}Box of ${b.size}`).join(", ")}. Auto-cancels midnight IST if unconfirmed.`,
       });
 
-      // Copy bill to clipboard
-      await navigator.clipboard.writeText(billText);
-
-      // Open Instagram DMs
-      window.open("https://instagram.com/direct/inbox", "_blank");
+      // Generate image and share via native share sheet
+      const blob = await generateImage();
+      if (blob) {
+        const file = new File([blob], `eversweet-invoice-${bn}.png`, {
+          type: "image/png",
+        });
+        if (navigator.share && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: `Eversweet Invoice ${bn}`,
+          });
+        } else {
+          // Fallback — download the image
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `eversweet-invoice-${bn}.png`;
+          a.click();
+          URL.revokeObjectURL(url);
+        }
+      }
 
       setDone(true);
     } catch (e) {
@@ -627,7 +690,7 @@ export function InvoiceModal({ onClose }: { onClose: () => void }) {
                 ✓ Done!
               </p>
               <p style={{ fontSize: "0.78rem", color: G.sub }}>
-                Invoice copied · Order saved · Instagram DMs opened
+                Order saved · Share sheet opened — send to Instagram or WhatsApp
               </p>
               <p style={{ fontSize: "0.72rem", color: G.muted, marginTop: 6 }}>
                 Order auto-cancels midnight IST if payment not confirmed
@@ -675,7 +738,7 @@ export function InvoiceModal({ onClose }: { onClose: () => void }) {
                 ? "Creating..."
                 : totalMochis === 0
                   ? "Add mochis first"
-                  : `Generate · Copy · Open Instagram`}
+                  : `Generate Invoice Image →`}
             </button>
           )}
           <p
@@ -687,7 +750,7 @@ export function InvoiceModal({ onClose }: { onClose: () => void }) {
               lineHeight: 1.6,
             }}
           >
-            Creates a pending order · Copies bill · Opens Instagram DMs
+            Creates a pending order · Generates image · Native share sheet
           </p>
         </div>
       </div>
