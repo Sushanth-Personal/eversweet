@@ -259,7 +259,7 @@ export default function TrivandrumPage() {
           }}
         >
           We're coming to Trivandrum
-          {tripDate ? ` · ${tripDate}` : " · Sunday, 14 June"}
+          {tripDate ? ` · ${tripDate}` : " · Sunday, 07 June"}
         </p>
       </div>
 
