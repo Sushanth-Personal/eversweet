@@ -1311,21 +1311,16 @@ export function SmartOrderNavBtn({ onClick }: { onClick: () => void }) {
       style={{
         display: "flex",
         alignItems: "center",
-        gap: 7,
-        padding: "6px 14px",
+        padding: "6px 10px",
         borderRadius: 9,
         border: "1px solid rgba(167,139,250,0.45)",
         background: "rgba(167,139,250,0.12)",
         color: "#c4b5fd",
-        fontSize: "0.8rem",
-        fontWeight: 700,
+        fontSize: "1.2rem",
         cursor: "pointer",
-        fontFamily: "system-ui, sans-serif",
-        whiteSpace: "nowrap" as const,
-        transition: "all 0.15s",
       }}
     >
-      📸 <span>New Order</span>
+      📸
     </button>
   );
 }
