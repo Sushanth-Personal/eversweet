@@ -40,11 +40,15 @@ function fmtTime(ts: string | null) {
   });
 }
 
+type ViewMode = "start" | "single" | "list";
+
 export default function TvmDeliveryPage() {
   const [tripDate, setTripDate] = useState<string>("");
   const [stops, setStops] = useState<Stop[]>([]);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>("start");
+  const [hasStarted, setHasStarted] = useState(false);
 
   const load = useCallback(async () => {
     const { data: settings } = await supabase
@@ -105,6 +109,219 @@ export default function TvmDeliveryPage() {
       : 0;
 
   const allDone = total > 0 && completed === total;
+  const pendingStops = stops.filter((s) => s.status === "pending");
+  const currentStop = pendingStops[0] || null;
+  const nextStop = pendingStops[1] || null;
+  const currentIndex = currentStop
+    ? stops.findIndex((s) => s.id === currentStop.id)
+    : -1;
+
+  function StopActions({ stop, big = false }: { stop: Stop; big?: boolean }) {
+    const isDone = stop.status === "completed";
+    const isBusy = updatingId === stop.id;
+    return (
+      <>
+        <div style={{ display: "flex", gap: 8 }}>
+          {stop.phone && (
+            <a
+              href={`tel:${stop.phone}`}
+              style={{
+                flex: 1,
+                padding: big ? "13px 12px" : "10px 12px",
+                borderRadius: 9,
+                border: "1.5px solid #ff7a1a",
+                background: "#ffffff",
+                color: "#ff7a1a",
+                fontSize: big ? "0.92rem" : "0.8rem",
+                fontWeight: 700,
+                textDecoration: "none",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+              }}
+            >
+              📞 Call
+            </a>
+          )}
+          {stop.maps_url && (
+            <a
+              href={stop.maps_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                flex: 2,
+                padding: big ? "13px 12px" : "10px 12px",
+                borderRadius: 9,
+                border: "none",
+                background: "linear-gradient(135deg, #ff9a44, #ff7a1a)",
+                color: "#fff",
+                fontSize: big ? "0.92rem" : "0.8rem",
+                fontWeight: 700,
+                textDecoration: "none",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+                boxShadow: "0 3px 10px rgba(255,122,26,0.3)",
+              }}
+            >
+              🗺️ Open in Maps
+            </a>
+          )}
+        </div>
+
+        <button
+          onClick={() =>
+            isDone ? undoComplete(stop.id) : markComplete(stop.id)
+          }
+          disabled={isBusy}
+          style={{
+            width: "100%",
+            marginTop: 8,
+            padding: big ? "15px 12px" : "10px 12px",
+            borderRadius: 9,
+            border: isDone ? "1px solid rgba(31,168,85,0.4)" : "none",
+            background: isDone
+              ? "rgba(31,168,85,0.08)"
+              : "linear-gradient(135deg, #ff9a44, #ff7a1a)",
+            color: isDone ? "#1fa855" : "#fff",
+            fontSize: big ? "1rem" : "0.82rem",
+            fontWeight: 700,
+            cursor: isBusy ? "not-allowed" : "pointer",
+            opacity: isBusy ? 0.6 : 1,
+            fontFamily: "'DM Sans', system-ui, sans-serif",
+            boxShadow: isDone ? "none" : "0 3px 10px rgba(255,122,26,0.3)",
+          }}
+        >
+          {isBusy
+            ? "Updating…"
+            : isDone
+              ? "↺ Undo (mark pending)"
+              : "✓ Mark as Delivered"}
+        </button>
+      </>
+    );
+  }
+
+  function StopCard({ stop, index }: { stop: Stop; index: number }) {
+    const isDone = stop.status === "completed";
+    return (
+      <div
+        style={{
+          background: isDone ? "rgba(31,168,85,0.05)" : "#ffffff",
+          border: `1px solid ${isDone ? "rgba(31,168,85,0.3)" : "rgba(0,0,0,0.09)"}`,
+          boxShadow: isDone ? "none" : "0 1px 4px rgba(0,0,0,0.04)",
+          borderRadius: 14,
+          padding: "16px 18px",
+          marginBottom: 12,
+          opacity: isDone ? 0.9 : 1,
+          transition: "all 0.2s",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            marginBottom: 10,
+            gap: 10,
+          }}
+        >
+          <div style={{ display: "flex", gap: 10, flex: 1, minWidth: 0 }}>
+            <div
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: "50%",
+                background: isDone
+                  ? "rgba(31,168,85,0.14)"
+                  : "rgba(255,122,26,0.12)",
+                border: `1.5px solid ${isDone ? "#1fa855" : "rgba(255,122,26,0.45)"}`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "0.78rem",
+                fontWeight: 700,
+                color: isDone ? "#1fa855" : "#ff7a1a",
+                flexShrink: 0,
+              }}
+            >
+              {isDone ? "✓" : index + 1}
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <p
+                style={{
+                  fontSize: "1rem",
+                  fontWeight: 700,
+                  color: "#1a1a1a",
+                  marginBottom: 2,
+                }}
+              >
+                {stop.customer_name}
+              </p>
+              {stop.address && (
+                <p
+                  style={{
+                    fontSize: "0.75rem",
+                    color: "#6b6b6b",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  📍 {stop.address}
+                </p>
+              )}
+            </div>
+          </div>
+          {stop.distance_km > 0 && (
+            <span
+              style={{
+                fontSize: "0.68rem",
+                fontWeight: 700,
+                color: "#ff7a1a",
+                background: "rgba(255,122,26,0.1)",
+                border: "1px solid rgba(255,122,26,0.3)",
+                padding: "3px 9px",
+                borderRadius: 20,
+                flexShrink: 0,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {stop.distance_km} km
+            </span>
+          )}
+        </div>
+
+        {stop.notes && (
+          <p
+            style={{
+              fontSize: "0.75rem",
+              color: "#3a7d4f",
+              fontStyle: "italic",
+              marginBottom: 10,
+            }}
+          >
+            💬 {stop.notes}
+          </p>
+        )}
+
+        {isDone && stop.completed_at && (
+          <p
+            style={{
+              fontSize: "0.72rem",
+              color: "#1fa855",
+              marginBottom: 10,
+              fontWeight: 600,
+            }}
+          >
+            ✓ Delivered at {fmtTime(stop.completed_at)}
+          </p>
+        )}
+
+        <StopActions stop={stop} />
+      </div>
+    );
+  }
 
   return (
     <main
@@ -122,7 +339,7 @@ export default function TvmDeliveryPage() {
         dangerouslySetInnerHTML={{ __html: CSS }}
       />
 
-      {/* Sticky progress header */}
+      {/* Sticky progress header — always visible regardless of view */}
       <div
         style={{
           position: "sticky",
@@ -138,7 +355,7 @@ export default function TvmDeliveryPage() {
         <div
           style={{
             display: "flex",
-            alignItems: "baseline",
+            alignItems: "center",
             justifyContent: "space-between",
             marginBottom: 4,
           }}
@@ -154,6 +371,33 @@ export default function TvmDeliveryPage() {
             Ever<em style={{ color: "#ff7a1a", fontStyle: "normal" }}>sweet</em>{" "}
             · TVM Run
           </p>
+          {!loading && total > 0 && (
+            <button
+              onClick={() =>
+                setViewMode(
+                  viewMode === "list"
+                    ? hasStarted
+                      ? "single"
+                      : "start"
+                    : "list",
+                )
+              }
+              style={{
+                padding: "6px 12px",
+                borderRadius: 20,
+                border: "1px solid rgba(0,0,0,0.12)",
+                background: "#ffffff",
+                color: "#4a4a4a",
+                fontSize: "0.72rem",
+                fontWeight: 700,
+                cursor: "pointer",
+                fontFamily: "'DM Sans', system-ui, sans-serif",
+                whiteSpace: "nowrap" as const,
+              }}
+            >
+              {viewMode === "list" ? "← Back" : "☰ Full list"}
+            </button>
+          )}
         </div>
         <p
           style={{
@@ -274,210 +518,132 @@ export default function TvmDeliveryPage() {
               No delivery stops added yet for this trip.
             </p>
           </div>
-        ) : (
-          stops.map((stop, i) => {
-            const isDone = stop.status === "completed";
-            const isBusy = updatingId === stop.id;
-            return (
-              <div
-                key={stop.id}
+        ) : viewMode === "list" ? (
+          <>
+            {stops.map((stop, i) => (
+              <StopCard key={stop.id} stop={stop} index={i} />
+            ))}
+          </>
+        ) : allDone ? (
+          <div
+            style={{
+              textAlign: "center",
+              padding: "60px 20px",
+            }}
+          >
+            <p style={{ fontSize: "3rem", marginBottom: 16 }}>🎉</p>
+            <p
+              style={{
+                fontSize: "1.2rem",
+                fontWeight: 700,
+                color: "#1fa855",
+                marginBottom: 8,
+              }}
+            >
+              All deliveries complete!
+            </p>
+            <p style={{ fontSize: "0.85rem", color: "#6b6b6b" }}>
+              Nice work — every stop on today's route has been delivered.
+            </p>
+          </div>
+        ) : viewMode === "start" || !hasStarted ? (
+          <div
+            style={{
+              textAlign: "center",
+              padding: "40px 20px 20px",
+            }}
+          >
+            <p style={{ fontSize: "2.4rem", marginBottom: 16 }}>🚂</p>
+            <p
+              style={{
+                fontSize: "1.15rem",
+                fontWeight: 700,
+                color: "#1a1a1a",
+                marginBottom: 6,
+              }}
+            >
+              Ready for today's run
+            </p>
+            <p
+              style={{
+                fontSize: "0.85rem",
+                color: "#6b6b6b",
+                marginBottom: 28,
+                lineHeight: 1.6,
+              }}
+            >
+              {total} stop{total !== 1 ? "s" : ""} · {totalDistance.toFixed(1)}{" "}
+              km total
+            </p>
+            <button
+              onClick={() => {
+                setHasStarted(true);
+                setViewMode("single");
+              }}
+              style={{
+                width: "100%",
+                padding: "16px",
+                borderRadius: 12,
+                border: "none",
+                background: "linear-gradient(135deg, #ff9a44, #ff7a1a)",
+                color: "#fff",
+                fontSize: "1.05rem",
+                fontWeight: 700,
+                cursor: "pointer",
+                fontFamily: "'DM Sans', system-ui, sans-serif",
+                boxShadow: "0 4px 14px rgba(255,122,26,0.35)",
+              }}
+            >
+              ▶ Start Trip
+            </button>
+            <button
+              onClick={() => setViewMode("list")}
+              style={{
+                marginTop: 12,
+                background: "transparent",
+                border: "none",
+                color: "#8a8a8a",
+                fontSize: "0.78rem",
+                cursor: "pointer",
+                fontFamily: "'DM Sans', system-ui, sans-serif",
+                textDecoration: "underline",
+              }}
+            >
+              Or preview the full stop list first
+            </button>
+          </div>
+        ) : currentStop ? (
+          <>
+            <p
+              style={{
+                fontSize: "0.68rem",
+                color: "#8a8a8a",
+                fontWeight: 700,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase" as const,
+                marginBottom: 10,
+              }}
+            >
+              Current Stop
+            </p>
+            <StopCard stop={currentStop} index={currentIndex} />
+            {nextStop && (
+              <p
                 style={{
-                  background: isDone ? "rgba(31,168,85,0.05)" : "#ffffff",
-                  border: `1px solid ${isDone ? "rgba(31,168,85,0.3)" : "rgba(0,0,0,0.09)"}`,
-                  boxShadow: isDone ? "none" : "0 1px 4px rgba(0,0,0,0.04)",
-                  borderRadius: 14,
-                  padding: "16px 18px",
-                  marginBottom: 12,
-                  opacity: isDone ? 0.9 : 1,
-                  transition: "all 0.2s",
+                  fontSize: "0.75rem",
+                  color: "#8a8a8a",
+                  textAlign: "center" as const,
+                  marginTop: 4,
                 }}
               >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    justifyContent: "space-between",
-                    marginBottom: 10,
-                    gap: 10,
-                  }}
-                >
-                  <div
-                    style={{ display: "flex", gap: 10, flex: 1, minWidth: 0 }}
-                  >
-                    <div
-                      style={{
-                        width: 28,
-                        height: 28,
-                        borderRadius: "50%",
-                        background: isDone
-                          ? "rgba(31,168,85,0.14)"
-                          : "rgba(255,122,26,0.12)",
-                        border: `1.5px solid ${isDone ? "#1fa855" : "rgba(255,122,26,0.45)"}`,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: "0.78rem",
-                        fontWeight: 700,
-                        color: isDone ? "#1fa855" : "#ff7a1a",
-                        flexShrink: 0,
-                      }}
-                    >
-                      {isDone ? "✓" : i + 1}
-                    </div>
-                    <div style={{ minWidth: 0 }}>
-                      <p
-                        style={{
-                          fontSize: "1rem",
-                          fontWeight: 700,
-                          color: "#1a1a1a",
-                          marginBottom: 2,
-                        }}
-                      >
-                        {stop.customer_name}
-                      </p>
-                      {stop.address && (
-                        <p
-                          style={{
-                            fontSize: "0.75rem",
-                            color: "#6b6b6b",
-                            lineHeight: 1.5,
-                          }}
-                        >
-                          📍 {stop.address}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  {stop.distance_km > 0 && (
-                    <span
-                      style={{
-                        fontSize: "0.68rem",
-                        fontWeight: 700,
-                        color: "#ff7a1a",
-                        background: "rgba(255,122,26,0.1)",
-                        border: "1px solid rgba(255,122,26,0.3)",
-                        padding: "3px 9px",
-                        borderRadius: 20,
-                        flexShrink: 0,
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {stop.distance_km} km
-                    </span>
-                  )}
-                </div>
-
-                {stop.notes && (
-                  <p
-                    style={{
-                      fontSize: "0.75rem",
-                      color: "#3a7d4f",
-                      fontStyle: "italic",
-                      marginBottom: 10,
-                    }}
-                  >
-                    💬 {stop.notes}
-                  </p>
-                )}
-
-                {isDone && stop.completed_at && (
-                  <p
-                    style={{
-                      fontSize: "0.72rem",
-                      color: "#1fa855",
-                      marginBottom: 10,
-                      fontWeight: 600,
-                    }}
-                  >
-                    ✓ Delivered at {fmtTime(stop.completed_at)}
-                  </p>
-                )}
-
-                <div style={{ display: "flex", gap: 8 }}>
-                  {stop.phone && (
-                    <a
-                      href={`tel:${stop.phone}`}
-                      style={{
-                        flex: 1,
-                        padding: "10px 12px",
-                        borderRadius: 9,
-                        border: "1.5px solid #ff7a1a",
-                        background: "#ffffff",
-                        color: "#ff7a1a",
-                        fontSize: "0.8rem",
-                        fontWeight: 700,
-                        textDecoration: "none",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        gap: 6,
-                      }}
-                    >
-                      📞 Call
-                    </a>
-                  )}
-                  {stop.maps_url && (
-                    <a
-                      href={stop.maps_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        flex: 2,
-                        padding: "10px 12px",
-                        borderRadius: 9,
-                        border: "none",
-                        background: "linear-gradient(135deg, #ff9a44, #ff7a1a)",
-                        color: "#fff",
-                        fontSize: "0.8rem",
-                        fontWeight: 700,
-                        textDecoration: "none",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        gap: 6,
-                        boxShadow: "0 3px 10px rgba(255,122,26,0.3)",
-                      }}
-                    >
-                      🗺️ Open in Maps
-                    </a>
-                  )}
-                </div>
-
-                <button
-                  onClick={() =>
-                    isDone ? undoComplete(stop.id) : markComplete(stop.id)
-                  }
-                  disabled={isBusy}
-                  style={{
-                    width: "100%",
-                    marginTop: 8,
-                    padding: "10px 12px",
-                    borderRadius: 9,
-                    border: isDone ? "1px solid rgba(31,168,85,0.4)" : "none",
-                    background: isDone
-                      ? "rgba(31,168,85,0.08)"
-                      : "linear-gradient(135deg, #ff9a44, #ff7a1a)",
-                    color: isDone ? "#1fa855" : "#fff",
-                    fontSize: "0.82rem",
-                    fontWeight: 700,
-                    cursor: isBusy ? "not-allowed" : "pointer",
-                    opacity: isBusy ? 0.6 : 1,
-                    fontFamily: "'DM Sans', system-ui, sans-serif",
-                    boxShadow: isDone
-                      ? "none"
-                      : "0 3px 10px rgba(255,122,26,0.3)",
-                  }}
-                >
-                  {isBusy
-                    ? "Updating…"
-                    : isDone
-                      ? "↺ Undo (mark pending)"
-                      : "✓ Mark as Delivered"}
-                </button>
-              </div>
-            );
-          })
-        )}
+                Next up:{" "}
+                <strong style={{ color: "#4a4a4a" }}>
+                  {nextStop.customer_name}
+                </strong>
+              </p>
+            )}
+          </>
+        ) : null}
 
         {!loading && stops.length > 0 && (
           <button
@@ -485,7 +651,7 @@ export default function TvmDeliveryPage() {
             style={{
               width: "100%",
               padding: "10px",
-              marginTop: 4,
+              marginTop: 20,
               marginBottom: 20,
               borderRadius: 9,
               border: "1px solid rgba(0,0,0,0.1)",
