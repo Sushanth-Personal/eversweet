@@ -77,10 +77,33 @@ export default function TvmDeliveryPage() {
 
   async function markComplete(id: string) {
     setUpdatingId(id);
+    const stop = stops.find((s) => s.id === id);
     await supabase
       .from("tvm_delivery_stops")
       .update({ status: "completed", completed_at: new Date().toISOString() })
       .eq("id", id);
+
+    // Fire-and-forget — don't block the UI on the email send, and don't
+    // fail the delivery mark-complete if the email happens to fail.
+    if (stop) {
+      const newCompletedCount =
+        stops.filter((s) => s.status === "completed").length + 1;
+      fetch("/api/delivery-alert", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customer_name: stop.customer_name,
+          phone: stop.phone,
+          address: stop.address,
+          distance_km: stop.distance_km,
+          trip_date: tripDate,
+          sequence: stop.sequence,
+          total: stops.length,
+          completed: newCompletedCount,
+        }),
+      }).catch((e) => console.error("Delivery alert email failed:", e));
+    }
+
     await load();
     setUpdatingId(null);
   }
