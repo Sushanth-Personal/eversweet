@@ -307,7 +307,7 @@ export default function TvmDeliveryPage() {
                 padding: "3px 9px",
                 borderRadius: 20,
                 flexShrink: 0,
-                whiteSpace: "nowrap",
+                whiteSpace: "nowrap" as const,
               }}
             >
               {stop.distance_km} km
