@@ -22,8 +22,13 @@ const G = {
   blueGlass: "rgba(96,165,250,0.1)",
 };
 
-const KOCHI_PRICES: Record<number, number> = { 4: 499, 6: 699, 8: 899 };
-const TVM_PRICES: Record<number, number> = { 4: 699, 6: 899 };
+// ── Pricing ────────────────────────────────────────────────────────
+// Kochi / Ernakulam: Box of 5 → ₹599, Box of 8 → ₹899
+// Trivandrum:        Box of 5 → ₹899, Box of 8 → ₹1299
+const KOCHI_PRICES: Record<number, number> = { 5: 599, 8: 899 };
+const TVM_PRICES: Record<number, number> = { 5: 899, 8: 1299 };
+const BOX_SIZES = [5, 8];
+
 const ALL_SLOTS = [
   "9–11 AM",
   "11–1 PM",
@@ -36,11 +41,18 @@ const ALL_SLOTS = [
 ];
 
 type BoxLine = { size: number; qty: number; price: number };
+type CustomBoxLine = {
+  id: string;
+  size: number;
+  price: number;
+  qty: number;
+  label: string;
+};
 
 function resolveBoxes(total: number, isTvm: boolean): BoxLine[] {
   if (total <= 0) return [];
   const prices = isTvm ? TVM_PRICES : KOCHI_PRICES;
-  const sizes = isTvm ? [4, 6] : [4, 6, 8];
+  const sizes = BOX_SIZES;
   let best: { boxes: BoxLine[]; cost: number } | null = null;
   function search(remaining: number, sizeIdx: number, current: BoxLine[]) {
     if (remaining === 0) {
@@ -101,16 +113,57 @@ export function InvoiceModal({ onClose }: { onClose: () => void }) {
   const [deliveryDate, setDeliveryDate] = useState("");
   const [deliverySlot, setDeliverySlot] = useState("3–5 PM");
   const [deliveryCharge, setDeliveryCharge] = useState("");
-  const [phone, setPhone] = useState("9072437343");
   const [generating, setGenerating] = useState(false);
   const [done, setDone] = useState(false);
 
+  // Custom box sizes — for one-off orders that don't fit the standard 5/8 pricing
+  const [customBoxes, setCustomBoxes] = useState<CustomBoxLine[]>([]);
+  const [showCustomForm, setShowCustomForm] = useState(false);
+  const [customSize, setCustomSize] = useState("");
+  const [customPrice, setCustomPrice] = useState("");
+  const [customLabel, setCustomLabel] = useState("");
+
+  function addCustomBox() {
+    const size = parseInt(customSize, 10);
+    const price = parseFloat(customPrice);
+    if (!size || size <= 0 || !price || price <= 0) return;
+    setCustomBoxes((prev) => [
+      ...prev,
+      {
+        id: `${Date.now()}`,
+        size,
+        price,
+        qty: 1,
+        label: customLabel.trim() || `Box of ${size}`,
+      },
+    ]);
+    setCustomSize("");
+    setCustomPrice("");
+    setCustomLabel("");
+    setShowCustomForm(false);
+  }
+
+  function updateCustomQty(id: string, delta: number) {
+    setCustomBoxes((prev) =>
+      prev
+        .map((b) => (b.id === id ? { ...b, qty: b.qty + delta } : b))
+        .filter((b) => b.qty > 0),
+    );
+  }
+
+  function removeCustomBox(id: string) {
+    setCustomBoxes((prev) => prev.filter((b) => b.id !== id));
+  }
+
   const prices = isTvm ? TVM_PRICES : KOCHI_PRICES;
-  const availSizes = isTvm ? [4, 6] : [4, 6, 8];
+  const availSizes = BOX_SIZES;
   const boxes = resolveBoxes(totalMochis, isTvm);
   const boxTotal = boxes.reduce((s, b) => s + b.price * b.qty, 0);
+  const customBoxTotal = customBoxes.reduce((s, b) => s + b.price * b.qty, 0);
+  const customMochiCount = customBoxes.reduce((s, b) => s + b.size * b.qty, 0);
+  const combinedMochis = totalMochis + customMochiCount;
   const dc = parseFloat(deliveryCharge) || 0;
-  const grandTotal = boxTotal + dc;
+  const grandTotal = boxTotal + customBoxTotal + dc;
   const bn = billNumber();
 
   // Build bill text
@@ -127,6 +180,14 @@ export function InvoiceModal({ onClose }: { onClose: () => void }) {
       ),
     )
     .join("\n");
+  const customBoxLines = customBoxes
+    .map((b) =>
+      row(
+        `  ${b.label}${b.qty > 1 ? " ×" + b.qty : ""}`,
+        `₹${(b.price * b.qty).toLocaleString("en-IN")}`,
+      ),
+    )
+    .join("\n");
   const delivStr = fmtDeliveryDate(deliveryDate, deliverySlot);
 
   const billText = [
@@ -134,18 +195,18 @@ export function InvoiceModal({ onClose }: { onClose: () => void }) {
     "    Cloud Kitchen · Kochi",
     "",
     LINE,
-    row("Invoice", bn),
+    row("Receipt", bn),
     row("Date", fmtInvoiceDate()),
     delivStr ? row("Delivery", delivStr) : "",
     LINE,
-    totalMochis > 0 ? `${totalMochis} mochis` : "",
+    combinedMochis > 0 ? `${combinedMochis} mochis` : "",
     totalMochis > 0 ? boxLines : "",
+    customBoxes.length > 0 ? customBoxLines : "",
     dc > 0 ? row("  Delivery charge", `₹${dc.toLocaleString("en-IN")}`) : "",
     LINE,
     row("TOTAL", `₹${grandTotal.toLocaleString("en-IN")}`),
     LINE,
-    `Payment to: +91 ${phone}`,
-    "",
+    "  Thank you for your order!",
     "  Eversweet 🍡 · Fresh mochi, Kochi",
   ]
     .filter((l) => l !== "")
@@ -219,7 +280,7 @@ export function InvoiceModal({ onClose }: { onClose: () => void }) {
           ctx.textAlign = "right";
           ctx.fillText(rightPart, W - PAD_X, y);
         } else if (
-          line.startsWith("Payment to:") ||
+          line.startsWith("  Thank you") ||
           line.startsWith("  Eversweet")
         ) {
           ctx.textAlign = "center";
@@ -235,14 +296,20 @@ export function InvoiceModal({ onClose }: { onClose: () => void }) {
   }
 
   async function generate() {
-    if (totalMochis === 0) return;
+    if (combinedMochis === 0) return;
     setGenerating(true);
     try {
       // Create pending order in Supabase
       const today = new Date().toISOString().split("T")[0];
+      const boxSummary = [
+        ...boxes.map((b) => `${b.qty > 1 ? b.qty + "×" : ""}Box of ${b.size}`),
+        ...customBoxes.map(
+          (b) => `${b.qty > 1 ? b.qty + "×" : ""}${b.label} (custom)`,
+        ),
+      ].join(", ");
       await supabase.from("orders").insert({
         customer_name: `Invoice ${bn}`,
-        phone: phone,
+        phone: "",
         box_size_id: null,
         flavours: {},
         delivery_date: deliveryDate || today,
@@ -252,26 +319,26 @@ export function InvoiceModal({ onClose }: { onClose: () => void }) {
         status: "pending",
         source: isTvm ? "trivandrum" : "dm",
         order_date: today,
-        notes: `Auto-created invoice. Boxes: ${boxes.map((b) => `${b.qty > 1 ? b.qty + "×" : ""}Box of ${b.size}`).join(", ")}. Auto-cancels midnight IST if unconfirmed.`,
+        notes: `Auto-created invoice. Boxes: ${boxSummary}. Auto-cancels midnight IST if unconfirmed.`,
       });
 
       // Generate image and share via native share sheet
       const blob = await generateImage();
       if (blob) {
-        const file = new File([blob], `eversweet-invoice-${bn}.png`, {
+        const file = new File([blob], `eversweet-receipt-${bn}.png`, {
           type: "image/png",
         });
         if (navigator.share && navigator.canShare({ files: [file] })) {
           await navigator.share({
             files: [file],
-            title: `Eversweet Invoice ${bn}`,
+            title: `Eversweet Receipt ${bn}`,
           });
         } else {
           // Fallback — download the image
           const url = URL.createObjectURL(blob);
           const a = document.createElement("a");
           a.href = url;
-          a.download = `eversweet-invoice-${bn}.png`;
+          a.download = `eversweet-receipt-${bn}.png`;
           a.click();
           URL.revokeObjectURL(url);
         }
@@ -344,7 +411,7 @@ export function InvoiceModal({ onClose }: { onClose: () => void }) {
         >
           <div>
             <p style={{ fontSize: "0.95rem", fontWeight: 800, color: G.text }}>
-              🧾 New Invoice
+              🧾 New Receipt
             </p>
             <p style={{ fontSize: "0.65rem", color: G.muted, marginTop: 2 }}>
               {bn} · {fmtInvoiceDate()}
@@ -394,7 +461,7 @@ export function InvoiceModal({ onClose }: { onClose: () => void }) {
               justifyContent: "space-between",
             }}
           >
-            <span>🚂 Trivandrum pricing (4→₹699, 6→₹899)</span>
+            <span>🚂 Trivandrum pricing (5→₹899, 8→₹1299)</span>
             <span
               style={{
                 width: 20,
@@ -521,6 +588,202 @@ export function InvoiceModal({ onClose }: { onClose: () => void }) {
             )}
           </div>
 
+          {/* Custom box sizes */}
+          <div style={{ marginBottom: 14 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 8,
+              }}
+            >
+              <label style={{ ...lbl, marginBottom: 0 }}>Custom box size</label>
+              <button
+                onClick={() => setShowCustomForm((v) => !v)}
+                style={{
+                  fontSize: "0.72rem",
+                  fontWeight: 700,
+                  color: G.blue,
+                  background: G.blueGlass,
+                  border: `1px solid rgba(96,165,250,0.35)`,
+                  borderRadius: 7,
+                  padding: "4px 10px",
+                  cursor: "pointer",
+                  fontFamily: "system-ui",
+                }}
+              >
+                {showCustomForm ? "✕ Cancel" : "+ Add custom box"}
+              </button>
+            </div>
+
+            {showCustomForm && (
+              <div
+                style={{
+                  background: G.glassStrong,
+                  border: `1px solid ${G.glassBorder}`,
+                  borderRadius: 10,
+                  padding: 12,
+                  marginBottom: 10,
+                }}
+              >
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 8,
+                    marginBottom: 8,
+                  }}
+                >
+                  <input
+                    type="number"
+                    placeholder="Pieces (e.g. 6)"
+                    value={customSize}
+                    onChange={(e) => setCustomSize(e.target.value)}
+                    style={{ ...inp, marginBottom: 0 }}
+                  />
+                  <input
+                    type="number"
+                    placeholder="Price ₹"
+                    value={customPrice}
+                    onChange={(e) => setCustomPrice(e.target.value)}
+                    style={{ ...inp, marginBottom: 0 }}
+                  />
+                </div>
+                <input
+                  type="text"
+                  placeholder="Label (optional, e.g. Box of 6 - Mixed)"
+                  value={customLabel}
+                  onChange={(e) => setCustomLabel(e.target.value)}
+                  style={{ ...inp, marginBottom: 10 }}
+                />
+                <button
+                  onClick={addCustomBox}
+                  disabled={!customSize || !customPrice}
+                  style={{
+                    width: "100%",
+                    padding: "9px",
+                    borderRadius: 8,
+                    border: "none",
+                    background:
+                      customSize && customPrice ? G.blueGlass : G.glass,
+                    color: customSize && customPrice ? G.blue : G.muted,
+                    fontSize: "0.82rem",
+                    fontWeight: 700,
+                    cursor:
+                      customSize && customPrice ? "pointer" : "not-allowed",
+                    fontFamily: "system-ui",
+                  }}
+                >
+                  Add to receipt
+                </button>
+              </div>
+            )}
+
+            {customBoxes.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {customBoxes.map((b) => (
+                  <div
+                    key={b.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      background: G.glassStrong,
+                      border: `1px solid ${G.glassBorder}`,
+                      borderRadius: 9,
+                      padding: "8px 10px",
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p
+                        style={{
+                          fontSize: "0.8rem",
+                          fontWeight: 600,
+                          color: G.text,
+                        }}
+                      >
+                        {b.label}
+                      </p>
+                      <p style={{ fontSize: "0.68rem", color: G.muted }}>
+                        {b.size} pcs · ₹{b.price} each
+                      </p>
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        flexShrink: 0,
+                      }}
+                    >
+                      <button
+                        onClick={() => updateCustomQty(b.id, -1)}
+                        style={{
+                          width: 22,
+                          height: 22,
+                          borderRadius: 4,
+                          border: `1px solid ${G.glassBorder}`,
+                          background: G.glass,
+                          color: G.sub,
+                          cursor: "pointer",
+                          fontSize: "0.9rem",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        −
+                      </button>
+                      <span
+                        style={{
+                          fontSize: "0.85rem",
+                          fontWeight: 700,
+                          minWidth: 14,
+                          textAlign: "center" as const,
+                          color: G.text,
+                        }}
+                      >
+                        {b.qty}
+                      </span>
+                      <button
+                        onClick={() => updateCustomQty(b.id, 1)}
+                        style={{
+                          width: 22,
+                          height: 22,
+                          borderRadius: 4,
+                          border: "1px solid rgba(96,165,250,0.4)",
+                          background: G.blueGlass,
+                          color: G.blue,
+                          cursor: "pointer",
+                          fontSize: "0.9rem",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        +
+                      </button>
+                      <button
+                        onClick={() => removeCustomBox(b.id)}
+                        style={{
+                          marginLeft: 4,
+                          background: "transparent",
+                          border: "none",
+                          color: G.red,
+                          cursor: "pointer",
+                          fontSize: "0.8rem",
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Delivery date chips */}
           <label style={lbl}>Delivery date</label>
           <div
@@ -566,6 +829,27 @@ export function InvoiceModal({ onClose }: { onClose: () => void }) {
             })}
           </div>
 
+          {/* Pick any date from calendar */}
+          <input
+            type="date"
+            value={deliveryDate}
+            onChange={(e) => setDeliveryDate(e.target.value)}
+            style={{
+              width: "100%",
+              background: G.glass,
+              border: `1px solid ${G.glassBorder}`,
+              color: G.text,
+              padding: "10px 12px",
+              borderRadius: 8,
+              fontSize: "0.85rem",
+              fontFamily: "system-ui, sans-serif",
+              outline: "none",
+              boxSizing: "border-box" as const,
+              marginBottom: 14,
+              colorScheme: "dark" as const,
+            }}
+          />
+
           {/* Slot chips */}
           <label style={lbl}>Time slot</label>
           <div
@@ -610,60 +894,20 @@ export function InvoiceModal({ onClose }: { onClose: () => void }) {
             </p>
           )}
 
-          {/* Delivery charge + phone */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 8,
-              marginBottom: 10,
-            }}
-          >
-            <div>
-              <label style={lbl}>Delivery charge ₹</label>
-              <input
-                type="number"
-                style={{ ...inp, marginBottom: 0 }}
-                placeholder="0"
-                value={deliveryCharge}
-                onChange={(e) => setDeliveryCharge(e.target.value)}
-              />
-            </div>
-            <div>
-              <label style={lbl}>Payment number</label>
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column" as const,
-                  gap: 6,
-                }}
-              >
-                {["9072437343", "7907044368"].map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => setPhone(p)}
-                    style={{
-                      padding: "7px 8px",
-                      borderRadius: 8,
-                      border: `1px solid ${phone === p ? G.goldBorder : G.glassBorder}`,
-                      background: phone === p ? G.goldGlass : G.glass,
-                      color: phone === p ? G.gold : G.sub,
-                      fontSize: "0.72rem",
-                      fontWeight: phone === p ? 700 : 400,
-                      cursor: "pointer",
-                      fontFamily: "system-ui",
-                      textAlign: "center" as const,
-                    }}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-            </div>
+          {/* Delivery charge */}
+          <div style={{ marginBottom: 10 }}>
+            <label style={lbl}>Delivery charge ₹ (optional)</label>
+            <input
+              type="number"
+              style={{ ...inp, marginBottom: 0 }}
+              placeholder="0"
+              value={deliveryCharge}
+              onChange={(e) => setDeliveryCharge(e.target.value)}
+            />
           </div>
 
           {/* Grand total */}
-          {totalMochis > 0 && (
+          {combinedMochis > 0 && (
             <div
               style={{
                 background: G.goldGlass,
@@ -752,29 +996,29 @@ export function InvoiceModal({ onClose }: { onClose: () => void }) {
           ) : (
             <button
               onClick={generate}
-              disabled={generating || totalMochis === 0}
+              disabled={generating || combinedMochis === 0}
               style={{
                 width: "100%",
                 padding: "15px",
                 borderRadius: 12,
                 border: "none",
                 background:
-                  totalMochis > 0
+                  combinedMochis > 0
                     ? `linear-gradient(135deg, rgba(240,176,64,0.9), rgba(180,130,40,0.8))`
                     : G.glass,
-                color: totalMochis > 0 ? "#160c08" : G.muted,
+                color: combinedMochis > 0 ? "#160c08" : G.muted,
                 fontSize: "1rem",
                 fontWeight: 700,
-                cursor: totalMochis > 0 ? "pointer" : "not-allowed",
+                cursor: combinedMochis > 0 ? "pointer" : "not-allowed",
                 fontFamily: "system-ui",
                 transition: "all 0.2s",
               }}
             >
               {generating
                 ? "Creating..."
-                : totalMochis === 0
-                  ? "Add mochis first"
-                  : `Generate Invoice Image →`}
+                : combinedMochis === 0
+                  ? "Add mochis or a custom box first"
+                  : `Generate Receipt Image →`}
             </button>
           )}
           <p
