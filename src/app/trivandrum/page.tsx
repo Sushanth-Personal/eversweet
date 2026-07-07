@@ -3,809 +3,1290 @@ export const dynamic = "force-dynamic";
 
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import type { Product } from "@/lib/types";
+import type { Product, BoxSize, CustomerForm } from "@/lib/types";
+import { MaintenanceScreen } from "@/components/MaintenanceScreen";
+const IMG: Record<string, string> = {
+  matcha:
+    "https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/products/mango-mochi.png",
+  strawberry:
+    "https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/products/mochi-strawberry.webp",
+  default:
+    "https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/products/mochi-strawberry.webp",
+};
 
+const UPI_ID = "thinkwide9-1@okicici";
 const WHATSAPP_NUMBER = "917907044368";
-const TRIP_DATE = "";
-const PICKUP_LOCATIONS = [
-  { name: "Thampanoor", area: "Railway Station area · South Trivandrum" },
-  { name: "Pattom", area: "Pattom Junction · Central Trivandrum" },
-  { name: "Kazhakkoottam", area: "Near Technopark · North Trivandrum" },
-];
-const BOXES = [
-  { count: 4, price: 699, label: "Box of 4" },
-  { count: 6, price: 899, label: "Box of 6" },
-];
-
-function resolveBoxes(total: number) {
-  if (total < 4)
-    return { boxes: [] as any[], totalBoxPrice: 0, isClean: false };
-  let best: { b4: number; b6: number; price: number } | null = null;
-  for (let b6 = Math.floor(total / 6); b6 >= 0; b6--) {
-    const rem = total - b6 * 6;
-    if (rem >= 0 && rem % 4 === 0) {
-      const price = (rem / 4) * 699 + b6 * 899;
-      if (!best || price < best.price) best = { b4: rem / 4, b6, price };
-    }
-  }
-  if (best) {
-    const boxes = [];
-    if (best.b4 > 0) boxes.push({ ...BOXES[0], qty: best.b4 });
-    if (best.b6 > 0) boxes.push({ ...BOXES[1], qty: best.b6 });
-    return { boxes, totalBoxPrice: best.price, isClean: true };
-  }
-  const rPrice = (n: number) => {
-    for (let b6 = Math.floor(n / 6); b6 >= 0; b6--) {
-      const r = n - b6 * 6;
-      if (r >= 0 && r % 4 === 0) return b6 * 899 + (r / 4) * 699;
-    }
-    return 0;
-  };
-  const rLabel = (n: number) => {
-    for (let b6 = Math.floor(n / 6); b6 >= 0; b6--) {
-      const r = n - b6 * 6;
-      if (r >= 0 && r % 4 === 0) {
-        const p = [];
-        if (b6 > 0) p.push(`${b6 > 1 ? b6 + "× " : ""}Box of 6`);
-        if (r / 4 > 0) p.push(`${r / 4 > 1 ? r / 4 + "× " : ""}Box of 4`);
-        return p.join(" + ");
-      }
-    }
-    return "";
-  };
-  let below = total - 1;
-  while (below >= 4) {
-    let f = false;
-    for (let b6 = Math.floor(below / 6); b6 >= 0; b6--) {
-      const r = below - b6 * 6;
-      if (r >= 0 && r % 4 === 0) {
-        f = true;
-        break;
-      }
-    }
-    if (f) break;
-    below--;
-  }
-  let above = total + 1;
-  while (above <= total + 6) {
-    let f = false;
-    for (let b6 = Math.floor(above / 6); b6 >= 0; b6--) {
-      const r = above - b6 * 6;
-      if (r >= 0 && r % 4 === 0) {
-        f = true;
-        break;
-      }
-    }
-    if (f) break;
-    above++;
-  }
-  return {
-    boxes: [],
-    totalBoxPrice: 0,
-    isClean: false,
-    nudge: {
-      add: above - total,
-      remove: total - below,
-      addLabel: rLabel(above),
-      removeLabel: rLabel(below),
-      addPrice: rPrice(above),
-      removePrice: rPrice(below),
-    },
-  };
-}
 
 function getImg(name: string, url: string | null): string {
   if (url) return url;
   const n = name.toLowerCase();
-  if (n.includes("strawberry"))
-    return "https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/products/mochi-strawberry.webp";
-  if (n.includes("mango"))
-    return "https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/products/mango-mochi.png";
-  return "https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/products/mochi-strawberry.webp";
+  if (n.includes("mango")) return IMG.matcha;
+  if (n.includes("strawberry")) return IMG.strawberry;
+  if (n.includes("coffee"))
+    return "https://images.unsplash.com/photo-1541167760496-162955ed8a9f?w=600&q=80";
+  return IMG.default;
 }
 
-export default function TrivandrumPage() {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [flavours, setFlavours] = useState<Record<string, number>>({});
-  const [targetBox, setTargetBox] = useState<4 | 6>(6);
-  const [showOrderSection, setShowOrderSection] = useState(false);
-  const [selectedLocation, setSelectedLocation] = useState("Thampanoor");
-  const [homeDelivery, setHomeDelivery] = useState(false);
-  const [showMore, setShowMore] = useState(false);
-  const [tripDate, setTripDate] = useState(TRIP_DATE);
-  const [pickupLocations, setPickupLocations] = useState(PICKUP_LOCATIONS);
-  const flavourSectionRef = useRef<HTMLElement>(null);
-  const [inFlavourSection, setInFlavourSection] = useState(false);
+const BATCHES = [
+  {
+    id: "morning",
+    label: "Morning Batch",
+    icon: "🌅",
+    timeRange: "9AM – 12PM",
+  },
+  {
+    id: "afternoon",
+    label: "Afternoon Batch",
+    icon: "☀️",
+    timeRange: "12PM – 4PM",
+  },
+  { id: "evening", label: "Evening Batch", icon: "🌙", timeRange: "5PM – 8PM" },
+] as const;
 
-  const totalPicked = Object.values(flavours).reduce((a, b) => a + b, 0);
-  const resolved = resolveBoxes(totalPicked);
-  const grandTotal = (resolved as any).isClean
-    ? (resolved as any).totalBoxPrice
-    : 0;
-  const canShowPanel = totalPicked >= targetBox && (resolved as any).isClean;
+type BatchId = (typeof BATCHES)[number]["id"];
 
-  async function track(event: string) {
-    await supabase.from("trivandrum_events").insert({ event });
+const TESTIMONIALS = [
+  {
+    name: "Sneha R.",
+    handle: "via Instagram DM",
+    text: "Absolutely loved these mochis! Soft, chewy, and perfectly sweet — each bite just melts in the mouth. Definitely craving more!",
+    avatar: "S",
+  },
+  {
+    name: "Divya M.",
+    handle: "via Instagram DM",
+    text: "The mochis are amazing.... too good 🩷 Thank you for the surprise!",
+    avatar: "D",
+  },
+  {
+    name: "Anju K.",
+    handle: "via Instagram DM",
+    text: "Hi got the Mochi. It was yummy.. we loved it 😍 Thank you",
+    avatar: "A",
+  },
+  {
+    name: "Priya S.",
+    handle: "via Instagram DM",
+    text: "Sooooooo good! We finished in seconds. Will get more from u ❤️",
+    avatar: "P",
+  },
+  {
+    name: "Nithya V.",
+    handle: "via Instagram DM",
+    text: "Its was soo good! Nalla taste. But fruit flavours was awesome ❤️❤️❤️❤️",
+    avatar: "N",
+  },
+];
+
+function toDateString(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function getAutoBox(boxes: BoxSize[], totalPicked: number): BoxSize | null {
+  if (totalPicked === 0) return null;
+  const sorted = [...boxes].sort((a, b) => a.count - b.count);
+  return (
+    sorted.find((b) => b.count >= totalPicked) || sorted[sorted.length - 1]
+  );
+}
+
+function SectionLabel({ text }: { text: string }) {
+  return (
+    <p
+      style={{
+        fontSize: "0.62rem",
+        letterSpacing: "0.2em",
+        textTransform: "uppercase" as const,
+        color: "var(--gold)",
+        marginBottom: 8,
+        opacity: 0.85,
+        textAlign: "center",
+      }}
+    >
+      {text}
+    </p>
+  );
+}
+
+function GoldLine() {
+  return (
+    <div
+      style={{
+        width: 36,
+        height: 1,
+        background: "var(--gold)",
+        opacity: 0.45,
+        marginTop: 10,
+        marginBottom: 22,
+        marginLeft: "auto",
+        marginRight: "auto",
+      }}
+    />
+  );
+}
+
+function buildUpiLinks(amount: number, name: string) {
+  const note = encodeURIComponent(`Eversweet order for ${name}`);
+  const pa = encodeURIComponent(UPI_ID);
+  const pn = encodeURIComponent("Eversweet");
+  const am = encodeURIComponent(String(amount));
+  const base = `pa=${pa}&pn=${pn}&am=${am}&cu=INR&tn=${note}`;
+  return {
+    gpay: `gpay://upi/pay?${base}`,
+    phonepe: `phonepe://pay?${base}`,
+    paytm: `paytmmp://pay?${base}`,
+    generic: `upi://pay?${base}`,
+  };
+}
+
+function buildWhatsAppUrl(
+  customerName: string,
+  amount: number,
+  boxLabel: string,
+  flavourSummary: string,
+  batchLabel: string,
+  batchIcon: string,
+  deliveryDate: string,
+  fulfillmentType: string = "delivery",
+): string {
+  const message = [
+    `Hi! I just paid ₹${amount} for my Eversweet order 🍡`,
+    ``,
+    `📦 ${boxLabel}`,
+    flavourSummary ? `🍡 ${flavourSummary}` : null,
+    `${batchIcon} ${batchLabel} · ${deliveryDate}`,
+    fulfillmentType === "pickup" ? `🏠 Self Pickup` : `🚚 Delivery via Porter`,
+    ``,
+    `Please confirm my slot!`,
+  ]
+    .filter((l) => l !== null)
+    .join("\n");
+
+  return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+}
+
+async function sendPaymentAlert(payload: {
+  customer_name: string;
+  phone: string;
+  address: string;
+  batch_label: string;
+  delivery_date: string;
+  box_label: string;
+  flavour_summary: string;
+  total_price: number;
+}) {
+  try {
+    await fetch("/api/payment-alert", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (e) {
+    console.error("Payment alert failed:", e);
   }
+}
+
+function validateForm(form: { name: string; phone: string }): string {
+  const nameRegex = /^[a-zA-Z\s.'-]{2,}$/;
+  const phoneRegex = /^[6-9]\d{9}$/;
+  if (!form.name.trim()) return "Please enter your name.";
+  if (!nameRegex.test(form.name.trim()))
+    return "Please enter a valid name (letters only).";
+  if (!form.phone.trim()) return "Please enter your phone number.";
+  const cleanPhone = form.phone.replace(/\s+/g, "").replace(/^(\+91|91)/, "");
+  if (!phoneRegex.test(cleanPhone))
+    return "Please enter a valid 10-digit Indian mobile number.";
+  return "";
+}
+
+export default function Home() {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [boxes, setBoxes] = useState<BoxSize[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [paymentEnabled, setPaymentEnabled] = useState(false);
+
+  const [flavours, setFlavours] = useState<Record<string, number>>({});
+  const [selectedBatch, setSelectedBatch] = useState<BatchId | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string>(
+    toDateString(new Date()),
+  );
+
+  const [autoBox, setAutoBox] = useState<BoxSize | null>(null);
+  const [needsOneMore, setNeedsOneMore] = useState(false);
+
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [placing, setPlacing] = useState(false);
+  const [error, setError] = useState("");
+
+  const [form, setForm] = useState<CustomerForm>({
+    name: "",
+    phone: "",
+    address: "",
+  });
+  const [fulfillmentType, setFulfillmentType] = useState<"delivery" | "pickup">(
+    "delivery",
+  );
+  const [orderDone, setOrderDone] = useState(false);
+  const [hasTappedPay, setHasTappedPay] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
+
+  const orderRef = useRef<HTMLElement>(null);
+  const slotRef = useRef<HTMLDivElement>(null);
+  const formRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     async function load() {
-      const [{ data: p }, { data: s }] = await Promise.all([
+      const [{ data: p }, { data: b }] = await Promise.all([
         supabase
           .from("products")
           .select("*")
           .eq("is_available", true)
           .order("sort_order"),
-        supabase.from("trivandrum_settings").select("*").single(),
+        supabase
+          .from("box_sizes")
+          .select("*")
+          .eq("is_active", true)
+          .order("sort_order"),
       ]);
       if (p) setProducts(p);
-      if (s) {
-        if (s.trip_date) {
-          try {
-            const d = new Date(s.trip_date + "T00:00:00");
-            setTripDate(
-              isNaN(d.getTime())
-                ? s.trip_date
-                : d.toLocaleDateString("en-IN", {
-                    weekday: "long",
-                    day: "numeric",
-                    month: "long",
-                  }),
-            );
-          } catch {
-            setTripDate(s.trip_date);
-          }
-        }
-        if (s.pickup_locations) {
-          const locs = s.pickup_locations
-            .split("|")
-            .map((x: string) => {
-              const [name, area] = x.split("::");
-              return { name: name.trim(), area: (area || "").trim() };
-            })
-            .filter((l: any) => l.name);
-          if (locs.length > 0) setPickupLocations(locs);
-        }
-      }
+      if (b) setBoxes(b);
+      console.log(p, b);
+
       setLoading(false);
     }
     load();
-    track("page_view");
   }, []);
 
-  const reachedFlavoursRef = useRef(false);
+  const totalPicked = Object.values(flavours).reduce((a, b) => a + b, 0);
 
   useEffect(() => {
-    function onScroll() {
-      const el = flavourSectionRef.current;
-      if (!el) return;
-      const rect = el.getBoundingClientRect();
-      const inSection = rect.top <= 0 && rect.bottom > 80;
-      setInFlavourSection(inSection);
-      if (inSection && !reachedFlavoursRef.current) {
-        reachedFlavoursRef.current = true;
-        track("reached_flavours");
-      }
-    }
-    window.addEventListener("scroll", onScroll, { passive: true });
-    onScroll();
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
+    const box = getAutoBox(boxes, totalPicked);
+    setAutoBox(box);
+    setNeedsOneMore(!!(box && box.count - totalPicked === 1));
+  }, [flavours, boxes]);
 
-  function adjust(id: string, delta: number) {
+  function adjustFlavour(id: string, delta: number) {
     setFlavours((prev) => {
-      const next = (prev[id] || 0) + delta;
+      const cur = prev[id] || 0;
+      const next = cur + delta;
       if (next < 0) return prev;
-      const u = { ...prev, [id]: next };
-      if (u[id] === 0) delete u[id];
-      return u;
+      const maxBox = [...boxes].sort((a, b) => b.count - a.count)[0];
+      const maxAllowed = maxBox ? maxBox.count : 16;
+      if (totalPicked + delta > maxAllowed) return prev;
+      const updated = { ...prev, [id]: next };
+      if (updated[id] === 0) delete updated[id];
+      return updated;
     });
   }
 
-  function openWhatsApp() {
-    const flavourLines = Object.entries(flavours)
-      .filter(([, q]) => q > 0)
-      .map(([id, qty]) => {
-        const p = products.find((p) => p.id === id);
-        return p ? `  • ${p.name} ×${qty}` : null;
-      })
-      .filter(Boolean)
-      .join("\n");
-    const boxSummary = (resolved as any).isClean
-      ? (resolved as any).boxes
-          .map(
-            (b: any) =>
-              `${b.qty > 1 ? b.qty + "× " : ""}${b.label} (₹${b.price} each)`,
-          )
-          .join(", ")
-      : `${totalPicked} mochis selected`;
-    const lines = [
-      `Hi! I'd like to pre-order from Eversweet Trivandrum 🍡`,
-      ``,
-      totalPicked > 0 ? `${boxSummary}` : `📦 I haven't finalized my box yet`,
-      homeDelivery
-        ? `🛵 I need home delivery (Porter - charge to be confirmed)`
-        : ``,
-      !homeDelivery && selectedLocation ? `📍 Pickup: ${selectedLocation}` : ``,
-      (resolved as any).isClean
-        ? `💰 Mochi total - ₹${grandTotal}${homeDelivery ? " + Porter delivery" : ""}`
-        : ``,
-      ``,
-      totalPicked > 0 ? `Flavours:\n${flavourLines}` : ``,
-      ``,
-      `Please share details to confirm my order!`,
-    ]
-      .filter((l) => l !== "")
-      .join("\n");
-    track("whatsapp_open");
-    window.open(
-      `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(lines)}`,
-      "_blank",
+  function proceedToSlot() {
+    if (totalPicked === 0) {
+      setError("Please choose at least one flavour.");
+      return;
+    }
+    if (autoBox && totalPicked < autoBox.count) {
+      setError(
+        `Add ${autoBox.count - totalPicked} more piece${autoBox.count - totalPicked === 1 ? "" : "s"} to fill your ${autoBox.label}.`,
+      );
+      return;
+    }
+    setError("");
+    setStep(2);
+    setTimeout(
+      () =>
+        slotRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+      80,
     );
   }
 
-  return (
-    <main
-      style={{
-        maxWidth: 480,
-        margin: "0 auto",
-        paddingBottom: 120,
-        fontFamily: "'DM Sans', system-ui, sans-serif",
-        background: "var(--bg)",
-        minHeight: "100vh",
-      }}
-    >
-      <style
-        suppressHydrationWarning
-        dangerouslySetInnerHTML={{ __html: CSS }}
-      />
+  function pickBatch(id: BatchId) {
+    setSelectedBatch(id);
+    setStep(3);
+    setTimeout(
+      () =>
+        formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+      80,
+    );
+  }
 
-      {/* ANNOUNCEMENT BAR */}
-      <div
+  async function placeOrder() {
+    if (!autoBox || !selectedBatch) {
+      setError("Something went wrong. Please refresh and try again.");
+      return;
+    }
+    const validationError = validateForm(form);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    setPlacing(true);
+    setError("");
+    const batch = BATCHES.find((b) => b.id === selectedBatch)!;
+    try {
+      const res = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customer_name: form.name.trim(),
+          phone: form.phone.trim(),
+          address: form.address.trim(),
+          box_size_id: autoBox.id,
+          flavours,
+          delivery_date: selectedDate,
+          batch_label: batch.label,
+          total_price: autoBox.price,
+          fulfillment_type: fulfillmentType,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Something went wrong");
+      setOrderDone(true);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (e: unknown) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Failed to place order. Please try again.",
+      );
+    } finally {
+      setPlacing(false);
+    }
+  }
+
+  function scrollToOrder() {
+    orderRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  const todayStr = toDateString(new Date());
+  const tomorrowStr = toDateString(new Date(Date.now() + 86400000));
+
+  function friendlyDate(dateStr: string) {
+    if (dateStr === todayStr) return "Today";
+    if (dateStr === tomorrowStr) return "Tomorrow";
+    return new Date(dateStr + "T00:00:00").toLocaleDateString("en-IN", {
+      weekday: "long",
+      day: "numeric",
+      month: "short",
+    });
+  }
+
+  const MAINTENANCE_MODE = true; // flip to false to bring the site back
+  if (MAINTENANCE_MODE) {
+    return <MaintenanceScreen />;
+  }
+
+  // ── Order confirmed screen ──────────────────────────────────────
+  if (orderDone) {
+    const batch = BATCHES.find((b) => b.id === selectedBatch)!;
+
+    const flavourSummary = Object.entries(flavours)
+      .filter(([, qty]) => qty > 0)
+      .map(([id, qty]) => {
+        const prod = products.find((p) => p.id === id);
+        return prod ? `${prod.name} ×${qty}` : null;
+      })
+      .filter(Boolean)
+      .join(", ");
+
+    const upiLinks = buildUpiLinks(autoBox?.price || 0, form.name);
+    const whatsappUrl = buildWhatsAppUrl(
+      form.name,
+      autoBox?.price || 0,
+      autoBox?.label || "",
+      flavourSummary,
+      batch.label,
+      batch.icon,
+      friendlyDate(selectedDate),
+      fulfillmentType,
+    );
+
+    return (
+      <main
         style={{
-          background: "var(--gold)",
-          padding: "10px 20px",
+          minHeight: "100vh",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "48px 24px",
           textAlign: "center",
-          position: "sticky",
-          top: 0,
-          zIndex: 300,
+          maxWidth: 420,
+          margin: "0 auto",
         }}
       >
-        <p
+        <div style={{ fontSize: 52, marginBottom: 20 }}>🍡</div>
+        <h1
+          className="font-display"
           style={{
-            fontSize: "0.7rem",
-            fontWeight: 700,
-            color: "#160c08",
-            letterSpacing: "0.14em",
-            textTransform: "uppercase",
+            fontSize: "2.4rem",
+            fontWeight: 300,
+            marginBottom: 16,
+            lineHeight: 1.1,
           }}
         >
-          We're coming to Trivandrum{tripDate ? ` · ${tripDate}` : " . Sunday 7th June"}
-        </p>
-      </div>
+          Just one more step <br />
+          <br />
+          <em>{form.name.split(" ")[0]}</em>
+        </h1>
+        <SectionLabel text="Please make payment to confirm your order" />
+        <GoldLine />
 
-      {/* HERO */}
-      <div style={{ position: "relative", height: 280, overflow: "hidden" }}>
-        {products
-          .filter((p) => p.image_url)
-          .slice(0, 4)
-          .map((p, i, arr) => (
-            <img
-              key={p.id}
-              src={p.image_url!}
-              alt={p.name}
-              style={{
-                position: "absolute",
-                inset: 0,
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-                opacity: 0,
-                animation: `heroFade ${arr.length * 3.5}s ease-in-out ${i * 3.5}s infinite`,
-              }}
-            />
-          ))}
+        {/* Order summary */}
         <div
           style={{
-            position: "absolute",
-            inset: 0,
-            background:
-              "linear-gradient(to bottom, rgba(22,12,8,0.25) 0%, rgba(22,12,8,0.8) 100%)",
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "0 24px",
+            background: "rgba(184,134,11,0.08)",
+            border: "1px solid rgba(184,134,11,0.25)",
+            borderRadius: 10,
+            padding: "14px 18px",
+            marginBottom: 28,
+            width: "100%",
           }}
         >
           <p
             style={{
-              fontSize: "0.58rem",
-              letterSpacing: "0.26em",
-              textTransform: "uppercase",
-              color: "var(--gold)",
-              marginBottom: 10,
-              opacity: 0.9,
+              fontSize: "0.82rem",
+              color: "var(--cream-dim)",
+              lineHeight: 1.8,
             }}
           >
-            Kochi Cloud Kitchen
-          </p>
-          <h1
-            style={{
-              fontFamily: "Cormorant Garamond, serif",
-              fontSize: "4.2rem",
-              fontWeight: 300,
-              lineHeight: 0.95,
-              color: "var(--cream)",
-              marginBottom: 12,
-            }}
-          >
-            Ever<em style={{ color: "var(--gold)" }}>sweet</em>
-          </h1>
-          <div
-            style={{
-              width: 36,
-              height: 1,
-              background: "var(--gold)",
-              opacity: 0.55,
-              marginBottom: 14,
-            }}
-          />
-          <p
-            style={{
-              fontFamily: "Cormorant Garamond, serif",
-              fontSize: "1.2rem",
-              fontWeight: 300,
-              color: "rgba(245,237,224,0.88)",
-              lineHeight: 1.4,
-              textAlign: "center",
-              maxWidth: 280,
-            }}
-          >
-            Fresh Japanese mochi,
+            <strong style={{ color: "var(--gold)" }}>
+              {batch.icon} {batch.label}
+            </strong>{" "}
+            on{" "}
+            <strong style={{ color: "var(--gold)" }}>
+              {friendlyDate(selectedDate)}
+            </strong>
             <br />
-            hand-carried from Kochi
+            <span
+              style={{ fontSize: "0.75rem", color: "rgba(255,248,230,0.6)" }}
+            >
+              {autoBox?.label} · {flavourSummary}
+            </span>
           </p>
         </div>
-      </div>
 
-      {/* STORY */}
+        {/* ── Payment section — toggleable ── */}
+        {paymentEnabled ? (
+          <div
+            style={{
+              width: "100%",
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(184,134,11,0.3)",
+              borderRadius: 12,
+              padding: "20px 18px",
+              marginBottom: 24,
+            }}
+          >
+            <p
+              style={{
+                fontSize: "0.62rem",
+                letterSpacing: "0.2em",
+                textTransform: "uppercase" as const,
+                color: "var(--gold)",
+                marginBottom: 6,
+                opacity: 0.85,
+              }}
+            >
+              Complete Your Payment
+            </p>
+            <p
+              style={{
+                fontSize: "1.6rem",
+                fontWeight: 700,
+                color: "var(--gold)",
+                marginBottom: 4,
+                fontFamily: "Cormorant Garamond, serif",
+              }}
+            >
+              ₹{autoBox?.price}
+            </p>
+            <p
+              style={{
+                fontSize: "0.75rem",
+                color: "rgba(255,248,230,0.65)",
+                marginBottom: 18,
+                lineHeight: 1.6,
+              }}
+            >
+              Your slot is reserved. Pay now to confirm it.
+            </p>
+            <p
+              style={{
+                fontSize: "0.78rem",
+                color: "var(--cream-dim)",
+                marginBottom: 12,
+                lineHeight: 1.6,
+              }}
+            >
+              Tap your payment app — amount is pre-filled ✓
+            </p>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column" as const,
+                gap: 10,
+                marginBottom: 4,
+              }}
+            >
+              <a
+                href={upiLinks.gpay}
+                onClick={() => setHasTappedPay(true)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 10,
+                  width: "100%",
+                  padding: "13px 20px",
+                  borderRadius: 10,
+                  background:
+                    "linear-gradient(135deg, #1a73e8 0%, #0d47a1 100%)",
+                  color: "#fff",
+                  fontSize: "0.95rem",
+                  fontWeight: 700,
+                  textDecoration: "none",
+                  boxSizing: "border-box" as const,
+                  boxShadow: "0 3px 12px rgba(26,115,232,0.35)",
+                }}
+              >
+                <img
+                  src="https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/Payment/img.icons8.com.png"
+                  alt="GPay"
+                  style={{ width: 28, height: 28, objectFit: "contain" }}
+                />
+                Google Pay — ₹{autoBox?.price}
+              </a>
+
+              <a
+                href={upiLinks.phonepe}
+                onClick={() => setHasTappedPay(true)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 10,
+                  width: "100%",
+                  padding: "13px 20px",
+                  borderRadius: 10,
+                  background:
+                    "linear-gradient(135deg, #5f259f 0%, #3d1a6e 100%)",
+                  color: "#fff",
+                  fontSize: "0.95rem",
+                  fontWeight: 700,
+                  textDecoration: "none",
+                  boxSizing: "border-box" as const,
+                  boxShadow: "0 3px 12px rgba(95,37,159,0.35)",
+                }}
+              >
+                <img
+                  src="https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/Payment/icons8-phone-pe-48.png"
+                  alt="PhonePe"
+                  style={{ width: 28, height: 28, objectFit: "contain" }}
+                />
+                PhonePe — ₹{autoBox?.price}
+              </a>
+
+              <a
+                href={upiLinks.paytm}
+                onClick={() => setHasTappedPay(true)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 10,
+                  width: "100%",
+                  padding: "13px 20px",
+                  borderRadius: 10,
+                  background:
+                    "linear-gradient(135deg, #00baf2 0%, #0073b7 100%)",
+                  color: "#fff",
+                  fontSize: "0.95rem",
+                  fontWeight: 700,
+                  textDecoration: "none",
+                  boxSizing: "border-box" as const,
+                  boxShadow: "0 3px 12px rgba(0,115,183,0.35)",
+                }}
+              >
+                <img
+                  src="https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/Payment/icons8-paytm-48.png"
+                  alt="Paytm"
+                  style={{ width: 28, height: 28, objectFit: "contain" }}
+                />
+                Paytm — ₹{autoBox?.price}
+              </a>
+
+              <a
+                href={upiLinks.generic}
+                onClick={() => setHasTappedPay(true)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 10,
+                  width: "100%",
+                  padding: "11px 20px",
+                  borderRadius: 10,
+                  background: "transparent",
+                  border: "1px solid rgba(184,134,11,0.35)",
+                  color: "var(--cream-dim)",
+                  fontSize: "0.8rem",
+                  fontWeight: 500,
+                  textDecoration: "none",
+                  boxSizing: "border-box" as const,
+                }}
+              >
+                Other UPI App
+              </a>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                marginBottom: 16,
+                marginTop: 16,
+              }}
+            >
+              <div
+                style={{
+                  flex: 1,
+                  height: 1,
+                  background: "rgba(255,255,255,0.1)",
+                }}
+              />
+              <span
+                style={{
+                  fontSize: "0.65rem",
+                  color: "rgba(255,248,230,0.5)",
+                  letterSpacing: "0.1em",
+                }}
+              >
+                AFTER PAYING
+              </span>
+              <div
+                style={{
+                  flex: 1,
+                  height: 1,
+                  background: "rgba(255,255,255,0.1)",
+                }}
+              />
+            </div>
+
+            <button
+              onClick={async () => {
+                if (!emailSent) {
+                  setEmailSent(true);
+                  await sendPaymentAlert({
+                    customer_name: form.name,
+                    phone: form.phone,
+                    address: form.address,
+                    batch_label: batch.label,
+                    delivery_date: friendlyDate(selectedDate),
+                    box_label: autoBox?.label || "",
+                    flavour_summary: flavourSummary,
+                    total_price: autoBox?.price || 0,
+                  });
+                }
+                window.open(whatsappUrl, "_blank");
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 10,
+                width: "100%",
+                padding: "13px 20px",
+                borderRadius: 10,
+                background: hasTappedPay
+                  ? "linear-gradient(135deg, #25d366 0%, #128c4a 100%)"
+                  : "rgba(37,211,102,0.12)",
+                border: hasTappedPay
+                  ? "none"
+                  : "1.5px solid rgba(37,211,102,0.4)",
+                color: hasTappedPay ? "#fff" : "#25d366",
+                fontSize: hasTappedPay ? "1rem" : "0.9rem",
+                fontWeight: 700,
+                cursor: "pointer",
+                boxSizing: "border-box" as const,
+                transition: "all 0.3s ease",
+                boxShadow: hasTappedPay
+                  ? "0 4px 16px rgba(37,211,102,0.35)"
+                  : "none",
+                letterSpacing: "0.01em",
+                fontFamily: "system-ui, sans-serif",
+              }}
+            >
+              <span style={{ fontSize: "1.3rem" }}>
+                {emailSent ? "✅" : "📲"}
+              </span>
+              {emailSent
+                ? "Screenshot Sent — Slot Confirmed!"
+                : hasTappedPay
+                  ? "Send Payment Screenshot on WhatsApp"
+                  : "Send Screenshot on WhatsApp"}
+            </button>
+
+            {hasTappedPay && (
+              <p
+                style={{
+                  fontSize: "0.7rem",
+                  color: "#25d366",
+                  marginTop: 8,
+                  lineHeight: 1.6,
+                  opacity: 0.9,
+                }}
+              >
+                Opens WhatsApp with your order details pre-filled.
+                <br />
+                Just attach your payment screenshot and send! 🍡
+              </p>
+            )}
+            {!hasTappedPay && (
+              <p
+                style={{
+                  fontSize: "0.68rem",
+                  color: "rgba(255,248,230,0.6)",
+                  marginTop: 8,
+                  lineHeight: 1.6,
+                }}
+              >
+                Pay first, then send us the screenshot to lock your slot.
+              </p>
+            )}
+          </div>
+        ) : (
+          /* ── Payment disabled — QR + phone only ── */
+          <div
+            style={{
+              width: "100%",
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(184,134,11,0.3)",
+              borderRadius: 12,
+              padding: "28px 20px",
+              marginBottom: 24,
+              textAlign: "center",
+            }}
+          >
+            {/* Amount */}
+            <p
+              style={{
+                fontSize: "0.62rem",
+                letterSpacing: "0.2em",
+                textTransform: "uppercase" as const,
+                color: "var(--gold)",
+                marginBottom: 6,
+                opacity: 0.85,
+              }}
+            >
+              Amount to Pay
+            </p>
+            <p
+              style={{
+                fontSize: "2.4rem",
+                fontWeight: 700,
+                color: "var(--gold)",
+                fontFamily: "Cormorant Garamond, serif",
+                lineHeight: 1,
+                marginBottom: 22,
+              }}
+            >
+              ₹{autoBox?.price}
+            </p>
+
+            {/* QR Code */}
+            <div
+              style={{
+                display: "inline-block",
+                background: "#ffffff",
+                borderRadius: 12,
+                padding: 16,
+                marginBottom: 18,
+                boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+              }}
+            >
+              <img
+                src="/upi-qr.png"
+                alt="UPI QR Code"
+                style={{ width: 200, height: 200, display: "block" }}
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = "none";
+                }}
+              />
+            </div>
+
+            {/* UPI ID */}
+            <p
+              style={{
+                fontSize: "0.72rem",
+                color: "rgba(255,248,230,0.5)",
+                letterSpacing: "0.08em",
+                marginBottom: 6,
+                textTransform: "uppercase" as const,
+              }}
+            >
+              UPI ID
+            </p>
+            <p
+              style={{
+                fontSize: "1rem",
+                fontWeight: 600,
+                color: "var(--cream)",
+                marginBottom: 22,
+                letterSpacing: "0.02em",
+              }}
+            >
+              {UPI_ID}
+            </p>
+            {/* Contact Number*/}
+            <p
+              style={{
+                fontSize: "0.72rem",
+                color: "rgba(255,248,230,0.5)",
+                letterSpacing: "0.08em",
+                marginBottom: 6,
+                textTransform: "uppercase" as const,
+              }}
+            >
+              or Pay to this number
+            </p>
+            <p
+              style={{
+                fontSize: "1rem",
+                fontWeight: 600,
+                color: "var(--cream)",
+                marginBottom: 22,
+                letterSpacing: "0.02em",
+              }}
+            >
+              {7907044368}
+            </p>
+
+            {/* Divider */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                marginBottom: 22,
+              }}
+            >
+              <div
+                style={{
+                  flex: 1,
+                  height: 1,
+                  background: "rgba(255,255,255,0.1)",
+                }}
+              />
+              <span
+                style={{
+                  fontSize: "0.62rem",
+                  color: "rgba(255,248,230,0.4)",
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase" as const,
+                }}
+              >
+                After paying
+              </span>
+              <div
+                style={{
+                  flex: 1,
+                  height: 1,
+                  background: "rgba(255,255,255,0.1)",
+                }}
+              />
+            </div>
+
+            {/* WhatsApp + phone */}
+            <p
+              style={{
+                fontSize: "0.8rem",
+                color: "var(--cream-dim)",
+                lineHeight: 1.7,
+                marginBottom: 16,
+              }}
+            >
+              Send your payment screenshot to us on WhatsApp to confirm your
+              slot.
+            </p>
+
+            {/* Phone number — tappable */}
+            <a
+              href="tel:+917907044368"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 10,
+                width: "100%",
+                padding: "13px 20px",
+                borderRadius: 10,
+                background: "rgba(255,255,255,0.06)",
+                border: "1px solid rgba(255,255,255,0.15)",
+                color: "var(--cream)",
+                fontSize: "1.1rem",
+                fontWeight: 700,
+                textDecoration: "none",
+                boxSizing: "border-box" as const,
+                marginBottom: 10,
+                letterSpacing: "0.04em",
+              }}
+            >
+              📞 +91 79070 44368
+            </a>
+
+            {/* WhatsApp button */}
+            <a
+              href={`https://wa.me/917907044368?text=${encodeURIComponent(
+                `Hi! I've paid ₹${autoBox?.price} for my Eversweet order 🍡\n\n📦 ${autoBox?.label}\n${BATCHES.find((b) => b.id === selectedBatch)?.icon || ""} ${BATCHES.find((b) => b.id === selectedBatch)?.label || ""} · ${friendlyDate(selectedDate)}\n\nPlease confirm my slot!`,
+              )}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 10,
+                width: "100%",
+                padding: "13px 20px",
+                borderRadius: 10,
+                background: "linear-gradient(135deg, #25d366 0%, #128c4a 100%)",
+                color: "#fff",
+                fontSize: "0.95rem",
+                fontWeight: 700,
+                textDecoration: "none",
+                boxSizing: "border-box" as const,
+                boxShadow: "0 4px 16px rgba(37,211,102,0.3)",
+              }}
+            >
+              <span style={{ fontSize: "1.2rem" }}>📲</span>
+              Send Screenshot on WhatsApp
+            </a>
+
+            <p
+              style={{
+                fontSize: "0.65rem",
+                color: "rgba(255,248,230,0.35)",
+                marginTop: 14,
+                lineHeight: 1.7,
+              }}
+            >
+              Scan the QR with any UPI app · Pay ₹{autoBox?.price} · Send
+              screenshot to confirm
+            </p>
+          </div>
+        )}
+
+        {/* QR fallback */}
+        <details style={{ width: "100%", marginBottom: 24, cursor: "pointer" }}>
+          <summary
+            style={{
+              fontSize: "0.72rem",
+              color: "rgba(255,248,230,0.6)",
+              letterSpacing: "0.08em",
+              listStyle: "none",
+              textAlign: "center",
+              padding: "8px 0",
+              cursor: "pointer",
+            }}
+          >
+            ▾ Pay via QR code instead
+          </summary>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column" as const,
+              alignItems: "center",
+              paddingTop: 16,
+            }}
+          >
+            <div
+              style={{
+                background: "white",
+                borderRadius: 8,
+                padding: 16,
+                display: "inline-block",
+              }}
+            >
+              <img
+                src="/upi-qr.png"
+                alt="UPI QR Code"
+                style={{ width: 160, height: 160, display: "block" }}
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = "none";
+                }}
+              />
+              <p
+                style={{
+                  color: "#555",
+                  fontSize: "0.7rem",
+                  marginTop: 8,
+                  textAlign: "center",
+                }}
+              >
+                Scan to pay ₹{autoBox?.price}
+              </p>
+            </div>
+            <p
+              style={{
+                fontSize: "0.68rem",
+                color: "rgba(255,248,230,0.6)",
+                marginTop: 10,
+              }}
+            >
+              UPI ID:{" "}
+              <strong style={{ color: "var(--cream-dim)" }}>{UPI_ID}</strong>
+            </p>
+          </div>
+        </details>
+
+        <div className="divider" style={{ width: "100%", marginBottom: 24 }} />
+        <a
+          href="https://instagram.com/byeversweet"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            color: "var(--gold)",
+            fontSize: "0.7rem",
+            letterSpacing: "0.15em",
+            textTransform: "uppercase" as const,
+            textDecoration: "none",
+          }}
+        >
+          Follow us @byeversweet →
+        </a>
+      </main>
+    );
+  }
+
+  // ── Main page ───────────────────────────────────────────────────
+  return (
+    <main style={{ maxWidth: 480, margin: "0 auto", paddingBottom: 80 }}>
+      {/* ══ HERO ══════════════════════════════════════════════════ */}
       <section
         style={{
-          padding: "30px 24px 32px",
-          background: "rgba(255,248,230,0.02)",
+          padding: "56px 24px 44px",
+          textAlign: "center",
           borderBottom: "1px solid var(--border2)",
+          background:
+            "linear-gradient(180deg, rgba(255,248,230,0.06) 0%, var(--bg) 100%)",
         }}
       >
-        <p
+        <p className="section-label" style={{ marginBottom: 16 }}>
+          Cloud Kitchen · Kochi, Kerala
+        </p>
+        <h1
+          className="font-display"
           style={{
-            fontFamily: "Cormorant Garamond, serif",
+            fontSize: "4rem",
+            fontWeight: 300,
+            lineHeight: 1,
+            letterSpacing: "-0.01em",
+            marginBottom: 4,
+          }}
+        >
+          Ever<em style={{ color: "var(--gold)" }}>sweet</em>
+        </h1>
+        <div
+          style={{
+            width: 48,
+            height: 1,
+            background: "var(--gold)",
+            margin: "16px auto",
+            opacity: 0.5,
+          }}
+        />
+
+        {products.filter((p) => p.image_url).length > 0 && (
+          <div
+            style={{
+              position: "relative",
+              marginBottom: 28,
+              borderRadius: 12,
+              overflow: "hidden",
+              height: 260,
+            }}
+          >
+            {products
+              .filter((p) => p.image_url)
+              .slice(0, 4)
+              .map((p, i) => (
+                <img
+                  key={p.id}
+                  src={p.image_url!}
+                  alt={p.name}
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    opacity: 0,
+                    animation: `heroFade ${products.filter((x) => x.image_url).slice(0, 4).length * 3}s ease-in-out ${i * 3}s infinite`,
+                  }}
+                />
+              ))}
+            <div
+              style={{
+                position: "absolute",
+                bottom: 0,
+                left: 0,
+                right: 0,
+                height: 60,
+                background:
+                  "linear-gradient(to bottom, transparent, var(--bg))",
+              }}
+            />
+          </div>
+        )}
+
+        <style>{`
+          @keyframes heroFade {
+            0% { opacity: 0; }
+            8% { opacity: 1; }
+            33% { opacity: 1; }
+            41% { opacity: 0; }
+            100% { opacity: 0; }
+          }
+        `}</style>
+
+        <p
+          className="font-display"
+          style={{
             fontSize: "1.5rem",
             fontWeight: 300,
-            lineHeight: 1.35,
+            lineHeight: 1.3,
+            maxWidth: 320,
+            margin: "0 auto 12px",
             color: "var(--cream)",
-            marginBottom: 14,
           }}
         >
-          You asked. We're making the trip.
+          Mochi. Made the way it was meant to be.
         </p>
         <p
           style={{
-            fontSize: "0.84rem",
             color: "var(--cream-dim)",
-            lineHeight: 1.85,
-            marginBottom: 20,
+            fontSize: "0.82rem",
+            lineHeight: 1.75,
+            maxWidth: 300,
+            margin: "0 auto 28px",
           }}
         >
-          After receiving requests from several of you in Trivandrum, we're
-          bringing Eversweet mochi to your city - made fresh in Kochi the same
-          morning and hand-carried by train.
+          Soft rice flour on the outside. Cold, creamy fruit filling inside.
+          Made fresh the morning it reaches you — because that&apos;s the only
+          way mochi should be eaten.
         </p>
-        <button
-          onClick={() => {
-            track("order_now_tap");
-            document
-              .getElementById("flavours-section")
-              ?.scrollIntoView({ behavior: "smooth", block: "start" });
-          }}
-          style={{
-            width: "100%",
-            padding: "15px",
-            borderRadius: 12,
-            border: "2px solid var(--gold)",
-            background: "rgba(201,168,76,0.12)",
-            color: "var(--gold)",
-            fontSize: "1rem",
-            fontWeight: 700,
-            cursor: "pointer",
-            fontFamily: "'DM Sans', system-ui, sans-serif",
-            letterSpacing: "0.04em",
-            marginBottom: 16,
-          }}
-        >
-          Order Now →
-        </button>
+        <div style={{ display: "flex", justifyContent: "center" }}>
+          <button
+            className="btn-gold"
+            style={{ maxWidth: 240 }}
+            onClick={scrollToOrder}
+          >
+            Order Fresh Mochi →
+          </button>
+        </div>
         <p
           style={{
-            fontSize: "0.84rem",
+            fontSize: "0.68rem",
             color: "var(--cream-dim)",
-            lineHeight: 1.85,
+            marginTop: 14,
           }}
         >
-          This is a limited pre-order run. Pick your flavours below and place
-          your order via WhatsApp.
+          Brookie &amp; Tiramisu coming soon ✦
         </p>
       </section>
 
-      {/* PRODUCT STORY */}
+      {/* ══ PROBLEM / EMPATHY ═════════════════════════════════════ */}
       <section
         style={{
-          padding: "36px 24px",
+          padding: "32px 24px",
           borderBottom: "1px solid var(--border2)",
+          background: "rgba(255,248,230,0.03)",
           textAlign: "center",
         }}
       >
-        <p
+        <SectionLabel text="Why Eversweet" />
+        <h2
+          className="font-display"
           style={{
-            fontFamily: "Cormorant Garamond, serif",
-            fontSize: "1.7rem",
+            fontSize: "1.6rem",
             fontWeight: 300,
-            lineHeight: 1.3,
-            color: "var(--cream)",
-            marginBottom: 16,
+            lineHeight: 1.2,
+            marginBottom: 6,
           }}
         >
           Most mochi is made weeks ago.
           <br />
           <em style={{ color: "var(--gold)" }}>Ours was made this morning.</em>
-        </p>
-        <div
-          style={{
-            width: 32,
-            height: 1,
-            background: "var(--gold)",
-            opacity: 0.35,
-            margin: "0 auto 20px",
-          }}
-        />
+        </h2>
+        <GoldLine />
         <p
           style={{
-            fontSize: "0.85rem",
             color: "var(--cream-dim)",
-            lineHeight: 1.9,
-            maxWidth: 360,
-            margin: "0 auto 14px",
+            fontSize: "0.875rem",
+            lineHeight: 1.85,
+            marginBottom: 16,
+            textAlign: "left",
           }}
         >
-          {
-            "You've had frozen mochi before. That odd, chewy-but-cold bite that never quite felt right. The rice flour skin that tears instead of yielding. The filling that tastes like a memory of fruit."
-          }
+          You&apos;ve had frozen mochi — that odd, chewy-but-cold bite that
+          never quite felt right. The rice flour skin that tears instead of
+          yielding. The filling that tastes like a memory of fruit rather than
+          the fruit itself.
         </p>
         <p
           style={{
-            fontSize: "0.85rem",
             color: "var(--cream-dim)",
-            lineHeight: 1.9,
-            maxWidth: 360,
-            margin: "0 auto 14px",
+            fontSize: "0.875rem",
+            lineHeight: 1.85,
+            marginBottom: 20,
+            textAlign: "left",
           }}
         >
-          {"Eversweet is built on one belief: "}
+          Eversweet is built on one belief:{" "}
           <strong style={{ color: "var(--cream)", fontWeight: 500 }}>
-            {"mochi eaten the day it's made is a completely different food."}
-          </strong>
-          {
-            " The skin is impossibly soft. The filling is cold but not frozen. Every texture is intentional."
-          }
+            mochi eaten the day it&apos;s made is a completely different food.
+          </strong>{" "}
+          The skin is impossibly soft. The filling is cold but not frozen. Every
+          texture is intentional.
         </p>
-        <p
-          style={{
-            fontSize: "0.85rem",
-            color: "var(--cream-dim)",
-            lineHeight: 1.9,
-            maxWidth: 360,
-            margin: "0 auto 28px",
-          }}
-        >
-          {
-            "We make each batch fresh in Kochi the same morning it reaches you. Nothing sits. Nothing is refrigerated overnight."
-          }
-        </p>
-      </section>
-
-      {/* HOW IT WORKS */}
-      <section
-        style={{
-          padding: "28px 24px",
-          borderBottom: "1px solid var(--border2)",
-          background: "rgba(201,168,76,0.03)",
-        }}
-      >
-        <p
-          style={{
-            fontSize: "0.58rem",
-            letterSpacing: "0.2em",
-            textTransform: "uppercase",
-            color: "var(--gold)",
-            marginBottom: 14,
-            opacity: 0.8,
-          }}
-        >
-          How it works
-        </p>
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {(
-            [
-              ["1", "Pick your flavours and box size below"],
-              ["2", "Tap Place Order - it opens WhatsApp with your selection"],
-              ["3", "We confirm your order and share payment details"],
-              [
-                "4",
-                tripDate
-                  ? `Collect your fresh mochi on ${tripDate}`
-                  : "Collect your fresh mochi on the trip date - we confirm on WhatsApp",
-              ],
-            ] as [string, string][]
-          ).map(([n, t]) => (
-            <div
-              key={n}
-              style={{ display: "flex", gap: 14, alignItems: "flex-start" }}
-            >
-              <div
-                style={{
-                  width: 26,
-                  height: 26,
-                  borderRadius: "50%",
-                  background: "rgba(201,168,76,0.12)",
-                  border: "1px solid rgba(201,168,76,0.3)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "0.7rem",
-                  fontWeight: 700,
-                  color: "var(--gold)",
-                  flexShrink: 0,
-                  marginTop: 1,
-                }}
-              >
-                {n}
-              </div>
-              <p
-                style={{
-                  fontSize: "0.84rem",
-                  color: "var(--cream-dim)",
-                  lineHeight: 1.6,
-                  paddingTop: 3,
-                }}
-              >
-                {t}
-              </p>
-            </div>
-          ))}
+        <div style={{ display: "flex", justifyContent: "center" }}>
+          <button
+            className="btn-gold"
+            style={{ maxWidth: 220 }}
+            onClick={scrollToOrder}
+          >
+            Build My Box →
+          </button>
         </div>
       </section>
 
-      {/* FLAVOURS */}
+      {/* ══ PRODUCTS ══════════════════════════════════════════════ */}
       <section
-        id="flavours-section"
-        ref={flavourSectionRef}
         style={{
           padding: "36px 24px",
           borderBottom: "1px solid var(--border2)",
-          paddingBottom: 100,
+          textAlign: "center",
         }}
       >
-        <div style={{ textAlign: "center", marginBottom: 22 }}>
-          <p
-            style={{
-              fontSize: "0.58rem",
-              letterSpacing: "0.22em",
-              textTransform: "uppercase",
-              color: "var(--gold)",
-              marginBottom: 6,
-              opacity: 0.75,
-            }}
-          >
-            Step 1
-          </p>
-          <h2
-            style={{
-              fontFamily: "Cormorant Garamond, serif",
-              fontSize: "1.8rem",
-              fontWeight: 300,
-              color: "var(--cream)",
-              marginBottom: 6,
-            }}
-          >
-            Choose your flavours
-          </h2>
-          <div
-            style={{
-              width: 32,
-              height: 1,
-              background: "var(--gold)",
-              margin: "0 auto 10px",
-              opacity: 0.35,
-            }}
-          />
-          <p style={{ fontSize: "0.78rem", color: "var(--cream-dim)" }}>
-            Mix freely - the right box is worked out for you.
-          </p>
-        </div>
-
-        {/* Box selector */}
-        <div
+        <SectionLabel text="This Week's Menu" />
+        <h2
+          className="font-display"
           style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 10,
-            marginBottom: 16,
+            fontSize: "1.75rem",
+            fontWeight: 300,
+            lineHeight: 1.1,
+            marginBottom: 6,
           }}
         >
-          <button
-            onClick={() => setTargetBox(4)}
-            style={{
-              border: `2px solid ${targetBox === 4 ? "var(--gold)" : "rgba(255,255,255,0.09)"}`,
-              borderRadius: 12,
-              padding: "14px 16px",
-              background:
-                targetBox === 4
-                  ? "rgba(201,168,76,0.07)"
-                  : "rgba(255,255,255,0.02)",
-              textAlign: "center" as const,
-              cursor: "pointer",
-              fontFamily: "'DM Sans', system-ui, sans-serif",
-              transition: "all 0.2s",
-              position: "relative" as const,
-              overflow: "hidden",
-            }}
-          >
-            {targetBox === 4 && (
-              <div
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  background: "var(--gold)",
-                  padding: "3px 0",
-                  fontSize: "0.55rem",
-                  fontWeight: 700,
-                  letterSpacing: "0.12em",
-                  textTransform: "uppercase" as const,
-                  color: "#160c08",
-                  borderRadius: "10px 10px 0 0",
-                }}
-              >
-                Selected
-              </div>
-            )}
-            <div style={{ marginTop: targetBox === 4 ? 14 : 0 }}>
-              <p
-                style={{
-                  fontSize: "0.6rem",
-                  letterSpacing: "0.14em",
-                  textTransform: "uppercase" as const,
-                  color: targetBox === 4 ? "var(--gold)" : "var(--cream-dim)",
-                  marginBottom: 6,
-                }}
-              >
-                Box of 4
-              </p>
-              <p
-                style={{
-                  fontSize: "2.2rem",
-                  fontWeight: 700,
-                  color: targetBox === 4 ? "var(--gold)" : "var(--cream)",
-                  lineHeight: 1,
-                  marginBottom: 4,
-                }}
-              >
-                ₹699
-              </p>
-              <p style={{ fontSize: "0.68rem", color: "var(--cream-dim)" }}>
-                4 mochis
-              </p>
-            </div>
-          </button>
-          <button
-            onClick={() => setTargetBox(6)}
-            style={{
-              border: `2px solid ${targetBox === 6 ? "var(--gold)" : "rgba(255,255,255,0.09)"}`,
-              borderRadius: 12,
-              padding: "14px 16px",
-              background:
-                targetBox === 6
-                  ? "rgba(201,168,76,0.08)"
-                  : "rgba(255,255,255,0.02)",
-              textAlign: "center" as const,
-              cursor: "pointer",
-              fontFamily: "'DM Sans', system-ui, sans-serif",
-              transition: "all 0.2s",
-              position: "relative" as const,
-              overflow: "hidden",
-            }}
-          >
-            {targetBox === 6 && (
-              <div
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  background: "var(--gold)",
-                  padding: "3px 0",
-                  fontSize: "0.55rem",
-                  fontWeight: 700,
-                  letterSpacing: "0.12em",
-                  textTransform: "uppercase" as const,
-                  color: "#160c08",
-                }}
-              >
-                Selected
-              </div>
-            )}
-            <div style={{ marginTop: targetBox === 6 ? 16 : 0 }}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 5,
-                  marginBottom: 6,
-                }}
-              >
-                <p
-                  style={{
-                    fontSize: "0.6rem",
-                    letterSpacing: "0.14em",
-                    textTransform: "uppercase" as const,
-                    color: targetBox === 6 ? "var(--gold)" : "var(--cream-dim)",
-                  }}
-                >
-                  Box of 6
-                </p>
-                {targetBox !== 6 && (
-                  <span
-                    style={{
-                      fontSize: "0.5rem",
-                      fontWeight: 700,
-                      color: "#160c08",
-                      background: "var(--gold)",
-                      padding: "1px 5px",
-                      borderRadius: 3,
-                    }}
-                  >
-                    BEST VALUE
-                  </span>
-                )}
-              </div>
-              <p
-                style={{
-                  fontSize: "2.2rem",
-                  fontWeight: 700,
-                  color: targetBox === 6 ? "var(--gold)" : "var(--cream)",
-                  lineHeight: 1,
-                  marginBottom: 4,
-                }}
-              >
-                ₹899
-              </p>
-              <p style={{ fontSize: "0.68rem", color: "var(--cream-dim)" }}>
-                6 mochis
-              </p>
-            </div>
-          </button>
-        </div>
+          Choose what you love
+        </h2>
+        <GoldLine />
 
-        {/* Flavour grid */}
         {loading ? (
           <div
             style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}
@@ -813,12 +1294,8 @@ export default function TrivandrumPage() {
             {[1, 2, 3, 4].map((i) => (
               <div
                 key={i}
-                style={{
-                  height: 190,
-                  borderRadius: 12,
-                  background: "rgba(255,255,255,0.03)",
-                  border: "1px solid rgba(255,255,255,0.06)",
-                }}
+                className="card"
+                style={{ height: 200, borderRadius: 6, opacity: 0.3 }}
               />
             ))}
           </div>
@@ -831,15 +1308,16 @@ export default function TrivandrumPage() {
               return (
                 <div
                   key={p.id}
+                  onClick={() => adjustFlavour(p.id, 1)}
                   style={{
-                    borderRadius: 12,
+                    borderRadius: 8,
                     overflow: "hidden",
-                    border: `2px solid ${qty > 0 ? "var(--gold)" : "rgba(255,255,255,0.07)"}`,
+                    border: `1px solid ${qty > 0 ? "var(--gold)" : "var(--border2)"}`,
                     background:
-                      qty > 0
-                        ? "rgba(201,168,76,0.1)"
-                        : "rgba(255,255,255,0.02)",
-                    transition: "border-color 0.2s, background 0.2s",
+                      qty > 0 ? "rgba(184,134,11,0.06)" : "var(--surface)",
+                    transition: "all 0.25s ease",
+                    cursor: "pointer",
+                    userSelect: "none",
                   }}
                 >
                   <div style={{ position: "relative" }}>
@@ -848,28 +1326,13 @@ export default function TrivandrumPage() {
                       alt={p.name}
                       style={{
                         width: "100%",
-                        height: 130,
+                        height: 120,
                         objectFit: "cover",
                         display: "block",
                       }}
                     />
                     {p.is_premium && (
-                      <span
-                        style={{
-                          position: "absolute",
-                          top: 7,
-                          left: 7,
-                          background: "rgba(201,168,76,0.92)",
-                          color: "#1a0e00",
-                          fontSize: "0.52rem",
-                          fontWeight: 700,
-                          padding: "2px 8px",
-                          borderRadius: 4,
-                          letterSpacing: "0.08em",
-                        }}
-                      >
-                        PREMIUM
-                      </span>
+                      <span className="badge-premium">Premium</span>
                     )}
                     {qty > 0 && (
                       <div
@@ -877,52 +1340,52 @@ export default function TrivandrumPage() {
                           position: "absolute",
                           top: 8,
                           right: 8,
-                          width: 28,
-                          height: 28,
+                          width: 26,
+                          height: 26,
                           borderRadius: "50%",
                           background: "var(--gold)",
                           color: "#1a0e00",
-                          fontSize: "0.9rem",
+                          fontSize: "0.78rem",
                           fontWeight: 700,
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
+                          boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
                         }}
                       >
                         {qty}
                       </div>
                     )}
                   </div>
-                  <div style={{ padding: "10px 12px 14px", minHeight: 90 }}>
+                  <div style={{ padding: "10px 10px 12px" }}>
                     <p
                       style={{
-                        fontSize: "0.95rem",
-                        fontWeight: qty > 0 ? 700 : 600,
-                        marginBottom: p.description ? 6 : 10,
-                        color: qty > 0 ? "var(--gold)" : "var(--cream)",
+                        fontSize: "0.82rem",
+                        fontWeight: 500,
+                        marginBottom: 2,
                       }}
                     >
                       {p.name}
                     </p>
-                    {p.description && (
-                      <p
-                        style={{
-                          fontSize: "0.68rem",
-                          color: "var(--cream-dim)",
-                          lineHeight: 1.5,
-                          marginBottom: 10,
-                        }}
-                      >
-                        {p.description}
-                      </p>
-                    )}
+                    <p
+                      style={{
+                        fontSize: "0.68rem",
+                        color: "var(--cream-dim)",
+                        lineHeight: 1.5,
+                        marginBottom: 10,
+                      }}
+                    >
+                      {p.description}
+                    </p>
                     <div
+                      onClick={(e) => e.stopPropagation()}
                       style={{
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
-                        background: "rgba(255,255,255,0.05)",
-                        border: "1px solid rgba(255,255,255,0.1)",
+                        gap: 0,
+                        background: "rgba(255,255,255,0.07)",
+                        border: "1px solid rgba(255,255,255,0.18)",
                         borderRadius: 99,
                         padding: "2px",
                         width: "fit-content",
@@ -930,18 +1393,22 @@ export default function TrivandrumPage() {
                       }}
                     >
                       <button
-                        onClick={() => adjust(p.id, -1)}
+                        className="qty-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          adjustFlavour(p.id, -1);
+                        }}
                         disabled={qty === 0}
                         style={{
-                          width: 34,
-                          height: 34,
+                          width: 30,
+                          height: 30,
                           borderRadius: "50%",
                           background:
-                            qty > 0 ? "rgba(201,168,76,0.2)" : "transparent",
+                            qty > 0 ? "rgba(184,134,11,0.25)" : "transparent",
                           border: "none",
                           color:
-                            qty > 0 ? "var(--gold)" : "rgba(255,255,255,0.25)",
-                          fontSize: "1.2rem",
+                            qty > 0 ? "var(--gold)" : "rgba(255,255,255,0.35)",
+                          fontSize: "1.1rem",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
@@ -952,26 +1419,30 @@ export default function TrivandrumPage() {
                       </button>
                       <span
                         style={{
-                          fontSize: "1.05rem",
-                          fontWeight: 700,
-                          minWidth: 32,
-                          textAlign: "center" as const,
+                          fontSize: "0.95rem",
+                          minWidth: 28,
+                          textAlign: "center",
                           color:
-                            qty > 0 ? "var(--gold)" : "rgba(255,255,255,0.35)",
+                            qty > 0 ? "var(--gold)" : "rgba(255,255,255,0.5)",
+                          fontWeight: qty > 0 ? 700 : 400,
                         }}
                       >
                         {qty}
                       </span>
                       <button
-                        onClick={() => adjust(p.id, 1)}
+                        className="qty-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          adjustFlavour(p.id, 1);
+                        }}
                         style={{
-                          width: 34,
-                          height: 34,
+                          width: 30,
+                          height: 30,
                           borderRadius: "50%",
-                          background: "rgba(201,168,76,0.2)",
+                          background: "rgba(184,134,11,0.25)",
                           border: "none",
                           color: "var(--gold)",
-                          fontSize: "1.2rem",
+                          fontSize: "1.1rem",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
@@ -988,779 +1459,1090 @@ export default function TrivandrumPage() {
           </div>
         )}
 
-        {/* Nudge for awkward numbers */}
-        {totalPicked > 0 &&
-          !(resolved as any).isClean &&
-          totalPicked >= 4 &&
-          (resolved as any).nudge && (
-            <div
-              style={{
-                marginTop: 14,
-                padding: "16px 18px",
-                background: "rgba(201,168,76,0.05)",
-                border: "1px solid rgba(201,168,76,0.18)",
-                borderRadius: 12,
-              }}
-            >
-              <p
-                style={{
-                  fontSize: "0.88rem",
-                  fontWeight: 600,
-                  color: "var(--cream)",
-                  marginBottom: 12,
-                }}
-              >
-                {totalPicked} mochis - adjust to fit a box:
-              </p>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button
-                  onClick={() => {
-                    const id = products[0]?.id;
-                    if (id) adjust(id, (resolved as any).nudge.add);
-                  }}
-                  style={{
-                    flex: 1,
-                    padding: "12px 10px",
-                    borderRadius: 10,
-                    border: "1px solid rgba(201,168,76,0.35)",
-                    background: "rgba(201,168,76,0.08)",
-                    color: "var(--gold)",
-                    fontSize: "0.78rem",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    fontFamily: "'DM Sans', system-ui, sans-serif",
-                    textAlign: "center" as const,
-                  }}
-                >
-                  <p
-                    style={{
-                      fontSize: "0.65rem",
-                      color: "var(--cream-dim)",
-                      marginBottom: 3,
-                    }}
-                  >
-                    Add {(resolved as any).nudge.add} more
-                  </p>
-                  <p style={{ fontWeight: 700, marginBottom: 3 }}>
-                    {(resolved as any).nudge.addLabel}
-                  </p>
-                  <p style={{ fontSize: "1rem", fontWeight: 700 }}>
-                    ₹{(resolved as any).nudge.addPrice}
-                  </p>
-                </button>
-                <button
-                  onClick={() => {
-                    const toRemove = (resolved as any).nudge.remove;
-                    setFlavours((prev) => {
-                      const u = { ...prev };
-                      let rem = toRemove;
-                      for (const [id, qty] of Object.entries(u).sort(
-                        ([, a], [, b]) => (b as number) - (a as number),
-                      )) {
-                        const take = Math.min(rem, qty as number);
-                        (u as any)[id] = (qty as number) - take;
-                        if ((u as any)[id] === 0) delete (u as any)[id];
-                        rem -= take;
-                        if (rem === 0) break;
-                      }
-                      return u;
-                    });
-                  }}
-                  style={{
-                    flex: 1,
-                    padding: "12px 10px",
-                    borderRadius: 10,
-                    border: "1px solid rgba(255,255,255,0.08)",
-                    background: "rgba(255,255,255,0.03)",
-                    color: "var(--cream-dim)",
-                    fontSize: "0.78rem",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    fontFamily: "'DM Sans', system-ui, sans-serif",
-                    textAlign: "center" as const,
-                  }}
-                >
-                  <p
-                    style={{
-                      fontSize: "0.65rem",
-                      color: "var(--cream-dim)",
-                      marginBottom: 3,
-                    }}
-                  >
-                    Remove {(resolved as any).nudge.remove}
-                  </p>
-                  <p style={{ fontWeight: 700, marginBottom: 3 }}>
-                    {(resolved as any).nudge.removeLabel}
-                  </p>
-                  <p style={{ fontSize: "1rem", fontWeight: 700 }}>
-                    ₹{(resolved as any).nudge.removePrice}
-                  </p>
-                </button>
-              </div>
-            </div>
-          )}
-      </section>
-
-      {/* ORDER SECTION - shown after Place Order tapped */}
-      {showOrderSection && (
-        <section
-          id="order-section"
-          style={{
-            padding: "36px 24px",
-            borderBottom: "1px solid var(--border2)",
-            background: "rgba(201,168,76,0.03)",
-          }}
-        >
-          <div style={{ textAlign: "center", marginBottom: 24 }}>
-            <p
-              style={{
-                fontSize: "0.58rem",
-                letterSpacing: "0.22em",
-                textTransform: "uppercase",
-                color: "var(--gold)",
-                marginBottom: 6,
-                opacity: 0.75,
-              }}
-            >
-              Your Order
-            </p>
-            <h2
-              style={{
-                fontFamily: "Cormorant Garamond, serif",
-                fontSize: "1.8rem",
-                fontWeight: 300,
-                color: "var(--cream)",
-                marginBottom: 6,
-              }}
-            >
-              Review & Order
-            </h2>
-            <div
-              style={{
-                width: 32,
-                height: 1,
-                background: "var(--gold)",
-                margin: "0 auto",
-                opacity: 0.35,
-              }}
-            />
-          </div>
-
-          {/* Order summary card */}
+        {totalPicked > 0 && autoBox && (
           <div
             style={{
-              background: "rgba(255,255,255,0.03)",
-              border: "1px solid rgba(255,255,255,0.07)",
-              borderRadius: 12,
-              padding: "18px",
-              marginBottom: 20,
+              marginTop: 16,
+              padding: "12px 16px",
+              background: "rgba(184,134,11,0.10)",
+              border: "1px solid rgba(184,134,11,0.35)",
+              borderRadius: 8,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              flexWrap: "wrap",
+              gap: 8,
             }}
           >
-            {(resolved as any).boxes.map((b: any, i: number) => (
-              <div
-                key={i}
+            <div style={{ textAlign: "left" }}>
+              <p
                 style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  marginBottom: 8,
-                }}
-              >
-                <span
-                  style={{ fontSize: "0.88rem", color: "var(--cream-dim)" }}
-                >
-                  {b.qty > 1 ? `${b.qty}× ` : ""}
-                  {b.label}
-                </span>
-                <span style={{ fontSize: "0.88rem", color: "var(--cream)" }}>
-                  ₹{b.price * b.qty}
-                </span>
-              </div>
-            ))}
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                marginBottom: 14,
-              }}
-            >
-              <span style={{ fontSize: "0.88rem", color: "var(--cream-dim)" }}>
-                {homeDelivery ? "🛵 Home delivery" : "📍 Pickup"}
-              </span>
-              <span
-                style={{
-                  fontSize: "0.88rem",
-                  color: homeDelivery ? "rgba(200,184,154,0.6)" : "var(--gold)",
-                  fontWeight: 600,
-                }}
-              >
-                {homeDelivery ? "Confirmed on WhatsApp" : "Free"}
-              </span>
-            </div>
-            <div
-              style={{
-                borderTop: "1px solid rgba(255,255,255,0.07)",
-                paddingTop: 12,
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "baseline",
-              }}
-            >
-              <span
-                style={{
-                  fontSize: "0.95rem",
-                  fontWeight: 700,
-                  color: "var(--cream)",
-                }}
-              >
-                Total
-              </span>
-              <span
-                style={{
-                  fontSize: "2rem",
-                  fontWeight: 700,
+                  fontSize: "0.78rem",
                   color: "var(--gold)",
+                  fontWeight: 500,
                 }}
               >
-                ₹{grandTotal}
-                {homeDelivery ? " + delivery" : ""}
-              </span>
+                {autoBox.label} selected automatically
+              </p>
+              <p
+                style={{
+                  fontSize: "0.68rem",
+                  color: "var(--cream-dim)",
+                  marginTop: 2,
+                }}
+              >
+                {totalPicked} of {autoBox.count} pieces chosen · ₹
+                {autoBox.price}
+              </p>
             </div>
-            {/* Flavour pills */}
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 6,
-                marginTop: 12,
-              }}
-            >
-              {Object.entries(flavours)
-                .filter(([, q]) => q > 0)
-                .map(([id, qty]) => {
-                  const p = products.find((pr) => pr.id === id);
-                  return p ? (
-                    <span
-                      key={id}
-                      style={{
-                        fontSize: "0.75rem",
-                        fontWeight: 600,
-                        color: "var(--gold)",
-                        background: "rgba(201,168,76,0.12)",
-                        border: "1px solid rgba(201,168,76,0.3)",
-                        borderRadius: 20,
-                        padding: "4px 12px",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 5,
-                      }}
-                    >
-                      {p.name}
-                      <span
-                        style={{
-                          fontSize: "0.68rem",
-                          color: "rgba(201,168,76,0.7)",
-                          fontWeight: 400,
-                        }}
-                      >
-                        ×{qty}
-                      </span>
-                    </span>
-                  ) : null;
-                })}
-            </div>
-            {tripDate && (
+            {needsOneMore && (
               <div
                 style={{
-                  marginTop: 14,
-                  paddingTop: 12,
-                  borderTop: "1px solid rgba(255,255,255,0.06)",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
+                  marginTop: 10,
+                  padding: "10px 14px",
+                  background: "rgba(184,134,11,0.18)",
+                  border: "1.5px dashed var(--gold)",
+                  borderRadius: 8,
+                  textAlign: "center",
                 }}
               >
-                <span
-                  style={{ fontSize: "0.72rem", color: "var(--cream-dim)" }}
-                >
-                  Pickup date
-                </span>
-                <span
+                <p
                   style={{
                     fontSize: "0.82rem",
-                    fontWeight: 600,
                     color: "var(--gold)",
+                    fontWeight: 600,
+                    margin: 0,
                   }}
                 >
-                  {tripDate}
-                </span>
+                  ✨ Add 1 more piece to fill your box!
+                </p>
               </div>
             )}
           </div>
+        )}
 
-          {/* Pickup / Delivery toggle */}
-          <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
-            <button
-              onClick={() => setHomeDelivery(false)}
+        <div
+          style={{ display: "flex", justifyContent: "center", marginTop: 20 }}
+        >
+          <button
+            className="btn-gold"
+            style={{ maxWidth: 240 }}
+            onClick={scrollToOrder}
+          >
+            Order Now →
+          </button>
+        </div>
+      </section>
+
+      {/* ══ TESTIMONIALS ══════════════════════════════════════════ */}
+      <section
+        style={{
+          padding: "36px 24px",
+          borderBottom: "1px solid var(--border2)",
+          background: "rgba(255,248,230,0.025)",
+          textAlign: "center",
+        }}
+      >
+        <SectionLabel text="What People Say" />
+        <h2
+          className="font-display"
+          style={{
+            fontSize: "1.75rem",
+            fontWeight: 300,
+            lineHeight: 1.1,
+            marginBottom: 6,
+          }}
+        >
+          Real words, real customers
+        </h2>
+        <GoldLine />
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {TESTIMONIALS.map((t, i) => (
+            <div
+              key={i}
               style={{
-                flex: 1,
-                padding: "12px",
-                borderRadius: 10,
-                border: `2px solid ${!homeDelivery ? "var(--gold)" : "rgba(255,255,255,0.08)"}`,
-                background: !homeDelivery
-                  ? "rgba(201,168,76,0.07)"
-                  : "rgba(255,255,255,0.02)",
-                color: !homeDelivery ? "var(--gold)" : "var(--cream-dim)",
-                fontSize: "0.88rem",
-                fontWeight: !homeDelivery ? 700 : 400,
-                cursor: "pointer",
-                fontFamily: "'DM Sans', system-ui, sans-serif",
-                textAlign: "center" as const,
-                transition: "all 0.18s",
+                background: "var(--surface)",
+                border: "1px solid var(--border2)",
+                borderRadius: 8,
+                padding: "14px 16px",
+                position: "relative",
+                textAlign: "left",
               }}
             >
-              📍 Pickup
-              <p
+              <span
                 style={{
-                  fontSize: "0.65rem",
-                  marginTop: 3,
-                  fontWeight: 400,
-                  color: !homeDelivery
-                    ? "rgba(201,168,76,0.7)"
-                    : "rgba(200,184,154,0.4)",
-                }}
-              >
-                Free · at pickup point
-              </p>
-            </button>
-            <button
-              onClick={() => setHomeDelivery(true)}
-              style={{
-                flex: 1,
-                padding: "12px",
-                borderRadius: 10,
-                border: `2px solid ${homeDelivery ? "var(--gold)" : "rgba(255,255,255,0.08)"}`,
-                background: homeDelivery
-                  ? "rgba(201,168,76,0.07)"
-                  : "rgba(255,255,255,0.02)",
-                color: homeDelivery ? "var(--gold)" : "var(--cream-dim)",
-                fontSize: "0.88rem",
-                fontWeight: homeDelivery ? 700 : 400,
-                cursor: "pointer",
-                fontFamily: "'DM Sans', system-ui, sans-serif",
-                textAlign: "center" as const,
-                transition: "all 0.18s",
-              }}
-            >
-              🛵 Home Delivery
-              <p
-                style={{
-                  fontSize: "0.65rem",
-                  marginTop: 3,
-                  fontWeight: 400,
-                  color: homeDelivery
-                    ? "rgba(201,168,76,0.7)"
-                    : "rgba(200,184,154,0.4)",
-                }}
-              >
-                Extra charge · Porter
-              </p>
-            </button>
-          </div>
-
-          {/* Pickup location selector */}
-          {!homeDelivery && (
-            <>
-              <p
-                style={{
-                  fontSize: "0.72rem",
-                  fontWeight: 600,
-                  letterSpacing: "0.1em",
-                  textTransform: "uppercase" as const,
+                  position: "absolute",
+                  top: 10,
+                  right: 14,
+                  fontSize: "1.8rem",
                   color: "var(--gold)",
-                  marginBottom: 6,
-                  opacity: 0.8,
+                  opacity: 0.2,
+                  lineHeight: 1,
+                  fontFamily: "Georgia, serif",
                 }}
               >
-                Choose pickup location
-              </p>
+                "
+              </span>
               <p
                 style={{
-                  fontSize: "0.76rem",
+                  fontSize: "0.83rem",
                   color: "var(--cream-dim)",
+                  lineHeight: 1.7,
                   marginBottom: 12,
-                  lineHeight: 1.6,
+                  fontStyle: "italic",
                 }}
               >
-                Pick the nearest one — exact spot and time confirmed on
-                WhatsApp.
+                {t.text}
+              </p>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div
+                  style={{
+                    width: 30,
+                    height: 30,
+                    borderRadius: "50%",
+                    background: "rgba(184,134,11,0.2)",
+                    border: "1px solid rgba(184,134,11,0.3)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "0.75rem",
+                    color: "var(--gold)",
+                    fontWeight: 600,
+                    flexShrink: 0,
+                  }}
+                >
+                  {t.avatar}
+                </div>
+                <div>
+                  <p style={{ fontSize: "0.75rem", fontWeight: 500 }}>
+                    {t.name}
+                  </p>
+                  <p style={{ fontSize: "0.65rem", color: "var(--cream-dim)" }}>
+                    {t.handle}
+                  </p>
+                </div>
+                <div style={{ marginLeft: "auto", display: "flex", gap: 2 }}>
+                  {[1, 2, 3, 4, 5].map((s) => (
+                    <span
+                      key={s}
+                      style={{ color: "var(--gold)", fontSize: "0.65rem" }}
+                    >
+                      ★
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div
+          style={{ display: "flex", justifyContent: "center", marginTop: 22 }}
+        >
+          <button
+            className="btn-gold"
+            style={{ maxWidth: 240 }}
+            onClick={scrollToOrder}
+          >
+            I Want Fresh Mochi →
+          </button>
+        </div>
+      </section>
+
+      {/* ══ ORDER ═════════════════════════════════════════════════ */}
+      <section
+        id="order"
+        ref={orderRef}
+        style={{ padding: "36px 24px", textAlign: "center" }}
+      >
+        <SectionLabel text="Place Your Order" />
+        <h2
+          className="font-display"
+          style={{
+            fontSize: "1.75rem",
+            fontWeight: 300,
+            lineHeight: 1.1,
+            marginBottom: 6,
+          }}
+        >
+          Build your box
+        </h2>
+        <GoldLine />
+
+        {/* ── STEP 1: Pick flavours ─────────────────────────────── */}
+        <div style={{ marginBottom: 28, textAlign: "left" }}>
+          <p className="step-label">Step 1 — Pick your flavours</p>
+          <p
+            style={{
+              fontSize: "0.72rem",
+              color: "var(--cream-dim)",
+              marginBottom: 14,
+            }}
+          >
+            Choose as many as you like. We&apos;ll automatically select the best
+            box size for you.
+          </p>
+
+          {loading ? (
+            <p style={{ color: "var(--cream-dim)", fontSize: "0.8rem" }}>
+              Loading…
+            </p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {products.map((p) => {
+                const qty = flavours[p.id] || 0;
+                return (
+                  <div
+                    key={p.id}
+                    className="card"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      padding: "10px 12px",
+                      borderRadius: 6,
+                      border: `1px solid ${qty > 0 ? "var(--gold)" : "var(--border2)"}`,
+                      transition: "border-color 0.2s",
+                    }}
+                  >
+                    <img
+                      src={getImg(p.name, p.image_url)}
+                      alt={p.name}
+                      style={{
+                        width: 46,
+                        height: 46,
+                        borderRadius: 4,
+                        objectFit: "cover",
+                        flexShrink: 0,
+                      }}
+                    />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: "0.8rem", fontWeight: 500 }}>
+                        {p.name}
+                      </p>
+                      {p.is_premium && (
+                        <span
+                          style={{
+                            color: "var(--gold)",
+                            fontSize: "0.6rem",
+                            letterSpacing: "0.1em",
+                          }}
+                        >
+                          PREMIUM
+                        </span>
+                      )}
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        flexShrink: 0,
+                      }}
+                    >
+                      <button
+                        className="qty-btn"
+                        onClick={() => adjustFlavour(p.id, -1)}
+                        disabled={qty === 0}
+                      >
+                        −
+                      </button>
+                      <span
+                        style={{
+                          fontSize: "0.9rem",
+                          minWidth: 18,
+                          textAlign: "center",
+                          color: qty > 0 ? "var(--gold)" : "var(--cream-dim)",
+                          fontWeight: qty > 0 ? 600 : 400,
+                        }}
+                      >
+                        {qty}
+                      </span>
+                      <button
+                        className="qty-btn"
+                        onClick={() => adjustFlavour(p.id, 1)}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Auto-box summary */}
+          {totalPicked > 0 && autoBox && (
+            <div
+              style={{
+                marginTop: 14,
+                padding: "12px 16px",
+                background: "rgba(184,134,11,0.08)",
+                border: "1px solid rgba(184,134,11,0.3)",
+                borderRadius: 8,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: 6,
+                }}
+              >
+                <div>
+                  <p
+                    style={{
+                      fontSize: "0.78rem",
+                      color: "var(--gold)",
+                      fontWeight: 500,
+                    }}
+                  >
+                    ✓ {autoBox.label} — ₹{autoBox.price}
+                  </p>
+                  <p
+                    style={{
+                      fontSize: "0.68rem",
+                      color: "var(--cream-dim)",
+                      marginTop: 2,
+                    }}
+                  >
+                    {totalPicked} of {autoBox.count} pieces ·{" "}
+                    {autoBox.count - totalPicked === 0
+                      ? "Box full!"
+                      : `${autoBox.count - totalPicked} spot${autoBox.count - totalPicked === 1 ? "" : "s"} remaining`}
+                  </p>
+                </div>
+                {needsOneMore && (
+                  <span
+                    style={{
+                      fontSize: "0.68rem",
+                      background: "rgba(184,134,11,0.2)",
+                      color: "var(--gold)",
+                      padding: "4px 10px",
+                      borderRadius: 20,
+                    }}
+                  >
+                    Add 1 more to fill ✨
+                  </span>
+                )}
+              </div>
+              <div
+                style={{
+                  marginTop: 10,
+                  display: "flex",
+                  gap: 6,
+                  flexWrap: "wrap",
+                }}
+              >
+                {[...boxes]
+                  .sort((a, b) => a.count - b.count)
+                  .map((box) => (
+                    <div
+                      key={box.id}
+                      style={{
+                        fontSize: "0.65rem",
+                        padding: "3px 8px",
+                        borderRadius: 4,
+                        border: `1px solid ${autoBox.id === box.id ? "var(--gold)" : "var(--border2)"}`,
+                        color:
+                          autoBox.id === box.id
+                            ? "var(--gold)"
+                            : "var(--cream-dim)",
+                        background:
+                          autoBox.id === box.id
+                            ? "rgba(184,134,11,0.12)"
+                            : "transparent",
+                        transition: "all 0.2s",
+                      }}
+                    >
+                      {box.count}pc · ₹{box.price}
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+
+          {error && step === 1 && (
+            <p
+              style={{
+                fontSize: "0.82rem",
+                color: "#e57373",
+                marginTop: 10,
+                textAlign: "center",
+                fontWeight: 500,
+                padding: "8px 12px",
+                background: "rgba(220,50,50,0.1)",
+                borderRadius: 6,
+                border: "1px solid rgba(220,50,50,0.25)",
+              }}
+            >
+              {error}
+            </p>
+          )}
+
+          {totalPicked > 0 && (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "center",
+                marginTop: 16,
+              }}
+            >
+              <button
+                className="btn-gold"
+                style={{
+                  maxWidth: 260,
+                  opacity: autoBox && totalPicked < autoBox.count ? 0.45 : 1,
+                  cursor:
+                    autoBox && totalPicked < autoBox.count
+                      ? "not-allowed"
+                      : "pointer",
+                }}
+                onClick={proceedToSlot}
+              >
+                {autoBox && totalPicked < autoBox.count
+                  ? `Add ${autoBox.count - totalPicked} more to unlock →`
+                  : "Choose Delivery Date & Batch →"}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* ── STEP 2: Date + Batch ──────────────────────────────── */}
+        {step >= 2 && (
+          <div ref={slotRef} style={{ marginTop: 40, textAlign: "left" }}>
+            <div className="divider" style={{ marginBottom: 24 }} />
+            <p className="step-label">
+              Step 2 — Choose your delivery date & batch
+            </p>
+            <p
+              style={{
+                fontSize: "0.72rem",
+                color: "var(--cream-dim)",
+                marginBottom: 16,
+              }}
+            >
+              Pick any date. All three batches are always available.
+            </p>
+
+            {/* Date picker */}
+            <div style={{ marginBottom: 20 }}>
+              <p
+                style={{
+                  fontSize: "0.68rem",
+                  color: "var(--gold)",
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  marginBottom: 8,
+                  fontWeight: 600,
+                }}
+              >
+                Delivery Date
               </p>
               <div
                 style={{
                   display: "flex",
-                  flexDirection: "column",
                   gap: 8,
-                  marginBottom: 24,
+                  marginBottom: 10,
+                  flexWrap: "wrap",
                 }}
               >
-                {pickupLocations.map((loc) => (
+                {[
+                  { label: "Today", val: todayStr },
+                  { label: "Tomorrow", val: tomorrowStr },
+                  {
+                    label: new Date(
+                      Date.now() + 2 * 86400000,
+                    ).toLocaleDateString("en-IN", {
+                      weekday: "short",
+                      day: "numeric",
+                      month: "short",
+                    }),
+                    val: toDateString(new Date(Date.now() + 2 * 86400000)),
+                  },
+                ].map((chip) => (
                   <button
-                    key={loc.name}
-                    onClick={() =>
-                      setSelectedLocation((l) =>
-                        l === loc.name ? "" : loc.name,
-                      )
-                    }
+                    key={chip.val}
+                    onClick={() => {
+                      setSelectedDate(chip.val);
+                      setSelectedBatch(null);
+                    }}
                     style={{
-                      padding: "14px 18px",
-                      textAlign: "left" as const,
+                      padding: "7px 14px",
+                      borderRadius: 20,
+                      border: `1px solid ${selectedDate === chip.val ? "var(--gold)" : "var(--border2)"}`,
+                      background:
+                        selectedDate === chip.val
+                          ? "rgba(184,134,11,0.12)"
+                          : "transparent",
+                      color:
+                        selectedDate === chip.val
+                          ? "var(--gold)"
+                          : "var(--cream-dim)",
+                      fontSize: "0.78rem",
+                      fontWeight: selectedDate === chip.val ? 700 : 400,
+                      cursor: "pointer",
+                      fontFamily: "system-ui, sans-serif",
+                    }}
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="date"
+                min={todayStr}
+                value={selectedDate}
+                onChange={(e) => {
+                  setSelectedDate(e.target.value);
+                  setSelectedBatch(null);
+                }}
+                style={{
+                  width: "100%",
+                  background: "var(--surface)",
+                  border: "1px solid rgba(184,134,11,0.4)",
+                  color: "var(--cream)",
+                  padding: "10px 14px",
+                  borderRadius: 8,
+                  fontSize: "0.9rem",
+                  fontFamily: "system-ui, sans-serif",
+                  outline: "none",
+                  colorScheme: "dark",
+                  boxSizing: "border-box" as const,
+                }}
+              />
+            </div>
+
+            {/* Fulfillment toggle */}
+            <p
+              style={{
+                fontSize: "0.68rem",
+                color: "var(--gold)",
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                marginBottom: 10,
+                fontWeight: 600,
+              }}
+            >
+              Delivery or Pickup?
+            </p>
+            <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+              {(["delivery", "pickup"] as const).map((type) => (
+                <button
+                  key={type}
+                  onClick={() => setFulfillmentType(type)}
+                  style={{
+                    flex: 1,
+                    padding: "12px 16px",
+                    borderRadius: 8,
+                    border: `1px solid ${fulfillmentType === type ? "var(--gold)" : "var(--border2)"}`,
+                    background:
+                      fulfillmentType === type
+                        ? "rgba(184,134,11,0.08)"
+                        : "var(--surface)",
+                    color:
+                      fulfillmentType === type
+                        ? "var(--gold)"
+                        : "var(--cream-dim)",
+                    fontSize: "0.85rem",
+                    fontWeight: fulfillmentType === type ? 700 : 400,
+                    cursor: "pointer",
+                    fontFamily: "system-ui, sans-serif",
+                    transition: "all 0.2s",
+                    textAlign: "left" as const,
+                  }}
+                >
+                  <p style={{ margin: 0, fontSize: "0.9rem" }}>
+                    {type === "delivery" ? "🚚 Delivery" : "🏠 Self Pickup"}
+                  </p>
+                  <p
+                    style={{
+                      margin: "4px 0 0",
+                      fontSize: "0.65rem",
+                      opacity: 0.7,
+                      fontWeight: 400,
+                    }}
+                  >
+                    {type === "delivery"
+                      ? "Porter charges extra, paid by you"
+                      : "Collect from our kitchen"}
+                  </p>
+                </button>
+              ))}
+            </div>
+
+            {fulfillmentType === "delivery" && (
+              <div
+                style={{
+                  background: "rgba(255,200,100,0.06)",
+                  border: "1px solid rgba(184,134,11,0.2)",
+                  borderRadius: 8,
+                  padding: "10px 14px",
+                  marginBottom: 20,
+                }}
+              >
+                <p
+                  style={{
+                    fontSize: "0.75rem",
+                    color: "var(--cream-dim)",
+                    lineHeight: 1.7,
+                  }}
+                >
+                  🚚 We use{" "}
+                  <strong style={{ color: "var(--cream)" }}>Porter</strong> for
+                  delivery. Charges are based on your distance and are paid
+                  directly by you. We&apos;ll share the Porter booking link once
+                  your order is confirmed.
+                </p>
+              </div>
+            )}
+
+            <p
+              style={{
+                fontSize: "0.68rem",
+                color: "var(--gold)",
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                marginBottom: 10,
+                fontWeight: 600,
+              }}
+            >
+              {friendlyDate(selectedDate)} — Choose a batch
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {BATCHES.map((batch) => {
+                const isSelected = selectedBatch === batch.id;
+                return (
+                  <button
+                    key={batch.id}
+                    onClick={() => pickBatch(batch.id)}
+                    style={{
+                      padding: "16px 18px",
+                      textAlign: "left",
                       width: "100%",
                       display: "flex",
                       justifyContent: "space-between",
                       alignItems: "center",
-                      border: `1.5px solid ${selectedLocation === loc.name ? "var(--gold)" : "rgba(255,255,255,0.08)"}`,
-                      background:
-                        selectedLocation === loc.name
-                          ? "rgba(201,168,76,0.06)"
-                          : "rgba(255,255,255,0.02)",
-                      borderRadius: 10,
+                      border: isSelected
+                        ? "1px solid var(--gold)"
+                        : "1px solid var(--border2)",
+                      background: isSelected
+                        ? "rgba(184,134,11,0.06)"
+                        : "var(--surface)",
+                      borderRadius: 8,
+                      transition: "all 0.2s ease",
                       cursor: "pointer",
-                      fontFamily: "'DM Sans', system-ui, sans-serif",
-                      transition: "all 0.18s",
+                      fontFamily: "system-ui, sans-serif",
                     }}
                   >
-                    <div>
-                      <p
-                        style={{
-                          fontSize: "0.95rem",
-                          fontWeight: 600,
-                          color:
-                            selectedLocation === loc.name
-                              ? "var(--gold)"
-                              : "var(--cream)",
-                          marginBottom: 2,
-                        }}
-                      >
-                        {loc.name}
-                      </p>
-                      <p
-                        style={{
-                          fontSize: "0.68rem",
-                          color: "var(--cream-dim)",
-                        }}
-                      >
-                        {loc.area}
-                      </p>
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 12 }}
+                    >
+                      <span style={{ fontSize: "1.8rem", lineHeight: 1 }}>
+                        {batch.icon}
+                      </span>
+                      <div>
+                        <p
+                          style={{
+                            fontSize: "0.95rem",
+                            fontWeight: 700,
+                            marginBottom: 3,
+                            color: isSelected ? "var(--gold)" : "var(--cream)",
+                          }}
+                        >
+                          {batch.label}
+                        </p>
+                        <p
+                          style={{
+                            fontSize: "0.75rem",
+                            color: isSelected
+                              ? "rgba(184,134,11,0.7)"
+                              : "var(--cream-dim)",
+                          }}
+                        >
+                          {batch.timeRange}
+                        </p>
+                      </div>
                     </div>
-                    {selectedLocation === loc.name && (
+                    {isSelected && (
                       <span
                         style={{
-                          fontSize: "0.72rem",
-                          padding: "3px 10px",
-                          borderRadius: 20,
-                          background: "rgba(201,168,76,0.18)",
+                          fontSize: "0.7rem",
+                          padding: "4px 10px",
+                          borderRadius: 4,
+                          background: "rgba(184,134,11,0.2)",
                           color: "var(--gold)",
                           fontWeight: 700,
-                          flexShrink: 0,
                         }}
                       >
-                        ✓
+                        ✓ SELECTED
                       </span>
                     )}
                   </button>
-                ))}
-              </div>
-            </>
-          )}
+                );
+              })}
+            </div>
+          </div>
+        )}
 
-          {/* Home delivery note */}
-          {homeDelivery && (
+        {/* ── STEP 3: Customer details ──────────────────────────── */}
+        {step >= 3 && (
+          <div ref={formRef} style={{ textAlign: "left" }}>
+            <div className="divider" style={{ marginBottom: 24 }} />
+            <button
+              onClick={() => {
+                setStep(2);
+                setTimeout(
+                  () =>
+                    slotRef.current?.scrollIntoView({
+                      behavior: "smooth",
+                      block: "start",
+                    }),
+                  80,
+                );
+              }}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "var(--cream-dim)",
+                fontSize: "0.78rem",
+                cursor: "pointer",
+                padding: "0 0 16px",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                fontFamily: "system-ui, sans-serif",
+              }}
+            >
+              ← Back to batches
+            </button>
+
+            <p className="step-label">Step 3 — Your details</p>
             <div
               style={{
-                marginBottom: 24,
+                display: "flex",
+                flexDirection: "column",
+                gap: 10,
+                marginBottom: 20,
+              }}
+            >
+              <input
+                className="field"
+                placeholder="Full Name *"
+                value={form.name}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, name: e.target.value }))
+                }
+                autoComplete="name"
+              />
+              <input
+                className="field"
+                placeholder="Phone Number *"
+                type="tel"
+                value={form.phone}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, phone: e.target.value }))
+                }
+                autoComplete="tel"
+              />
+              <input
+                className="field"
+                placeholder="Delivery Address"
+                value={form.address}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, address: e.target.value }))
+                }
+                autoComplete="street-address"
+              />
+            </div>
+
+            {/* Order summary */}
+            <div
+              className="card"
+              style={{
                 padding: "14px 16px",
-                background: "rgba(255,255,255,0.03)",
-                border: "1px solid rgba(201,168,76,0.2)",
-                borderRadius: 10,
+                borderRadius: 6,
+                marginBottom: 16,
               }}
             >
               <p
                 style={{
-                  fontSize: "0.82rem",
+                  fontSize: "0.65rem",
                   color: "var(--cream-dim)",
-                  lineHeight: 1.7,
+                  letterSpacing: "0.15em",
+                  textTransform: "uppercase",
+                  marginBottom: 10,
                 }}
               >
-                🛵 Share your address on WhatsApp after placing your order.
-                We'll confirm the exact Porter delivery charge and include it in
-                your total. Nothing to pay separately on delivery.
+                Order Summary
               </p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                <div
+                  style={{ display: "flex", justifyContent: "space-between" }}
+                >
+                  <span
+                    style={{ fontSize: "0.82rem", color: "var(--cream-dim)" }}
+                  >
+                    {autoBox?.label}
+                  </span>
+                  <span style={{ fontSize: "0.82rem" }}>₹{autoBox?.price}</span>
+                </div>
+                {Object.entries(flavours).map(([id, qty]) => {
+                  const prod = products.find((p) => p.id === id);
+                  if (!prod || qty === 0) return null;
+                  return (
+                    <div
+                      key={id}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: "0.75rem",
+                          color: "var(--cream-dim)",
+                        }}
+                      >
+                        {prod.name} × {qty}
+                      </span>
+                    </div>
+                  );
+                })}
+                {selectedBatch &&
+                  (() => {
+                    const batch = BATCHES.find((b) => b.id === selectedBatch)!;
+                    return (
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          marginTop: 2,
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: "0.75rem",
+                            color: "var(--cream-dim)",
+                          }}
+                        >
+                          {batch.icon} {batch.label} · {batch.timeRange}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: "0.75rem",
+                            color: "var(--cream-dim)",
+                          }}
+                        >
+                          {new Date(
+                            selectedDate + "T00:00:00",
+                          ).toLocaleDateString("en-IN", {
+                            day: "numeric",
+                            month: "short",
+                          })}
+                        </span>
+                      </div>
+                    );
+                  })()}
+                <div className="divider" style={{ margin: "6px 0" }} />
+                <div
+                  style={{ display: "flex", justifyContent: "space-between" }}
+                >
+                  <span
+                    style={{
+                      fontSize: "0.75rem",
+                      color:
+                        fulfillmentType === "pickup"
+                          ? "#a3d977"
+                          : "var(--cream-dim)",
+                    }}
+                  >
+                    {fulfillmentType === "pickup"
+                      ? "🏠 Self Pickup"
+                      : "🚚 Delivery via Porter"}
+                  </span>
+                </div>
+                <div className="divider" style={{ margin: "6px 0" }} />
+                <div
+                  style={{ display: "flex", justifyContent: "space-between" }}
+                >
+                  <span style={{ fontSize: "0.85rem", fontWeight: 500 }}>
+                    Total
+                  </span>
+                  <span
+                    style={{
+                      fontSize: "0.95rem",
+                      color: "var(--gold)",
+                      fontFamily: "Cormorant Garamond, serif",
+                    }}
+                  >
+                    ₹{autoBox?.price}
+                  </span>
+                </div>
+                {fulfillmentType === "delivery" && (
+                  <p
+                    style={{
+                      fontSize: "0.65rem",
+                      color: "rgba(255,248,230,0.5)",
+                      marginTop: 4,
+                    }}
+                  >
+                    + Porter delivery charges paid by you directly
+                  </p>
+                )}
+              </div>
             </div>
-          )}
 
-          {/* WhatsApp CTA */}
-          <button
-            onClick={openWhatsApp}
-            style={{
-              width: "100%",
-              padding: "16px",
-              borderRadius: 12,
-              border: "none",
-              background: "linear-gradient(135deg, #25d366, #128c4a)",
-              color: "#fff",
-              fontSize: "1.05rem",
-              fontWeight: 700,
-              cursor: "pointer",
-              fontFamily: "'DM Sans', system-ui, sans-serif",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 10,
-              boxShadow: "0 4px 20px rgba(37,211,102,0.25)",
-            }}
-          >
-            <span style={{ fontSize: "1.3rem" }}>📲</span>
-            Order via WhatsApp · ₹{grandTotal}
-            {homeDelivery ? " + delivery" : ""}
-          </button>
-          <p
-            style={{
-              fontSize: "0.7rem",
-              color: "var(--cream-dim)",
-              marginTop: 10,
-              textAlign: "center",
-              lineHeight: 1.7,
-            }}
-          >
-            We'll confirm pickup details and payment on WhatsApp.
-          </p>
-        </section>
-      )}
-
-      {/* STICKY TOP — progress bar */}
-      {!showOrderSection && inFlavourSection && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: "50%",
-            transform: "translateX(-50%)",
-            width: "100%",
-            maxWidth: 480,
-            zIndex: 200,
-            background: "rgba(22,12,8,0.97)",
-            borderBottom: "1px solid rgba(201,168,76,0.2)",
-            padding: "10px 20px",
-            backdropFilter: "blur(12px)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 7,
-            }}
-          >
-            <span
-              style={{
-                fontSize: "0.82rem",
-                color:
-                  totalPicked >= targetBox ? "var(--gold)" : "var(--cream-dim)",
-                fontWeight: totalPicked >= targetBox ? 700 : 400,
-              }}
-            >
-              {totalPicked === 0
-                ? "Pick your mochis below"
-                : `${totalPicked} of ${targetBox} selected`}
-            </span>
-            <span
-              style={{
-                fontSize: "0.75rem",
-                color:
-                  totalPicked >= targetBox ? "var(--gold)" : "var(--cream-dim)",
-                fontWeight: 600,
-              }}
-            >
-              {targetBox === 6 ? "Box of 6 · ₹899" : "Box of 4 · ₹699"}
-            </span>
-          </div>
-          <div style={{ display: "flex", gap: 4 }}>
-            {Array.from({ length: targetBox }).map((_, i) => (
-              <div
-                key={i}
+            {error && (
+              <p
                 style={{
-                  flex: 1,
-                  height: 5,
-                  borderRadius: 99,
-                  background:
-                    i < totalPicked ? "var(--gold)" : "rgba(201,168,76,0.15)",
-                  transition: "background 0.25s",
-                }}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* STICKY BOTTOM — Place Order */}
-      {!showOrderSection && inFlavourSection && (
-        <div
-          style={{
-            position: "fixed",
-            bottom: 0,
-            left: "50%",
-            transform: "translateX(-50%)",
-            width: "100%",
-            maxWidth: 480,
-            zIndex: 200,
-            padding: "12px 20px 20px",
-            background: "rgba(22,12,8,0.97)",
-            borderTop: "1px solid rgba(201,168,76,0.15)",
-            backdropFilter: "blur(12px)",
-          }}
-        >
-          <button
-            onClick={() => {
-              if (!canShowPanel) return;
-              track("place_order_tap");
-              setShowOrderSection(true);
-              setTimeout(
-                () =>
-                  document
-                    .getElementById("order-section")
-                    ?.scrollIntoView({ behavior: "smooth", block: "start" }),
-                50,
-              );
-            }}
-            style={{
-              width: "100%",
-              padding: "15px",
-              borderRadius: 12,
-              border: "none",
-              background: canShowPanel
-                ? "linear-gradient(135deg, rgba(201,168,76,0.95), rgba(180,148,55,0.9))"
-                : "rgba(201,168,76,0.12)",
-              color: canShowPanel ? "#160c08" : "rgba(201,168,76,0.4)",
-              fontSize: "1rem",
-              fontWeight: 700,
-              cursor: canShowPanel ? "pointer" : "default",
-              fontFamily: "'DM Sans', system-ui, sans-serif",
-              transition: "all 0.2s",
-            }}
-          >
-            {canShowPanel
-              ? `Place Order · ₹${(resolved as any).totalBoxPrice}`
-              : totalPicked === 0
-                ? "Select flavours to order →"
-                : `${targetBox - Math.min(totalPicked, targetBox)} more to fill your box`}
-          </button>
-        </div>
-      )}
-
-      {/* FAQ */}
-      <div style={{ padding: "32px 24px 40px" }}>
-        <button
-          onClick={() => setShowMore((v) => !v)}
-          style={{
-            width: "100%",
-            background: "transparent",
-            border: "1px solid rgba(255,255,255,0.07)",
-            borderRadius: 10,
-            padding: "12px 16px",
-            color: "var(--cream-dim)",
-            fontSize: "0.8rem",
-            cursor: "pointer",
-            fontFamily: "'DM Sans', system-ui, sans-serif",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <span>About Eversweet · FAQ</span>
-          <span
-            style={{
-              transition: "transform 0.2s",
-              transform: showMore ? "rotate(180deg)" : "none",
-              display: "inline-block",
-            }}
-          >
-            ▾
-          </span>
-        </button>
-        {showMore && (
-          <div style={{ paddingTop: 22 }}>
-            {[
-              [
-                "What is Mochi?",
-                "A Japanese dessert - soft, chewy rice flour on the outside, cold creamy fruit filling inside. Made fresh in Kochi the same morning it reaches you.",
-              ],
-              [
-                "Is pickup free?",
-                "Yes! Pickup at any of our Trivandrum locations is completely free. Home delivery via Porter is available at an extra charge based on your distance.",
-              ],
-              [
-                "How does pickup work?",
-                "We'll confirm the exact pickup location and timing on WhatsApp after your order.",
-              ],
-              [
-                "Can I get home delivery?",
-                "Yes - Porter delivery from your nearest pickup point. Share your address on WhatsApp after ordering, we confirm the exact charge and include it in your total.",
-              ],
-              [
-                "Can I cancel?",
-                "Message us on WhatsApp - we'll work something out.",
-              ],
-              [
-                "Will you come to TVM regularly?",
-                "If this run goes well - yes! We're planning regular trips.",
-              ],
-            ].map(([q, a]) => (
-              <div
-                key={q}
-                style={{
-                  marginBottom: 18,
-                  paddingBottom: 18,
-                  borderBottom: "1px solid rgba(255,255,255,0.05)",
+                  fontSize: "0.82rem",
+                  color: "#e57373",
+                  marginBottom: 12,
+                  textAlign: "center",
+                  fontWeight: 500,
+                  padding: "8px 12px",
+                  background: "rgba(220,50,50,0.1)",
+                  borderRadius: 6,
+                  border: "1px solid rgba(220,50,50,0.25)",
                 }}
               >
-                <p
-                  style={{
-                    fontSize: "0.88rem",
-                    fontWeight: 600,
-                    color: "var(--cream)",
-                    marginBottom: 5,
-                  }}
-                >
-                  {q}
-                </p>
-                <p
-                  style={{
-                    fontSize: "0.8rem",
-                    color: "var(--cream-dim)",
-                    lineHeight: 1.75,
-                  }}
-                >
-                  {a}
-                </p>
-              </div>
-            ))}
+                {error}
+              </p>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "center" }}>
+              <button
+                className="btn-gold"
+                disabled={placing}
+                onClick={placeOrder}
+                style={{ maxWidth: 300 }}
+              >
+                {placing ? "Placing order…" : "Place Order"}
+              </button>
+            </div>
+            <p
+              style={{
+                fontSize: "0.68rem",
+                color: "var(--cream-dim)",
+                marginTop: 10,
+                textAlign: "center",
+                lineHeight: 1.7,
+              }}
+            >
+              Advance bookings welcome. We confirm once payment is received.
+            </p>
           </div>
         )}
-      </div>
+      </section>
 
-      {/* FOOTER */}
+      {/* ══ FAQ ════════════════════════════════════════════════════ */}
+      <section
+        style={{
+          padding: "36px 24px",
+          borderTop: "1px solid var(--border2)",
+          textAlign: "center",
+        }}
+      >
+        <SectionLabel text="FAQ" />
+        <h2
+          className="font-display"
+          style={{
+            fontSize: "1.5rem",
+            fontWeight: 300,
+            lineHeight: 1.1,
+            marginBottom: 6,
+          }}
+        >
+          Good to know
+        </h2>
+        <GoldLine />
+
+        {[
+          [
+            "Where do you deliver?",
+            "We currently deliver within Kochi. For other locations, DM us on Instagram @byeversweet.",
+          ],
+          [
+            "How fresh is the mochi?",
+            "Made fresh on the day of your delivery batch. Best enjoyed within 24 hours. This is what separates Eversweet from the frozen mochi you've had before.",
+          ],
+          [
+            "What are the delivery batches?",
+            "We deliver in three batches — Morning (9AM–12PM), Afternoon (12PM–4PM), and Evening (5PM–8PM). You can book for any date you like, for any of the 3 batches.",
+          ],
+          [
+            "Can I order in advance?",
+            "Yes! Just pick any future date when choosing your batch. There's no limit on how far ahead you can book.",
+          ],
+          [
+            "How do I pay?",
+            "Tap the 'Pay via UPI' button on the confirmation screen — it opens Google Pay, PhonePe, or Paytm with your amount pre-filled. Then send us the screenshot on WhatsApp to confirm your slot.",
+          ],
+          [
+            "What are the box sizes?",
+            "We offer Box of 4, 6, 8, 12, and 16. All flavours can be mixed and matched freely. The right box is picked automatically based on what you choose.",
+          ],
+          [
+            "What's coming next?",
+            "Brookie and Tiramisu are coming soon. Follow us on Instagram @byeversweet for the announcement.",
+          ],
+        ].map(([q, a]) => (
+          <div
+            key={q}
+            style={{
+              marginBottom: 20,
+              paddingBottom: 20,
+              borderBottom: "1px solid var(--border2)",
+              textAlign: "left",
+            }}
+          >
+            <p
+              style={{ fontSize: "0.85rem", fontWeight: 500, marginBottom: 5 }}
+            >
+              {q}
+            </p>
+            <p
+              style={{
+                fontSize: "0.8rem",
+                color: "var(--cream-dim)",
+                lineHeight: 1.7,
+              }}
+            >
+              {a}
+            </p>
+          </div>
+        ))}
+
+        <div
+          style={{ display: "flex", justifyContent: "center", marginTop: 8 }}
+        >
+          <button
+            className="btn-gold"
+            style={{ maxWidth: 240 }}
+            onClick={scrollToOrder}
+          >
+            Order Fresh Mochi →
+          </button>
+        </div>
+      </section>
+
+      {/* ══ FOOTER ════════════════════════════════════════════════ */}
       <footer
         style={{
-          padding: "24px",
+          padding: "28px 24px",
           textAlign: "center",
           borderTop: "1px solid var(--border2)",
           background: "var(--bg2)",
         }}
       >
         <p
+          className="font-display"
           style={{
-            fontFamily: "Cormorant Garamond, serif",
-            fontSize: "1.5rem",
+            fontSize: "1.6rem",
             color: "var(--gold)",
             marginBottom: 6,
             fontWeight: 300,
@@ -1770,51 +2552,151 @@ export default function TrivandrumPage() {
         </p>
         <p
           style={{
-            fontSize: "0.68rem",
+            fontSize: "0.7rem",
             color: "var(--cream-dim)",
-            marginBottom: 14,
+            marginBottom: 4,
           }}
         >
           Cloud Kitchen · Kochi, Kerala
         </p>
         <a
-          href={`https://wa.me/${WHATSAPP_NUMBER}`}
+          href="https://instagram.com/byeversweet"
           target="_blank"
           rel="noopener noreferrer"
           style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 8,
-            fontSize: "0.82rem",
-            color: "#25d366",
+            fontSize: "0.7rem",
+            color: "var(--gold)",
             textDecoration: "none",
-            fontWeight: 600,
+            letterSpacing: "0.1em",
           }}
         >
-          Chat on WhatsApp
+          @byeversweet
         </a>
         <p
           style={{
-            fontSize: "0.55rem",
-            color: "rgba(255,248,230,0.15)",
-            marginTop: 14,
+            fontSize: "0.62rem",
+            color: "var(--cream-dim)",
+            marginTop: 16,
+            opacity: 0.5,
           }}
         >
           © {new Date().getFullYear()} Eversweet Company
         </p>
       </footer>
+
+      {/* ══ STICKY PROGRESS BAR ═══════════════════════════════════ */}
+      {totalPicked > 0 && step === 1 && autoBox && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 0,
+            left: "50%",
+            transform: "translateX(-50%)",
+            width: "100%",
+            maxWidth: 480,
+            background: "rgba(18, 10, 5, 0.96)",
+            borderTop: "1px solid rgba(184,134,11,0.4)",
+            backdropFilter: "blur(12px)",
+            padding: "14px 20px 20px",
+            zIndex: 100,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "baseline",
+              marginBottom: 8,
+            }}
+          >
+            <span
+              style={{
+                fontSize: "0.72rem",
+                color: "var(--gold)",
+                fontWeight: 600,
+                letterSpacing: "0.08em",
+              }}
+            >
+              {autoBox.label} · ₹{autoBox.price}
+            </span>
+            <span
+              style={{
+                fontSize: "0.72rem",
+                color:
+                  autoBox.count - totalPicked === 0
+                    ? "var(--gold)"
+                    : "var(--cream-dim)",
+              }}
+            >
+              {autoBox.count - totalPicked === 0
+                ? "✓ Box full!"
+                : `${autoBox.count - totalPicked} more piece${autoBox.count - totalPicked === 1 ? "" : "s"} to fill`}
+            </span>
+          </div>
+
+          <div
+            style={{
+              width: "100%",
+              height: 6,
+              background: "rgba(184,134,11,0.18)",
+              borderRadius: 99,
+              marginBottom: 12,
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                height: "100%",
+                width: `${Math.min((totalPicked / autoBox.count) * 100, 100)}%`,
+                background:
+                  autoBox.count - totalPicked === 0
+                    ? "var(--gold)"
+                    : "linear-gradient(90deg, rgba(184,134,11,0.6), var(--gold))",
+                borderRadius: 99,
+                transition: "width 0.3s ease",
+              }}
+            />
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              gap: 4,
+              marginBottom: 14,
+              justifyContent: "center",
+            }}
+          >
+            {Array.from({ length: autoBox.count }).map((_, i) => (
+              <div
+                key={i}
+                style={{
+                  width: Math.max(6, Math.min(14, 320 / autoBox.count - 4)),
+                  height: 6,
+                  borderRadius: 99,
+                  background:
+                    i < totalPicked ? "var(--gold)" : "rgba(184,134,11,0.2)",
+                  transition: "background 0.2s ease",
+                }}
+              />
+            ))}
+          </div>
+
+          <button
+            className="btn-gold"
+            style={{
+              width: "100%",
+              opacity: autoBox.count - totalPicked === 0 ? 1 : 0.45,
+              cursor:
+                autoBox.count - totalPicked === 0 ? "pointer" : "not-allowed",
+            }}
+            onClick={proceedToSlot}
+          >
+            {autoBox.count - totalPicked === 0
+              ? "Continue to delivery date →"
+              : `Fill ${autoBox.count - totalPicked} more piece${autoBox.count - totalPicked === 1 ? "" : "s"} to unlock`}
+          </button>
+        </div>
+      )}
     </main>
   );
 }
-
-const CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&display=swap');
-  :root { --bg:#160c08; --bg2:#1e1009; --gold:#c9a84c; --cream:#f5ede0; --cream-dim:#c8b89a; --border2:rgba(201,168,76,0.08); }
-  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-  html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
-  body{background:var(--bg);color:var(--cream);font-family:'DM Sans',sans-serif;font-weight:300;font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
-  input,button,a{font-family:'DM Sans',sans-serif}
-  input::placeholder{color:rgba(200,184,154,0.4)}
-  input:focus{border-color:rgba(201,168,76,0.5)!important;outline:none}
-  @keyframes heroFade{0%{opacity:0}8%{opacity:1}33%{opacity:1}41%{opacity:0}100%{opacity:0}}
-`;

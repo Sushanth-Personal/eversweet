@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import type { Product, BoxSize, CustomerForm } from "@/lib/types";
-
+import { MaintenanceScreen } from "@/components/MaintenanceScreen";
 const IMG: Record<string, string> = {
   matcha:
     "https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/products/mango-mochi.png",
@@ -236,6 +236,11 @@ export default function Home() {
   const orderRef = useRef<HTMLElement>(null);
   const slotRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLDivElement>(null);
+
+  const MAINTENANCE_MODE = true; // flip to false to bring the site back
+  if (MAINTENANCE_MODE) {
+    return <MaintenanceScreen />;
+  }
 
   useEffect(() => {
     async function load() {
