@@ -5,6 +5,11 @@ export const dynamic = "force-dynamic";
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 
+// This is the single, fixed settings row shared by /admin (Trivandrum tab)
+// and /admin/delivery. Never insert a second row — always upsert against
+// this id so both pages read/write the exact same trip_date.
+const FIXED_SETTINGS_ID = "0c62e1c2-4d73-457b-bf49-bb077ebdba3e";
+
 const G = {
   pageBg: "#ffffff",
   glass: "rgba(0,0,0,0.03)",
@@ -111,15 +116,21 @@ export default function TvmDeliveryAdminPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data: settingsRows } = await supabase
+
+    // Always read the one fixed settings row — never "any" row via limit(1),
+    // which could silently pick a different row than the one being written to.
+    const { data: settingsRow } = await supabase
       .from("trivandrum_settings")
       .select("id, trip_date")
-      .limit(1);
-    const settings = settingsRows && settingsRows[0] ? settingsRows[0] : null;
-    setSettingsId(settings?.id || null);
+      .eq("id", FIXED_SETTINGS_ID)
+      .maybeSingle();
+
+    setSettingsId(settingsRow?.id || FIXED_SETTINGS_ID);
+
     // If no trip date has been set yet, default to today so the form
     // still works immediately — admin doesn't need to save a date first.
-    const trip = settings?.trip_date || new Date().toISOString().split("T")[0];
+    const trip =
+      settingsRow?.trip_date || new Date().toISOString().split("T")[0];
     setTripDate(trip);
     setTripDateInput(trip);
 
@@ -150,56 +161,24 @@ export default function TvmDeliveryAdminPage() {
     if (!savingDate) return;
     setDateSaveStatus("saving");
 
-    // Carry existing stops over to the new date instead of losing them —
-    // they were filtered by the old trip_date, so without this they'd
-    // simply stop matching and the list would look empty.
-    if (tripDate && tripDate !== savingDate) {
-      const { error: moveErr } = await supabase
-        .from("tvm_delivery_stops")
-        .update({ trip_date: savingDate })
-        .eq("trip_date", tripDate);
-      if (moveErr) {
-        flash(`⚠ Couldn't move existing stops: ${moveErr.message}`);
-        setDateSaveStatus("error");
-        return;
-      }
-    }
+    // Upsert against the fixed settings id — never blindly insert a new row.
+    // This guarantees /admin (Trivandrum tab) and /admin/delivery always
+    // read/write the exact same trip_date.
+    const { error } = await supabase.from("trivandrum_settings").upsert(
+      {
+        id: settingsId || FIXED_SETTINGS_ID,
+        trip_date: savingDate,
+      },
+      { onConflict: "id" },
+    );
 
-    let saveError: string | null = null;
-
-    if (settingsId) {
-      const { error } = await supabase
-        .from("trivandrum_settings")
-        .update({ trip_date: savingDate })
-        .eq("id", settingsId);
-      if (error) saveError = error.message;
-    } else {
-      // No settings row exists yet — create one instead of silently
-      // updating zero rows (which is why the date kept reverting).
-      const { data: inserted, error } = await supabase
-        .from("trivandrum_settings")
-        .insert({
-          trip_date: savingDate,
-          is_active: true,
-          pickup_name: "",
-          pickup_address: "",
-          pickup_maps_url: "",
-          pickup_locations: "",
-        })
-        .select("id")
-        .single();
-      if (error) saveError = error.message;
-      if (inserted?.id) setSettingsId(inserted.id);
-    }
-
-    if (saveError) {
-      // Don't call load() here — it would re-fetch the old, unchanged
-      // value and silently reset the date picker, hiding this error.
-      flash(`⚠ Save failed: ${saveError}`);
+    if (error) {
+      flash(`⚠ Save failed: ${error.message}`);
       setDateSaveStatus("error");
       return;
     }
 
+    setSettingsId(settingsId || FIXED_SETTINGS_ID);
     setTripDate(savingDate);
     await load();
     setDateSaveStatus("saved");

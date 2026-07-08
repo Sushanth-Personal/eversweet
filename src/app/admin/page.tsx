@@ -231,6 +231,54 @@ export default function AdminPage() {
     }
   }
 
+  const FIXED_TVM_SETTINGS_ID = "0c62e1c2-4d73-457b-bf49-bb077ebdba3e";
+
+  async function handleSendToDelivery(order: ExtOrder) {
+    const tripDate = tvmSettings.trip_date;
+    if (!tripDate) {
+      flash("Set a Trivandrum trip date first (Trivandrum tab)", "error");
+      return;
+    }
+
+    // Avoid adding the same order twice
+    const { data: existing } = await supabase
+      .from("tvm_delivery_stops")
+      .select("id, sequence")
+      .eq("trip_date", tripDate)
+      .order("sequence", { ascending: false });
+
+    const alreadyThere = (existing || []).some(
+      (s: any) => s.notes && s.notes.includes(order.id.slice(0, 8)),
+    );
+    if (alreadyThere) {
+      flash("This order is already on the delivery route");
+      return;
+    }
+
+    const nextSeq =
+      existing && existing.length > 0 ? existing[0].sequence + 1 : 1;
+
+    const isPickup = order.fulfillment_type === "pickup";
+    const { error } = await supabase.from("tvm_delivery_stops").insert({
+      trip_date: tripDate,
+      sequence: nextSeq,
+      customer_name: order.customer_name,
+      phone: order.phone || null,
+      address: order.address || null,
+      maps_url: null,
+      distance_km: 0,
+      dispatch_distance_km: 0,
+      notes: `Order #${order.id.slice(0, 8).toUpperCase()}${isPickup ? " · Marked Pickup — confirm before dispatch" : ""}`,
+      status: "pending",
+    });
+
+    if (error) {
+      flash("Failed to add to delivery route: " + error.message, "error");
+      return;
+    }
+    flash(`${order.customer_name} added to delivery route ✓`);
+  }
+
   async function handleBulkOrderImport(text: string) {
     try {
       const data = JSON.parse(text.trim());
@@ -757,6 +805,7 @@ export default function AdminPage() {
                 return next;
               })
             }
+            onSendToDelivery={handleSendToDelivery}
             onPorterEmail={handlePorterEmail}
             onDispatch={async (id) => {
               await handleStatusChange(id, "dispatched");
@@ -1479,15 +1528,13 @@ export default function AdminPage() {
                 disabled={saving || !ne.description || !ne.amount}
                 onClick={async () => {
                   setSaving(true);
-                  await supabase
-                    .from("expenses")
-                    .insert({
-                      description: ne.description,
-                      amount: Number(ne.amount),
-                      category: ne.category,
-                      date: ne.date,
-                      note: ne.note,
-                    });
+                  await supabase.from("expenses").insert({
+                    description: ne.description,
+                    amount: Number(ne.amount),
+                    category: ne.category,
+                    date: ne.date,
+                    note: ne.note,
+                  });
                   setNe({
                     description: "",
                     amount: "",
@@ -2017,16 +2064,14 @@ export default function AdminPage() {
                   disabled={saving || !np.name}
                   onClick={async () => {
                     setSaving(true);
-                    await supabase
-                      .from("products")
-                      .insert({
-                        name: np.name,
-                        description: np.description,
-                        price: 0,
-                        is_premium: np.is_premium,
-                        image_url: np.image_url || null,
-                        sort_order: products.length + 1,
-                      });
+                    await supabase.from("products").insert({
+                      name: np.name,
+                      description: np.description,
+                      price: 0,
+                      is_premium: np.is_premium,
+                      image_url: np.image_url || null,
+                      sort_order: products.length + 1,
+                    });
                     setNp({
                       name: "",
                       description: "",
