@@ -1,11 +1,55 @@
 "use client";
 
+/* ============================================================
+   EVERSWEET ADMIN PAGE — SECTION INDEX
+   ============================================================
+   SECTION 1  — Imports & Types
+   SECTION 2  — Constants (slots, statuses, category config)
+   SECTION 3  — Design tokens (G) & flavour colors
+   SECTION 4  — Shared small components (GlassInput, GlassBtn, CopyBtn, GlassStatCard)
+   SECTION 5  — StartDateEditor
+   SECTION 6  — FlavourPill / FlavourBigCard
+   SECTION 7  — MonthCalendar
+   SECTION 8  — SlotTabs
+   SECTION 9  — CookOrderCard
+   SECTION 10 — CookTab (+ BATCHES const)
+   SECTION 11 — ManualOrderForm
+   SECTION 12 — PendingOrderCard
+   SECTION 13 — BulkOrderImport
+   SECTION 14 — ExpenseScanner
+   SECTION 15 — ExpenseImporter
+   SECTION 16 — OrderEditModal
+   SECTION 17 — AllOrdersTab
+   SECTION 18 — BoxSizeRow (editable box size row, Kochi + Trivandrum price)
+   SECTION 19 — AdminPage (main component)
+     19.1 — State
+     19.2 — Data loading
+     19.3 — Handlers (status, cancel, imports)
+     19.4 — Derived/computed values (revenue, expenses, customers)
+     19.5 — NavBtn
+     19.6 — Login screen
+     19.7 — Top bar + flash message
+     19.8 — TAB: Cook
+     19.9 — TAB: Pending Payment
+     19.10 — TAB: Orders
+     19.11 — TAB: Customers
+     19.12 — TAB: Dashboard
+     19.13 — TAB: More (Products / Box Sizes)  <-- Box pricing form lives here
+     19.14 — TAB: Trivandrum
+     19.15 — Modals
+     19.16 — Bottom nav
+   ============================================================ */
+
+/* ------------------------------------------------------------
+   SECTION 1 — Imports & Types
+------------------------------------------------------------ */
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { SmartOrderModal, SmartOrderNavBtn } from "./SmartOrderModal";
 import { supabase } from "@/lib/supabase";
 import type { Product, BoxSize, Order } from "@/lib/types";
 import { TrivandrumAdminTab } from "./trivandrum-admin-section";
 import { InvoiceModal, InvoiceNavBtn } from "./InvoiceModal";
+
 type Tab =
   | "cook"
   | "pending_payment"
@@ -39,6 +83,9 @@ type ExtOrder = Order & {
   payment_confirmed_at?: string;
 };
 
+/* ------------------------------------------------------------
+   SECTION 2 — Constants
+------------------------------------------------------------ */
 const TRACKING_START_DATE = "2026-04-21";
 
 const ALL_SLOTS = [
@@ -89,6 +136,9 @@ const CATEGORY_CONFIG: Record<string, { label: string; icon: string }> = {
   other: { label: "Other", icon: "📋" },
 };
 
+/* ------------------------------------------------------------
+   SECTION 3 — Design tokens (G) & flavour colors
+------------------------------------------------------------ */
 const G = {
   pageBg: "#0d1520",
   navBg: "rgba(8,15,26,0.96)",
@@ -187,6 +237,9 @@ function getFlavourColor(name: string) {
   return FLAVOUR_COLORS.default;
 }
 
+/* ------------------------------------------------------------
+   SECTION 4 — Shared small components
+------------------------------------------------------------ */
 function GlassInput({
   placeholder,
   value,
@@ -361,6 +414,9 @@ function GlassStatCard({
   );
 }
 
+/* ------------------------------------------------------------
+   SECTION 5 — StartDateEditor
+------------------------------------------------------------ */
 function StartDateEditor({
   trackingStart,
   setTrackingStart,
@@ -491,6 +547,9 @@ function StartDateEditor({
   );
 }
 
+/* ------------------------------------------------------------
+   SECTION 6 — FlavourPill / FlavourBigCard
+------------------------------------------------------------ */
 function FlavourPill({
   name,
   qty,
@@ -583,6 +642,9 @@ function FlavourBigCard({ name, qty }: { name: string; qty: number }) {
   );
 }
 
+/* ------------------------------------------------------------
+   SECTION 7 — MonthCalendar
+------------------------------------------------------------ */
 function MonthCalendar({
   orders,
   selectedDate,
@@ -817,6 +879,9 @@ function MonthCalendar({
   );
 }
 
+/* ------------------------------------------------------------
+   SECTION 8 — SlotTabs
+------------------------------------------------------------ */
 function SlotTabs({
   slots,
   activeSlot,
@@ -900,6 +965,9 @@ function SlotTabs({
   );
 }
 
+/* ------------------------------------------------------------
+   SECTION 9 — CookOrderCard
+------------------------------------------------------------ */
 function CookOrderCard({
   order,
   productMap,
@@ -1200,6 +1268,9 @@ function CookOrderCard({
   );
 }
 
+/* ------------------------------------------------------------
+   SECTION 10 — CookTab (+ BATCHES const)
+------------------------------------------------------------ */
 const BATCHES = [
   { label: "Morning", range: "6 AM – 12 PM", slots: ["9–11 AM"] },
   {
@@ -1690,6 +1761,9 @@ function CookTab({
   );
 }
 
+/* ------------------------------------------------------------
+   SECTION 11 — ManualOrderForm
+------------------------------------------------------------ */
 function ManualOrderForm({
   boxes,
   customers,
@@ -1736,6 +1810,9 @@ function ManualOrderForm({
   const f = (k: string) => (v: string) => setForm((p) => ({ ...p, [k]: v }));
   const totalPrice = boxRows.reduce((s, r) => s + (Number(r.price) || 0), 0);
 
+  // NOTE: This currently reads box.price (Kochi price) when populating a row.
+  // If you want it to use Trivandrum pricing when location === "trivandrum",
+  // update updateBoxRow() below to pick box.price_trivandrum ?? box.price.
   function handleNameChange(v: string) {
     setForm((p) => ({ ...p, customer_name: v }));
     if (v.trim().length >= 1) {
@@ -1870,7 +1947,6 @@ function ManualOrderForm({
         </button>
       </div>
 
-      {/* LOCATION TOGGLE */}
       <p
         style={{
           fontSize: "0.65rem",
@@ -2506,6 +2582,9 @@ function ManualOrderForm({
   );
 }
 
+/* ------------------------------------------------------------
+   SECTION 12 — PendingOrderCard
+------------------------------------------------------------ */
 function PendingOrderCard({
   order,
   productMap,
@@ -2695,6 +2774,9 @@ function PendingOrderCard({
   );
 }
 
+/* ------------------------------------------------------------
+   SECTION 13 — BulkOrderImport
+------------------------------------------------------------ */
 function BulkOrderImport({
   onImport,
 }: {
@@ -2801,6 +2883,9 @@ function BulkOrderImport({
   );
 }
 
+/* ------------------------------------------------------------
+   SECTION 14 — ExpenseScanner (AI bill scanner)
+------------------------------------------------------------ */
 function ExpenseScanner({
   onDataExtracted,
 }: {
@@ -3075,6 +3160,9 @@ function ExpenseScanner({
   );
 }
 
+/* ------------------------------------------------------------
+   SECTION 15 — ExpenseImporter
+------------------------------------------------------------ */
 function ExpenseImporter({
   onImport,
 }: {
@@ -3254,6 +3342,9 @@ function ExpenseImporter({
   );
 }
 
+/* ------------------------------------------------------------
+   SECTION 16 — OrderEditModal
+------------------------------------------------------------ */
 function OrderEditModal({
   order,
   products,
@@ -3751,6 +3842,9 @@ function OrderEditModal({
   );
 }
 
+/* ------------------------------------------------------------
+   SECTION 17 — AllOrdersTab
+------------------------------------------------------------ */
 function AllOrdersTab({
   orders,
   productMap,
@@ -4173,7 +4267,143 @@ function AllOrdersTab({
   );
 }
 
+/* ------------------------------------------------------------
+   SECTION 18 — BoxSizeRow
+   Editable row for a single box size: label, pieces, Kochi price,
+   Trivandrum price (optional), plus Hide/Show toggle.
+   Used inside SECTION 19.13 (More tab → Box Sizes).
+------------------------------------------------------------ */
+function BoxSizeRow({
+  box,
+  onSave,
+  onToggle,
+}: {
+  box: BoxSize;
+  onSave: (updates: {
+    label: string;
+    count: number;
+    price: number;
+    price_trivandrum: number | null;
+  }) => Promise<void>;
+  onToggle: () => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [label, setLabel] = useState(box.label);
+  const [count, setCount] = useState(String(box.count));
+  const [priceKochi, setPriceKochi] = useState(String(box.price));
+  const [priceTvm, setPriceTvm] = useState(
+    box.price_trivandrum != null ? String(box.price_trivandrum) : "",
+  );
+  const [saving, setSaving] = useState(false);
+
+  return (
+    <div
+      style={{
+        background: G.glass,
+        border: `1px solid ${G.glassBorder}`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        marginBottom: 8,
+      }}
+    >
+      {editing ? (
+        <div>
+          <GlassInput placeholder="Label" value={label} onChange={setLabel} />
+          <GlassInput
+            placeholder="Pieces"
+            type="number"
+            value={count}
+            onChange={setCount}
+          />
+          <GlassInput
+            placeholder="Kochi Price ₹"
+            type="number"
+            value={priceKochi}
+            onChange={setPriceKochi}
+          />
+          <GlassInput
+            placeholder="Trivandrum Price ₹ (optional)"
+            type="number"
+            value={priceTvm}
+            onChange={setPriceTvm}
+          />
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              disabled={saving || !label || !count || !priceKochi}
+              onClick={async () => {
+                setSaving(true);
+                await onSave({
+                  label,
+                  count: Number(count),
+                  price: Number(priceKochi),
+                  price_trivandrum: priceTvm ? Number(priceTvm) : null,
+                });
+                setSaving(false);
+                setEditing(false);
+              }}
+              style={{
+                flex: 1,
+                padding: "9px",
+                borderRadius: 8,
+                border: "none",
+                background: G.blueGlass,
+                color: G.blue,
+                fontSize: "0.85rem",
+                fontWeight: 700,
+                cursor: "pointer",
+                fontFamily: "system-ui, sans-serif",
+              }}
+            >
+              {saving ? "Saving..." : "Save"}
+            </button>
+            <GlassBtn onClick={() => setEditing(false)}>Cancel</GlassBtn>
+          </div>
+        </div>
+      ) : (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <div>
+            <p style={{ fontSize: "0.9rem", fontWeight: 700, color: G.text }}>
+              {box.label}
+            </p>
+            <p style={{ fontSize: "0.75rem", color: G.muted }}>
+              {box.count} pieces · 🍡 ₹{box.price}
+              {box.price_trivandrum != null && ` · 🚂 ₹${box.price_trivandrum}`}
+              {" · "}
+              <span
+                style={{
+                  color: box.is_active ? G.green : G.red,
+                  fontWeight: 600,
+                }}
+              >
+                {box.is_active ? "Active" : "Hidden"}
+              </span>
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <GlassBtn variant="primary" onClick={() => setEditing(true)}>
+              Edit
+            </GlassBtn>
+            <GlassBtn onClick={onToggle}>
+              {box.is_active ? "Hide" : "Show"}
+            </GlassBtn>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================
+   SECTION 19 — AdminPage (main component)
+   ============================================================ */
 export default function AdminPage() {
+  /* ---------- 19.1 — State ---------- */
   const [showSmartOrder, setShowSmartOrder] = useState(false);
   const [authed, setAuthed] = useState(false);
   const [pw, setPw] = useState("");
@@ -4208,7 +4438,15 @@ export default function AdminPage() {
     is_premium: false,
     image_url: "",
   });
-  const [nb, setNb] = useState({ label: "", count: "", price: "" });
+
+  // "Add Box Size" form state — includes Trivandrum price (priceTvm)
+  const [nb, setNb] = useState({
+    label: "",
+    count: "",
+    price: "",
+    priceTvm: "",
+  });
+
   const [ne, setNe] = useState({
     description: "",
     amount: "",
@@ -4253,6 +4491,7 @@ export default function AdminPage() {
     productMap[p.id] = p.name;
   });
 
+  /* ---------- 19.2 — Data loading ---------- */
   const load = useCallback(async () => {
     const [
       { data: o },
@@ -4317,6 +4556,7 @@ export default function AdminPage() {
     setTimeout(() => setMsg({ text: "", type: "success" }), 3500);
   }
 
+  /* ---------- 19.3 — Handlers ---------- */
   async function handleStatusChange(id: string, status: string) {
     const updatePayload: Record<string, unknown> = { status };
     if (status === "confirmed")
@@ -4471,6 +4711,7 @@ export default function AdminPage() {
     });
   }
 
+  /* ---------- 19.4 — Derived/computed values ---------- */
   const paidOrders = filterRevenueByPeriod(
     orders.filter((o) => PAID_STATUSES.includes(o.status)),
   ) as ExtOrder[];
@@ -4531,7 +4772,6 @@ export default function AdminPage() {
   );
   const pendingCount = pendingPaymentOrders.length;
 
-  // TVM computed
   const tvmPaid = tvmOrders.filter((o) => PAID_STATUSES.includes(o.status));
   const tvmPending = tvmOrders.filter((o) => o.status === "pending");
   const tvmRevenue = tvmPaid.reduce((s, o) => s + (o.total_price || 0), 0);
@@ -4577,6 +4817,7 @@ export default function AdminPage() {
       (c.insta_id || "").toLowerCase().includes(customerSearch.toLowerCase()),
   );
 
+  /* ---------- 19.5 — NavBtn ---------- */
   function NavBtn({
     id,
     icon,
@@ -4675,6 +4916,7 @@ export default function AdminPage() {
     outline: "none",
   };
 
+  /* ---------- 19.6 — Login screen ---------- */
   if (!authed) {
     return (
       <main
@@ -4760,7 +5002,7 @@ export default function AdminPage() {
         paddingBottom: 80,
       }}
     >
-      {/* Top bar */}
+      {/* ---------- 19.7 — Top bar + flash message ---------- */}
       <div
         style={{
           background: G.navBg,
@@ -4852,7 +5094,6 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {/* Flash */}
       <div style={{ maxWidth: 900, margin: "0 auto" }}>
         {msg.text && (
           <div
@@ -4872,7 +5113,7 @@ export default function AdminPage() {
         )}
       </div>
 
-      {/* COOK TAB */}
+      {/* ---------- 19.8 — TAB: Cook ---------- */}
       {tab === "cook" && (
         <div style={{ maxWidth: 900, margin: "0 auto" }}>
           <CookTab
@@ -4939,7 +5180,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* PENDING PAYMENT TAB */}
+      {/* ---------- 19.9 — TAB: Pending Payment ---------- */}
       {tab === "pending_payment" && (
         <div style={{ maxWidth: 900, margin: "0 auto", padding: "16px 14px" }}>
           <div
@@ -4985,7 +5226,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ORDERS TAB */}
+      {/* ---------- 19.10 — TAB: Orders ---------- */}
       {tab === "orders" && (
         <AllOrdersTab
           orders={orders}
@@ -5001,7 +5242,7 @@ export default function AdminPage() {
         />
       )}
 
-      {/* CUSTOMERS TAB */}
+      {/* ---------- 19.11 — TAB: Customers ---------- */}
       {tab === "customers" && (
         <div style={{ maxWidth: 900, margin: "0 auto", padding: "16px 14px" }}>
           <div style={{ marginBottom: 14 }}>
@@ -5243,7 +5484,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* DASHBOARD TAB */}
+      {/* ---------- 19.12 — TAB: Dashboard ---------- */}
       {tab === "dashboard" && (
         <div style={{ maxWidth: 900, margin: "0 auto", padding: "16px 14px" }}>
           <div
@@ -5609,13 +5850,15 @@ export default function AdminPage() {
                 disabled={saving || !ne.description || !ne.amount}
                 onClick={async () => {
                   setSaving(true);
-                  await supabase.from("expenses").insert({
-                    description: ne.description,
-                    amount: Number(ne.amount),
-                    category: ne.category,
-                    date: ne.date,
-                    note: ne.note,
-                  });
+                  await supabase
+                    .from("expenses")
+                    .insert({
+                      description: ne.description,
+                      amount: Number(ne.amount),
+                      category: ne.category,
+                      date: ne.date,
+                      note: ne.note,
+                    });
                   setNe({
                     description: "",
                     amount: "",
@@ -5798,7 +6041,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* MORE TAB */}
+      {/* ---------- 19.13 — TAB: More (Products / Box Sizes) ---------- */}
       {tab === "more" && (
         <div style={{ maxWidth: 900, margin: "0 auto", padding: "16px 14px" }}>
           <div
@@ -5831,6 +6074,8 @@ export default function AdminPage() {
               </button>
             ))}
           </div>
+
+          {/* ---- 19.13.a — Products sub-tab ---- */}
           {moreTab === "products" && (
             <div>
               {products.map((prod) => (
@@ -6143,14 +6388,16 @@ export default function AdminPage() {
                   disabled={saving || !np.name}
                   onClick={async () => {
                     setSaving(true);
-                    await supabase.from("products").insert({
-                      name: np.name,
-                      description: np.description,
-                      price: 0,
-                      is_premium: np.is_premium,
-                      image_url: np.image_url || null,
-                      sort_order: products.length + 1,
-                    });
+                    await supabase
+                      .from("products")
+                      .insert({
+                        name: np.name,
+                        description: np.description,
+                        price: 0,
+                        is_premium: np.is_premium,
+                        image_url: np.image_url || null,
+                        sort_order: products.length + 1,
+                      });
                     setNp({
                       name: "",
                       description: "",
@@ -6179,57 +6426,34 @@ export default function AdminPage() {
               </div>
             </div>
           )}
+
+          {/* ---- 19.13.b — Box Sizes sub-tab (editable list + add form) ---- */}
           {moreTab === "boxes" && (
             <div>
+              {/* Existing box sizes — editable via BoxSizeRow (SECTION 18) */}
               {boxes.map((box) => (
-                <div
+                <BoxSizeRow
                   key={box.id}
-                  style={{
-                    background: G.glass,
-                    border: `1px solid ${G.glassBorder}`,
-                    borderRadius: 12,
-                    padding: "12px 14px",
-                    marginBottom: 8,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
+                  box={box}
+                  onSave={async (updates) => {
+                    await supabase
+                      .from("box_sizes")
+                      .update(updates)
+                      .eq("id", box.id);
+                    load();
+                    flash(`${box.label} updated ✓`);
                   }}
-                >
-                  <div>
-                    <p
-                      style={{
-                        fontSize: "0.9rem",
-                        fontWeight: 700,
-                        color: G.text,
-                      }}
-                    >
-                      {box.label}
-                    </p>
-                    <p style={{ fontSize: "0.75rem", color: G.muted }}>
-                      {box.count} pieces · ₹{box.price} ·{" "}
-                      <span
-                        style={{
-                          color: box.is_active ? G.green : G.red,
-                          fontWeight: 600,
-                        }}
-                      >
-                        {box.is_active ? "Active" : "Hidden"}
-                      </span>
-                    </p>
-                  </div>
-                  <GlassBtn
-                    onClick={async () => {
-                      await supabase
-                        .from("box_sizes")
-                        .update({ is_active: !box.is_active })
-                        .eq("id", box.id);
-                      load();
-                    }}
-                  >
-                    {box.is_active ? "Hide" : "Show"}
-                  </GlassBtn>
-                </div>
+                  onToggle={async () => {
+                    await supabase
+                      .from("box_sizes")
+                      .update({ is_active: !box.is_active })
+                      .eq("id", box.id);
+                    load();
+                  }}
+                />
               ))}
+
+              {/* Add Box Size form — includes Kochi + Trivandrum price */}
               <div
                 style={{
                   background: G.glass,
@@ -6264,9 +6488,15 @@ export default function AdminPage() {
                 />
                 <GlassInput
                   type="number"
-                  placeholder="Price ₹ *"
+                  placeholder="Kochi Price ₹ *"
                   value={nb.price}
                   onChange={(v) => setNb((b) => ({ ...b, price: v }))}
+                />
+                <GlassInput
+                  type="number"
+                  placeholder="Trivandrum Price ₹ (optional)"
+                  value={nb.priceTvm}
+                  onChange={(v) => setNb((b) => ({ ...b, priceTvm: v }))}
                 />
                 <button
                   disabled={saving || !nb.label || !nb.count || !nb.price}
@@ -6276,10 +6506,13 @@ export default function AdminPage() {
                       label: nb.label,
                       count: Number(nb.count),
                       price: Number(nb.price),
+                      price_trivandrum: nb.priceTvm
+                        ? Number(nb.priceTvm)
+                        : null,
                       is_active: true,
                       sort_order: boxes.length + 1,
                     });
-                    setNb({ label: "", count: "", price: "" });
+                    setNb({ label: "", count: "", price: "", priceTvm: "" });
                     await load();
                     setSaving(false);
                     flash("Box size added ✓");
@@ -6289,8 +6522,14 @@ export default function AdminPage() {
                     padding: "11px",
                     borderRadius: 10,
                     border: "none",
-                    background: "#1976d2",
-                    color: "#fff",
+                    background:
+                      saving || !nb.label || !nb.count || !nb.price
+                        ? G.glass
+                        : "#1976d2",
+                    color:
+                      saving || !nb.label || !nb.count || !nb.price
+                        ? G.muted
+                        : "#fff",
                     fontSize: "0.88rem",
                     fontWeight: 700,
                     cursor: "pointer",
@@ -6305,7 +6544,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* TRIVANDRUM TAB */}
+      {/* ---------- 19.14 — TAB: Trivandrum ---------- */}
       {tab === "trivandrum" && (
         <TrivandrumAdminTab
           tvmOrders={tvmOrders}
@@ -6324,7 +6563,7 @@ export default function AdminPage() {
         />
       )}
 
-      {/* Modals */}
+      {/* ---------- 19.15 — Modals ---------- */}
       {editingOrder && (
         <OrderEditModal
           order={editingOrder}
@@ -6360,10 +6599,9 @@ export default function AdminPage() {
           }}
         />
       )}
-
       {showInvoice && <InvoiceModal onClose={() => setShowInvoice(false)} />}
 
-      {/* BOTTOM NAV */}
+      {/* ---------- 19.16 — Bottom nav ---------- */}
       <div
         style={{
           position: "fixed" as const,

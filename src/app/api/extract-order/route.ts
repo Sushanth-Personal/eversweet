@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import OpenAI from "openai";
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export async function POST(req: Request) {
   try {
@@ -12,16 +15,12 @@ export async function POST(req: Request) {
     }
 
     const today = new Date().toISOString().split("T")[0];
-
     const productArr = products as { id: string; name: string }[];
     const boxArr = boxes as { id: string; label: string; price: number }[];
 
-    // Numbered flavour list — Gemini picks by number, no spelling needed
     const numberedFlavours = productArr
       .map((p, i) => `${i + 1}. ${p.name}`)
       .join("\n");
-
-    // Box price list — Gemini extracts the price, server matches to box
     const boxPriceList = boxArr
       .map((b) => `₹${b.price} = ${b.label}`)
       .join(", ");
@@ -47,61 +46,53 @@ Example out: "Vaimpillil house, TTRA-116, near Pallath lane"
 SLOT RULE: Map to one of: ${slots.join(", ")}
 evening=5-7 PM, morning=9-11 AM, afternoon=1-3 PM, night=7-9 PM
 
-IMPORTANT: Return ONLY raw JSON — no markdown, no backticks, no explanation. Start with { and end with }.
-
+Return ONLY raw JSON matching this exact shape, no other text:
 {"customer_name":null,"phone":null,"insta_id":null,"address":null,"delivery_date":null,"delivery_slot":null,"flavours":{},"total_price":null,"remarks":null,"fulfillment_type":"delivery"}`;
 
-    const parts: object[] = [{ text: prompt }];
-    for (const img of images) {
-      parts.push({ inline_data: { mime_type: img.mimeType, data: img.data } });
+    const content: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
+      { type: "text", text: prompt },
+      ...images.map((img: { mimeType: string; data: string }) => ({
+        type: "image_url" as const,
+        image_url: { url: `data:${img.mimeType};base64,${img.data}` },
+      })),
+    ];
+
+    let completion;
+    try {
+      completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content }],
+        temperature: 0.1,
+        max_tokens: 1024,
+        response_format: { type: "json_object" },
+      });
+    } catch (apiErr) {
+      // one retry on transient failure (rate limit / 5xx)
+      await new Promise((r) => setTimeout(r, 1200));
+      completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content }],
+        temperature: 0.1,
+        max_tokens: 1024,
+        response_format: { type: "json_object" },
+      });
     }
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 2048 },
-        }),
-      },
-    );
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("Gemini API error:", errText);
-      return NextResponse.json(
-        {
-          error: `Gemini API error: ${response.status} — ${errText.slice(0, 200)}`,
-        },
-        { status: 500 },
-      );
-    }
-
-    const geminiData = await response.json();
-    const rawText =
-      geminiData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
-    console.log("=== extract-order Gemini raw ===\n", rawText, "\n===");
+    const rawText = completion.choices[0]?.message?.content?.trim() ?? "";
+    console.log("=== extract-order OpenAI raw ===\n", rawText, "\n===");
 
     if (!rawText) {
       return NextResponse.json(
-        { error: "Empty response from Gemini" },
+        { error: "Empty response from OpenAI" },
         { status: 500 },
       );
     }
 
-    // Strip markdown fences
-    let cleaned = rawText
-      .replace(/^```(?:json)?[\r\n]*/i, "")
-      .replace(/[\r\n]*```\s*$/i, "")
-      .trim();
-
     let parsed: any = null;
     try {
-      parsed = JSON.parse(cleaned);
+      parsed = JSON.parse(rawText);
     } catch {
-      const match = cleaned.match(/\{[\s\S]*\}/);
+      const match = rawText.match(/\{[\s\S]*\}/);
       if (match) {
         try {
           parsed = JSON.parse(match[0]);
@@ -117,7 +108,7 @@ IMPORTANT: Return ONLY raw JSON — no markdown, no backticks, no explanation. S
       );
     }
 
-    // ── Map flavour numbers → product IDs ──────────────────────────
+    // Map flavour numbers → product IDs
     const matchedFlavours: Record<string, number> = {};
     if (parsed.flavours && typeof parsed.flavours === "object") {
       for (const [numStr, qty] of Object.entries(parsed.flavours)) {
@@ -128,8 +119,7 @@ IMPORTANT: Return ONLY raw JSON — no markdown, no backticks, no explanation. S
       }
     }
 
-    // ── Match total_price → box ID ──────────────────────────────────
-    // Customer says "499" → we find the box with price 499 → Box of 4
+    // Match total_price → box
     let box_size_id: string | null = null;
     let box_label: string | null = null;
     if (parsed.total_price) {
@@ -143,9 +133,9 @@ IMPORTANT: Return ONLY raw JSON — no markdown, no backticks, no explanation. S
 
     return NextResponse.json({
       ...parsed,
-      flavours: matchedFlavours, // product id → qty
-      box_size_id, // resolved directly — no frontend matching needed
-      box_label, // for display
+      flavours: matchedFlavours,
+      box_size_id,
+      box_label,
     });
   } catch (error: any) {
     console.error("extract-order error:", error);

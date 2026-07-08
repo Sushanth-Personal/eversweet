@@ -14,11 +14,11 @@ export type BoxSize = {
   id: string;
   label: string;
   count: number;
-  price: number;
+  price: number; // Kochi price (existing)
+  price_trivandrum: number | null; // new
   is_active: boolean;
   sort_order: number;
 };
-
 export type Batch = {
   id: string;
   batch_key: "morning" | "afternoon" | "evening";

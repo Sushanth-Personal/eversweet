@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import OpenAI from "openai";
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export async function POST(req: Request) {
   try {
@@ -25,69 +28,74 @@ For each item return:
 - category: exactly "ingredient" or "packaging"
 - date: use the bill date if visible, otherwise today's date in YYYY-MM-DD format
 
-Return ONLY a valid JSON array. No explanation, no markdown, no backticks.
-Example: [{"description":"Mango Pulp 1kg","amount":120,"category":"ingredient","date":"2026-04-22"}]
+Return ONLY a JSON object with a single key "items" containing the array. No explanation.
+Example: {"items": [{"description":"Mango Pulp 1kg","amount":120,"category":"ingredient","date":"2026-04-22"}]}
 
-If no relevant items found, return: []
+If no relevant items found, return: {"items": []}
 `;
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                { text: prompt },
-                {
-                  inline_data: {
-                    mime_type: mimeType,
-                    data: imageBase64,
-                  },
-                },
-              ],
-            },
-          ],
-          generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 2048,
+    let completion;
+    try {
+      completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              {
+                type: "image_url",
+                image_url: { url: `data:${mimeType};base64,${imageBase64}` },
+              },
+            ],
           },
-        }),
-      },
-    );
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("Gemini API error:", errText);
-      return NextResponse.json(
-        { error: `Gemini API error: ${response.status} ${errText}` },
-        { status: 500 },
-      );
+        ],
+        temperature: 0.1,
+        max_tokens: 2048,
+        response_format: { type: "json_object" },
+      });
+    } catch (apiErr) {
+      await new Promise((r) => setTimeout(r, 1200));
+      completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              {
+                type: "image_url",
+                image_url: { url: `data:${mimeType};base64,${imageBase64}` },
+              },
+            ],
+          },
+        ],
+        temperature: 0.1,
+        max_tokens: 2048,
+        response_format: { type: "json_object" },
+      });
     }
 
-    const geminiData = await response.json();
-
-    // Extract text from Gemini response structure
-    const rawText =
-      geminiData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
+    const rawText = completion.choices[0]?.message?.content?.trim() ?? "";
 
     if (!rawText) {
       return NextResponse.json([]);
     }
 
-    // Robustly extract JSON array
-    const match = rawText.match(/\[[\s\S]*\]/);
-    if (!match) {
-      console.error("No JSON array in response:", rawText);
+    let parsed: any;
+    try {
+      parsed = JSON.parse(rawText);
+    } catch {
+      console.error("No valid JSON in response:", rawText);
       return NextResponse.json([]);
     }
 
-    const parsed = JSON.parse(match[0]);
+    const items = Array.isArray(parsed) ? parsed : parsed.items;
+    if (!Array.isArray(items)) {
+      return NextResponse.json([]);
+    }
 
-    // Sanitize
-    const cleaned = parsed
+    const cleaned = items
       .filter(
         (item: any) =>
           item.description?.trim() &&
