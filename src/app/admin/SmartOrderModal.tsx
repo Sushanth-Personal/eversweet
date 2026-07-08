@@ -236,6 +236,16 @@ type AIExtracted = {
   fulfillment_type?: "delivery" | "pickup";
 };
 
+type OrderLocation = "kochi" | "trivandrum";
+
+// A single box line-item on the order. `box_size_label` of "custom" means
+// a one-off box the picker doesn't have a preset for.
+type BoxRow = {
+  box_size_label: string;
+  price: string;
+  custom_label?: string;
+};
+
 type OrderForm = {
   customer_name: string;
   phone: string;
@@ -243,15 +253,16 @@ type OrderForm = {
   address: string;
   delivery_date: string;
   delivery_slot: string;
-  total_price: string;
-  box_size_id: string;
   remarks: string;
   fulfillment_type: "delivery" | "pickup";
   status: string;
   order_date: string;
+  location: OrderLocation;
 };
 
-type FilledFlags = Partial<Record<keyof OrderForm | "flavours", boolean>>;
+type FilledFlags = Partial<
+  Record<keyof OrderForm | "flavours" | "box_size_id" | "total_price", boolean>
+>;
 
 export function SmartOrderModal({
   boxes,
@@ -287,20 +298,75 @@ export function SmartOrderModal({
     address: "",
     delivery_date: today,
     delivery_slot: "1–3 PM",
-    total_price: "",
-    box_size_id: "",
     remarks: "",
     fulfillment_type: "delivery",
     status: "confirmed",
     order_date: today,
+    location: "kochi",
   });
   const [flavours, setFlavours] = useState<Record<string, number>>({});
   const [filled, setFilled] = useState<FilledFlags>({});
   const [nameSuggestions, setNameSuggestions] = useState<typeof customers>([]);
   const [showSugg, setShowSugg] = useState(false);
 
+  // Box rows — supports multiple box sizes per order, each priced
+  // according to the currently selected location (Kochi vs Trivandrum/Other).
+  const [boxRows, setBoxRows] = useState<BoxRow[]>([
+    { box_size_label: "", price: "" },
+  ]);
+
   const f = (k: keyof OrderForm) => (v: string) =>
-    setForm((p) => ({ ...p, [k]: v }));
+    setForm((p) => ({ ...p, [k]: v }) as OrderForm);
+
+  function priceForLocation(box: BoxSize, location: OrderLocation): number {
+    if (location === "trivandrum") {
+      return box.price_trivandrum ?? box.price;
+    }
+    return box.price;
+  }
+
+  function updateBoxRow(
+    i: number,
+    field: "box_size_label" | "price",
+    value: string,
+  ) {
+    setBoxRows((rows) => {
+      const updated = [...rows];
+      if (field === "box_size_label") {
+        const box = boxes.find((b) => b.label === value);
+        updated[i] = {
+          ...updated[i],
+          box_size_label: value,
+          price:
+            box != null
+              ? String(priceForLocation(box, form.location))
+              : value === "custom"
+                ? ""
+                : updated[i].price,
+          custom_label: value === "custom" ? "" : undefined,
+        };
+      } else {
+        updated[i] = { ...updated[i], price: value };
+      }
+      return updated;
+    });
+  }
+
+  // When the location toggle changes, re-price every row that maps to a
+  // known box size (custom rows are left untouched — they're manual anyway).
+  function changeLocation(location: OrderLocation) {
+    setForm((p) => ({ ...p, location }));
+    setBoxRows((rows) =>
+      rows.map((row) => {
+        if (row.box_size_label === "custom" || !row.box_size_label) return row;
+        const box = boxes.find((b) => b.label === row.box_size_label);
+        if (!box) return row;
+        return { ...row, price: String(priceForLocation(box, location)) };
+      }),
+    );
+  }
+
+  const totalPrice = boxRows.reduce((s, r) => s + (Number(r.price) || 0), 0);
 
   function addImages(files: FileList | null) {
     if (!files) return;
@@ -365,7 +431,10 @@ export function SmartOrderModal({
           products: availableProducts.map((p) => ({ id: p.id, name: p.name })),
           boxes: boxes
             .filter((b) => b.is_active)
-            .map((b) => ({ id: b.id, label: b.label, price: b.price })),
+            .map((b) => ({ id: b.id, label: b.label })),
+          // NOTE: we deliberately do NOT send box prices to the extractor —
+          // price is always derived locally from the chosen location, never
+          // guessed by the AI. Only the box label/id is used from the model.
         }),
       });
 
@@ -406,10 +475,6 @@ export function SmartOrderModal({
         newForm.delivery_slot = extracted.delivery_slot;
         newFilled.delivery_slot = true;
       }
-      if (extracted.total_price) {
-        newForm.total_price = String(extracted.total_price);
-        newFilled.total_price = true;
-      }
       if (extracted.remarks) {
         newForm.remarks = extracted.remarks;
         newFilled.remarks = true;
@@ -419,10 +484,23 @@ export function SmartOrderModal({
         newFilled.fulfillment_type = true;
       }
 
-      // Box: server matched price → box ID directly
-      if ((extracted as any).box_size_id) {
-        newForm.box_size_id = (extracted as any).box_size_id;
-        newFilled.box_size_id = true;
+      // Box: AI only tells us *which* box was mentioned (by label), never the
+      // price. We look up the matching box and price it for the currently
+      // selected location (defaults to Kochi until the user changes it).
+      const aiBoxLabel = (extracted as any).box_label as string | undefined;
+      if (aiBoxLabel) {
+        const box = boxes.find(
+          (b) => b.label.toLowerCase() === aiBoxLabel.toLowerCase(),
+        );
+        if (box) {
+          setBoxRows([
+            {
+              box_size_label: box.label,
+              price: String(priceForLocation(box, newForm.location)),
+            },
+          ]);
+          newFilled.box_size_id = true;
+        }
       }
 
       // Flavours: server already mapped numbered indices → product IDs, use directly
@@ -446,26 +524,46 @@ export function SmartOrderModal({
   }
 
   async function save() {
-    if (!form.customer_name || !form.total_price) return;
+    if (!form.customer_name || totalPrice === 0) return;
     setSaving(true);
     try {
-      await supabase.from("orders").insert({
-        customer_name: form.customer_name.trim(),
-        phone: form.phone.trim(),
-        insta_id: form.insta_id.trim(),
-        address: form.address.trim() || null,
-        remarks: form.remarks.trim(),
-        box_size_id: form.box_size_id || null,
-        flavours: Object.keys(flavours).length > 0 ? flavours : {},
-        delivery_date: form.delivery_date,
-        delivery_slot: form.delivery_slot,
-        payment_method: "upi",
-        total_price: Number(form.total_price),
-        status: form.status,
-        source: "dm",
-        order_date: form.order_date,
-        fulfillment_type: form.fulfillment_type,
-      });
+      let firstOrderId = "";
+      let isFirst = true;
+      for (const row of boxRows) {
+        if (!row.price) continue;
+        const isCustom = row.box_size_label === "custom";
+        const box = isCustom
+          ? null
+          : boxes.find((b) => b.label === row.box_size_label);
+        const { data } = await supabase
+          .from("orders")
+          .insert({
+            customer_name: form.customer_name.trim(),
+            phone: form.phone.trim(),
+            insta_id: form.insta_id.trim(),
+            address: form.address.trim() || null,
+            remarks:
+              form.location === "trivandrum"
+                ? `[TVM] ${form.remarks}`.trim()
+                : form.remarks.trim(),
+            notes: isCustom ? `Custom box: ${row.custom_label || ""}` : null,
+            box_size_id: box?.id || null,
+            flavours:
+              isFirst && Object.keys(flavours).length > 0 ? flavours : {},
+            delivery_date: form.delivery_date,
+            delivery_slot: form.delivery_slot,
+            payment_method: "upi",
+            total_price: Number(row.price),
+            status: form.status,
+            source: form.location === "trivandrum" ? "trivandrum" : "dm",
+            order_date: form.order_date,
+            fulfillment_type: form.fulfillment_type,
+          })
+          .select("id")
+          .single();
+        if (isFirst && data?.id) firstOrderId = data.id;
+        isFirst = false;
+      }
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");
@@ -476,7 +574,7 @@ export function SmartOrderModal({
 
   const missing: string[] = [];
   if (!form.customer_name) missing.push("Name");
-  if (!form.total_price) missing.push("Price");
+  if (totalPrice === 0) missing.push("Box / Price");
   if (!form.delivery_date) missing.push("Date");
   const canSave = missing.length === 0;
 
@@ -773,6 +871,67 @@ export function SmartOrderModal({
             </div>
           )}
 
+          {/* Location toggle — drives which price list boxes use below */}
+          <div
+            style={{
+              background: G.glassStrong,
+              border: `1px solid ${G.glassBorderStrong}`,
+              borderRadius: 14,
+              padding: 14,
+              marginBottom: 14,
+            }}
+          >
+            <p
+              style={{
+                fontSize: "0.65rem",
+                color: G.muted,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase" as const,
+                marginBottom: 10,
+                fontWeight: 700,
+              }}
+            >
+              📍 Order Location{" "}
+              <span style={{ color: G.gold, fontWeight: 400 }}>
+                (sets box pricing — AI does not decide this)
+              </span>
+            </p>
+            <div style={{ display: "flex", gap: 8 }}>
+              {(["kochi", "trivandrum"] as const).map((loc) => (
+                <button
+                  key={loc}
+                  onClick={() => changeLocation(loc)}
+                  style={{
+                    flex: 1,
+                    padding: "10px 12px",
+                    borderRadius: 9,
+                    fontFamily: "system-ui, sans-serif",
+                    border: `1px solid ${form.location === loc ? G.goldBorder : G.glassBorder}`,
+                    background: form.location === loc ? G.goldGlass : G.glass,
+                    color: form.location === loc ? G.gold : G.sub,
+                    fontSize: "0.85rem",
+                    fontWeight: form.location === loc ? 700 : 400,
+                    cursor: "pointer",
+                  }}
+                >
+                  {loc === "kochi" ? "🍡 Kochi" : "🚂 Trivandrum / Other"}
+                </button>
+              ))}
+            </div>
+            {form.location === "trivandrum" && (
+              <p
+                style={{
+                  fontSize: "0.7rem",
+                  color: G.gold,
+                  marginTop: 8,
+                }}
+              >
+                Using Trivandrum/other-location pricing. This order will be
+                tagged accordingly.
+              </p>
+            )}
+          </div>
+
           {/* Order form */}
           <div
             style={{
@@ -987,55 +1146,189 @@ export function SmartOrderModal({
               </div>
             </div>
 
-            <FieldLabel label="Box Size" filled={!!filled.box_size_id} />
-            <Select
-              value={form.box_size_id}
-              onChange={f("box_size_id")}
-              options={[
-                { value: "", label: "Select box" },
-                ...boxes
-                  .filter((b) => b.is_active)
-                  .map((b) => ({
-                    value: b.id,
-                    label: `${b.label} — ₹${b.price}`,
-                  })),
-              ]}
-              highlight={analysed && !filled.box_size_id}
+            {/* Box sizes — one or more rows, each priced by location */}
+            <FieldLabel
+              label="Box Size(s)"
+              filled={!!filled.box_size_id}
+              required
             />
-
+            {boxRows.map((row, i) => (
+              <div key={i} style={{ marginBottom: 8 }}>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 90px 32px",
+                    gap: 6,
+                    alignItems: "center",
+                    marginBottom: row.box_size_label === "custom" ? 6 : 0,
+                  }}
+                >
+                  <select
+                    value={row.box_size_label}
+                    onChange={(e) =>
+                      updateBoxRow(i, "box_size_label", e.target.value)
+                    }
+                    style={{
+                      background:
+                        analysed && !filled.box_size_id
+                          ? "rgba(240,176,64,0.08)"
+                          : G.glass,
+                      border: `1px solid ${analysed && !filled.box_size_id ? G.goldBorder : G.glassBorder}`,
+                      color: row.box_size_label ? G.text : G.muted,
+                      padding: "10px 12px",
+                      borderRadius: 9,
+                      fontSize: "0.85rem",
+                      fontFamily: "system-ui, sans-serif",
+                      outline: "none",
+                    }}
+                  >
+                    <option value="" style={{ background: "#1a2535" }}>
+                      Select box
+                    </option>
+                    {boxes
+                      .filter((b) => b.is_active)
+                      .map((b) => (
+                        <option
+                          key={b.id}
+                          value={b.label}
+                          style={{ background: "#1a2535" }}
+                        >
+                          {b.label} — ₹{priceForLocation(b, form.location)}
+                          {form.location === "trivandrum" &&
+                          b.price_trivandrum == null
+                            ? " (Kochi rate)"
+                            : ""}
+                        </option>
+                      ))}
+                    <option value="custom" style={{ background: "#1a2535" }}>
+                      ✏️ Custom size
+                    </option>
+                  </select>
+                  <input
+                    type="number"
+                    placeholder="₹"
+                    value={row.price}
+                    onChange={(e) => updateBoxRow(i, "price", e.target.value)}
+                    style={{
+                      background: G.glass,
+                      border: `1px solid ${G.glassBorder}`,
+                      color: G.text,
+                      padding: "10px",
+                      borderRadius: 9,
+                      fontSize: "0.88rem",
+                      fontFamily: "system-ui, sans-serif",
+                      outline: "none",
+                      width: "100%",
+                      boxSizing: "border-box" as const,
+                    }}
+                  />
+                  <button
+                    onClick={() =>
+                      setBoxRows((rows) =>
+                        rows.length === 1
+                          ? rows
+                          : rows.filter((_, j) => j !== i),
+                      )
+                    }
+                    style={{
+                      background: G.redGlass,
+                      border: "1px solid rgba(255,92,108,0.3)",
+                      color: G.red,
+                      borderRadius: 8,
+                      cursor: "pointer",
+                      fontSize: "0.9rem",
+                      width: 32,
+                      height: 38,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+                {row.box_size_label === "custom" && (
+                  <input
+                    type="text"
+                    placeholder="Describe box (e.g. Box of 18)"
+                    value={row.custom_label || ""}
+                    onChange={(e) =>
+                      setBoxRows((rows) => {
+                        const updated = [...rows];
+                        updated[i] = {
+                          ...updated[i],
+                          custom_label: e.target.value,
+                        };
+                        return updated;
+                      })
+                    }
+                    style={{
+                      width: "100%",
+                      background: G.glass,
+                      border: `1px solid ${G.goldBorder}`,
+                      color: G.text,
+                      padding: "9px 12px",
+                      borderRadius: 9,
+                      fontSize: "0.82rem",
+                      fontFamily: "system-ui, sans-serif",
+                      outline: "none",
+                      boxSizing: "border-box" as const,
+                    }}
+                  />
+                )}
+              </div>
+            ))}
             <div
               style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: "0 8px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 8,
               }}
             >
-              <div>
-                <FieldLabel
-                  label="Total Price"
-                  filled={!!filled.total_price}
-                  required
-                />
-                <Input
-                  type="number"
-                  placeholder="₹"
-                  value={form.total_price}
-                  onChange={f("total_price")}
-                  highlight={analysed && !filled.total_price}
-                />
-              </div>
-              <div>
-                <FieldLabel label="Status" filled />
-                <Select
-                  value={form.status}
-                  onChange={f("status")}
-                  options={[
-                    { value: "pending", label: "Pending Payment" },
-                    { value: "confirmed", label: "Confirmed" },
-                  ]}
-                />
-              </div>
+              <button
+                onClick={() =>
+                  setBoxRows((rows) => [
+                    ...rows,
+                    { box_size_label: "", price: "" },
+                  ])
+                }
+                style={{
+                  padding: "6px 14px",
+                  borderRadius: 8,
+                  border: "1px solid rgba(96,165,250,0.4)",
+                  background: G.blueGlass,
+                  color: G.blue,
+                  fontSize: "0.8rem",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  fontFamily: "system-ui, sans-serif",
+                }}
+              >
+                + Add Box
+              </button>
+              {totalPrice > 0 && (
+                <p
+                  style={{
+                    fontSize: "0.88rem",
+                    fontWeight: 700,
+                    color: G.gold,
+                  }}
+                >
+                  Total ₹{totalPrice}
+                </p>
+              )}
             </div>
+
+            <FieldLabel label="Status" filled />
+            <Select
+              value={form.status}
+              onChange={f("status")}
+              options={[
+                { value: "pending", label: "Pending Payment" },
+                { value: "confirmed", label: "Confirmed" },
+              ]}
+            />
 
             <FieldLabel label="Remarks" filled={!!filled.remarks} />
             <Input
@@ -1294,7 +1587,7 @@ export function SmartOrderModal({
                 ? "Analyse screenshots first"
                 : !canSave
                   ? `Fill in: ${missing.join(", ")}`
-                  : `✓ Add Order · ₹${Number(form.total_price).toLocaleString()}`}
+                  : `✓ Add Order · ₹${totalPrice.toLocaleString()}`}
           </button>
         </div>
       </div>
