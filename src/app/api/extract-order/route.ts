@@ -1,7 +1,115 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import Groq from "groq-sdk";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const groq = process.env.GROQ_API_KEY
+  ? new Groq({ apiKey: process.env.GROQ_API_KEY })
+  : null;
+
+function buildPrompt(
+  today: string,
+  numberedFlavours: string,
+  boxPriceList: string,
+  slots: string[],
+) {
+  return `You are an order extraction assistant for Eversweet, a mochi dessert business.
+Extract order details from these screenshot(s) of a customer conversation (DM, WhatsApp, Instagram, etc.).
+
+Today's date is ${today}. Use this to resolve relative dates like "tomorrow", "day after tomorrow".
+
+FLAVOUR LIST (return the NUMBER, not the name):
+${numberedFlavours}
+
+BOX PRICES for reference only (do NOT return box info — just extract total_price as a number):
+${boxPriceList}
+
+FLAVOUR RULE: Return flavour numbers and quantities as { "1": 2, "3": 1 } using the numbers above.
+If customer says qty like "Box of 4" with flavour names, each flavour gets 1 unless stated otherwise.
+
+ADDRESS RULE: Extract only essentials — building name, flat/room number, one nearby landmark. Strip city, pin code, state, long directions.
+Example in: "Vaimpillil house, TTRA-116, Pallath lane, LBS Road, Thiruvamkulam-682305"
+Example out: "Vaimpillil house, TTRA-116, near Pallath lane"
+
+SLOT RULE: Map to one of: ${slots.join(", ")}
+evening=5-7 PM, morning=9-11 AM, afternoon=1-3 PM, night=7-9 PM
+
+Return ONLY a JSON object matching this exact shape, no other text:
+{"customer_name":null,"phone":null,"insta_id":null,"address":null,"delivery_date":null,"delivery_slot":null,"flavours":{},"total_price":null,"remarks":null,"fulfillment_type":"delivery"}`;
+}
+
+function parseExtracted(rawText: string): any {
+  if (!rawText) throw new Error("Empty response");
+  try {
+    return JSON.parse(rawText);
+  } catch {
+    const match = rawText.match(/\{[\s\S]*\}/);
+    if (match) return JSON.parse(match[0]);
+    throw new Error("Could not parse JSON response");
+  }
+}
+
+async function tryGroq(
+  prompt: string,
+  images: { mimeType: string; data: string }[],
+) {
+  if (!groq) throw new Error("Groq not configured");
+
+  const content: any[] = [{ type: "text", text: prompt }];
+  for (const img of images) {
+    content.push({
+      type: "image_url",
+      image_url: { url: `data:${img.mimeType};base64,${img.data}` },
+    });
+  }
+
+  const completion = await groq.chat.completions.create({
+    model: "meta-llama/llama-4-scout-17b-16e-instruct",
+    messages: [{ role: "user", content }],
+    temperature: 0.1,
+    response_format: { type: "json_object" },
+  });
+
+  const rawText = completion.choices[0]?.message?.content?.trim() ?? "";
+  return parseExtracted(rawText);
+}
+
+async function tryOpenAI(
+  prompt: string,
+  images: { mimeType: string; data: string }[],
+) {
+  const content: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
+    { type: "text", text: prompt },
+    ...images.map((img) => ({
+      type: "image_url" as const,
+      image_url: { url: `data:${img.mimeType};base64,${img.data}` },
+    })),
+  ];
+
+  let completion;
+  try {
+    completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content }],
+      temperature: 0.1,
+      max_tokens: 1024,
+      response_format: { type: "json_object" },
+    });
+  } catch (apiErr) {
+    // one retry on transient failure (rate limit / 5xx)
+    await new Promise((r) => setTimeout(r, 1200));
+    completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content }],
+      temperature: 0.1,
+      max_tokens: 1024,
+      response_format: { type: "json_object" },
+    });
+  }
+
+  const rawText = completion.choices[0]?.message?.content?.trim() ?? "";
+  return parseExtracted(rawText);
+}
 
 export async function POST(req: Request) {
   try {
@@ -24,84 +132,33 @@ export async function POST(req: Request) {
     const boxPriceList = boxArr
       .map((b) => `₹${b.price} = ${b.label}`)
       .join(", ");
-
-    const prompt = `You are an order extraction assistant for Eversweet, a mochi dessert business.
-Extract order details from these screenshot(s) of a customer conversation (DM, WhatsApp, Instagram, etc.).
-
-Today's date is ${today}. Use this to resolve relative dates like "tomorrow", "day after tomorrow".
-
-FLAVOUR LIST (return the NUMBER, not the name):
-${numberedFlavours}
-
-BOX PRICES for reference only (do NOT return box info — just extract total_price as a number):
-${boxPriceList}
-
-FLAVOUR RULE: Return flavour numbers and quantities as { "1": 2, "3": 1 } using the numbers above.
-If customer says qty like "Box of 4" with flavour names, each flavour gets 1 unless stated otherwise.
-
-ADDRESS RULE: Extract only essentials — building name, flat/room number, one nearby landmark. Strip city, pin code, state, long directions.
-Example in: "Vaimpillil house, TTRA-116, Pallath lane, LBS Road, Thiruvamkulam-682305"
-Example out: "Vaimpillil house, TTRA-116, near Pallath lane"
-
-SLOT RULE: Map to one of: ${slots.join(", ")}
-evening=5-7 PM, morning=9-11 AM, afternoon=1-3 PM, night=7-9 PM
-
-Return ONLY raw JSON matching this exact shape, no other text:
-{"customer_name":null,"phone":null,"insta_id":null,"address":null,"delivery_date":null,"delivery_slot":null,"flavours":{},"total_price":null,"remarks":null,"fulfillment_type":"delivery"}`;
-
-    const content: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
-      { type: "text", text: prompt },
-      ...images.map((img: { mimeType: string; data: string }) => ({
-        type: "image_url" as const,
-        image_url: { url: `data:${img.mimeType};base64,${img.data}` },
-      })),
-    ];
-
-    let completion;
-    try {
-      completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [{ role: "user", content }],
-        temperature: 0.1,
-        max_tokens: 1024,
-        response_format: { type: "json_object" },
-      });
-    } catch (apiErr) {
-      // one retry on transient failure (rate limit / 5xx)
-      await new Promise((r) => setTimeout(r, 1200));
-      completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [{ role: "user", content }],
-        temperature: 0.1,
-        max_tokens: 1024,
-        response_format: { type: "json_object" },
-      });
-    }
-
-    const rawText = completion.choices[0]?.message?.content?.trim() ?? "";
-    console.log("=== extract-order OpenAI raw ===\n", rawText, "\n===");
-
-    if (!rawText) {
-      return NextResponse.json(
-        { error: "Empty response from OpenAI" },
-        { status: 500 },
-      );
-    }
+    const prompt = buildPrompt(today, numberedFlavours, boxPriceList, slots);
 
     let parsed: any = null;
+    let usedProvider = "groq";
+
     try {
-      parsed = JSON.parse(rawText);
-    } catch {
-      const match = rawText.match(/\{[\s\S]*\}/);
-      if (match) {
-        try {
-          parsed = JSON.parse(match[0]);
-        } catch {}
+      parsed = await tryGroq(prompt, images);
+    } catch (groqErr) {
+      console.warn(
+        "Groq failed, falling back to OpenAI:",
+        groqErr instanceof Error ? groqErr.message : groqErr,
+      );
+      usedProvider = "openai";
+      try {
+        parsed = await tryOpenAI(prompt, images);
+      } catch (openaiErr) {
+        console.error("extract-order error (all providers failed):", openaiErr);
+        return NextResponse.json(
+          { error: "AI providers failed. Check server logs." },
+          { status: 500 },
+        );
       }
     }
 
+    console.log(`extract-order served by: ${usedProvider}`);
+
     if (!parsed) {
-      console.error("Could not parse JSON. Raw:", rawText);
       return NextResponse.json(
         { error: "AI returned unreadable response. Check server logs." },
         { status: 500 },

@@ -1,17 +1,17 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import Groq from "groq-sdk";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const genAI = process.env.GEMINI_API_KEY
+  ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+  : null;
+const groq = process.env.GROQ_API_KEY
+  ? new Groq({ apiKey: process.env.GROQ_API_KEY })
+  : null;
 
-export async function POST(req: Request) {
-  try {
-    const { imageBase64, mimeType = "image/jpeg" } = await req.json();
-
-    if (!imageBase64) {
-      return NextResponse.json({ error: "No image provided" }, { status: 400 });
-    }
-
-    const prompt = `
+const PROMPT = `
 You are a specialized accountant for "Eversweet", a mochi and pastry business.
 
 Analyze this purchase bill/receipt image carefully.
@@ -34,86 +34,176 @@ Example: {"items": [{"description":"Mango Pulp 1kg","amount":120,"category":"ing
 If no relevant items found, return: {"items": []}
 `;
 
-    let completion;
-    try {
-      completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
+function cleanItems(items: any[]) {
+  return items
+    .filter(
+      (item: any) =>
+        item.description?.trim() &&
+        typeof item.amount === "number" &&
+        item.amount > 0 &&
+        ["ingredient", "packaging"].includes(item.category),
+    )
+    .map((item: any) => ({
+      description: String(item.description).trim(),
+      amount: Number(item.amount),
+      category: item.category,
+      date:
+        item.date && /^\d{4}-\d{2}-\d{2}$/.test(item.date)
+          ? item.date
+          : new Date().toISOString().split("T")[0],
+    }));
+}
+
+async function tryGemini(imageBase64: string, mimeType: string) {
+  if (!genAI) throw new Error("Gemini not configured");
+
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.0-flash",
+    generationConfig: {
+      temperature: 0.1,
+      responseMimeType: "application/json",
+    },
+  });
+
+  const result = await model.generateContent([
+    { text: PROMPT },
+    { inlineData: { data: imageBase64, mimeType } },
+  ]);
+
+  const rawText = result.response.text().trim();
+  if (!rawText) throw new Error("Empty Gemini response");
+
+  const parsed = JSON.parse(rawText);
+  const items = Array.isArray(parsed) ? parsed : parsed.items;
+  if (!Array.isArray(items))
+    throw new Error("Gemini returned unexpected shape");
+
+  return items;
+}
+
+async function tryGroq(imageBase64: string, mimeType: string) {
+  if (!groq) throw new Error("Groq not configured");
+
+  const completion = await groq.chat.completions.create({
+    model: "meta-llama/llama-4-scout-17b-16e-instruct",
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: PROMPT },
           {
-            role: "user",
-            content: [
-              { type: "text", text: prompt },
-              {
-                type: "image_url",
-                image_url: { url: `data:${mimeType};base64,${imageBase64}` },
-              },
-            ],
+            type: "image_url",
+            image_url: { url: `data:${mimeType};base64,${imageBase64}` },
           },
         ],
-        temperature: 0.1,
-        max_tokens: 2048,
-        response_format: { type: "json_object" },
-      });
-    } catch (apiErr) {
-      await new Promise((r) => setTimeout(r, 1200));
-      completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "text", text: prompt },
-              {
-                type: "image_url",
-                image_url: { url: `data:${mimeType};base64,${imageBase64}` },
-              },
-            ],
-          },
-        ],
-        temperature: 0.1,
-        max_tokens: 2048,
-        response_format: { type: "json_object" },
-      });
+      },
+    ],
+    temperature: 0.1,
+    response_format: { type: "json_object" },
+  });
+
+  const rawText = completion.choices[0]?.message?.content?.trim() ?? "";
+  if (!rawText) throw new Error("Empty Groq response");
+
+  const parsed = JSON.parse(rawText);
+  const items = Array.isArray(parsed) ? parsed : parsed.items;
+  if (!Array.isArray(items)) throw new Error("Groq returned unexpected shape");
+
+  return items;
+}
+
+async function tryOpenAI(imageBase64: string, mimeType: string) {
+  let completion;
+  try {
+    completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: PROMPT },
+            {
+              type: "image_url",
+              image_url: { url: `data:${mimeType};base64,${imageBase64}` },
+            },
+          ],
+        },
+      ],
+      temperature: 0.1,
+      max_tokens: 2048,
+      response_format: { type: "json_object" },
+    });
+  } catch (apiErr) {
+    await new Promise((r) => setTimeout(r, 1200));
+    completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: PROMPT },
+            {
+              type: "image_url",
+              image_url: { url: `data:${mimeType};base64,${imageBase64}` },
+            },
+          ],
+        },
+      ],
+      temperature: 0.1,
+      max_tokens: 2048,
+      response_format: { type: "json_object" },
+    });
+  }
+
+  const rawText = completion.choices[0]?.message?.content?.trim() ?? "";
+  if (!rawText) return [];
+
+  const parsed = JSON.parse(rawText);
+  const items = Array.isArray(parsed) ? parsed : parsed.items;
+  return Array.isArray(items) ? items : [];
+}
+
+export async function POST(req: Request) {
+  try {
+    const { imageBase64, mimeType = "image/jpeg" } = await req.json();
+
+    if (!imageBase64) {
+      return NextResponse.json({ error: "No image provided" }, { status: 400 });
     }
 
-    const rawText = completion.choices[0]?.message?.content?.trim() ?? "";
+    let items: any[] = [];
+    let usedProvider = "gemini";
 
-    if (!rawText) {
-      return NextResponse.json([]);
-    }
-
-    let parsed: any;
     try {
-      parsed = JSON.parse(rawText);
-    } catch {
-      console.error("No valid JSON in response:", rawText);
-      return NextResponse.json([]);
+      items = await tryGemini(imageBase64, mimeType);
+    } catch (geminiErr) {
+      console.warn(
+        "Gemini failed, trying Groq:",
+        geminiErr instanceof Error ? geminiErr.message : geminiErr,
+      );
+      usedProvider = "groq";
+      try {
+        items = await tryGroq(imageBase64, mimeType);
+      } catch (groqErr) {
+        console.warn(
+          "Groq failed, falling back to OpenAI:",
+          groqErr instanceof Error ? groqErr.message : groqErr,
+        );
+        usedProvider = "openai";
+        try {
+          items = await tryOpenAI(imageBase64, mimeType);
+        } catch (openaiErr) {
+          console.error(
+            "extract-bill error (all providers failed):",
+            openaiErr,
+          );
+          return NextResponse.json([]);
+        }
+      }
     }
 
-    const items = Array.isArray(parsed) ? parsed : parsed.items;
-    if (!Array.isArray(items)) {
-      return NextResponse.json([]);
-    }
-
-    const cleaned = items
-      .filter(
-        (item: any) =>
-          item.description?.trim() &&
-          typeof item.amount === "number" &&
-          item.amount > 0 &&
-          ["ingredient", "packaging"].includes(item.category),
-      )
-      .map((item: any) => ({
-        description: String(item.description).trim(),
-        amount: Number(item.amount),
-        category: item.category,
-        date:
-          item.date && /^\d{4}-\d{2}-\d{2}$/.test(item.date)
-            ? item.date
-            : new Date().toISOString().split("T")[0],
-      }));
-
-    return NextResponse.json(cleaned);
+    console.log(`extract-bill served by: ${usedProvider}`);
+    return NextResponse.json(cleanItems(items));
   } catch (error: any) {
     console.error("extract-bill error:", error);
     return NextResponse.json(
