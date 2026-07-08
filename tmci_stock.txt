@@ -1,6 +1,6 @@
 ========================================
   TMCI CODEBASE DUMP
-  Generated: Wed Jul  8 19:44:21 IST 2026
+  Generated: Thu Jul  9 01:28:49 IST 2026
   Root: /Users/sushanthp/Eversweet/App/eversweet
 ========================================
 
@@ -3370,6 +3370,7 @@ export function CookOrderCard({
   onDispatch,
   onEdit,
   onCancel,
+  onSendToDelivery,
 }: {
   order: ExtOrder;
   productMap: Record<string, string>;
@@ -3380,81 +3381,325 @@ export function CookOrderCard({
   onDispatch: (id: string) => Promise<void>;
   onEdit: (order: ExtOrder) => void;
   onCancel: (id: string) => Promise<void>;
+  onSendToDelivery: (order: ExtOrder) => Promise<void>;
 }) {
   const [sendingEmail, setSendingEmail] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
   const [dispatching, setDispatching] = useState(false);
-  const flavours = order.flavours ? Object.entries(order.flavours as Record<string, number>).filter(([, q]) => q > 0) : [];
+  const [sendingToDelivery, setSendingToDelivery] = useState(false);
+  const [sentToDelivery, setSentToDelivery] = useState(false);
+  const flavours = order.flavours
+    ? Object.entries(order.flavours as Record<string, number>).filter(
+        ([, q]) => q > 0,
+      )
+    : [];
   const boxLabel = boxes.find((b) => b.id === order.box_size_id)?.label || null;
   const totalPieces = flavours.reduce((s, [, q]) => s + q, 0);
   return (
-    <div style={{ background: G.glassStrong, border: `0.5px solid ${G.glassBorder}`, borderRadius: 10, marginBottom: 8, overflow: "hidden" }}>
+    <div
+      style={{
+        background: G.glassStrong,
+        border: `0.5px solid ${G.glassBorder}`,
+        borderRadius: 10,
+        marginBottom: 8,
+        overflow: "hidden",
+      }}
+    >
       <div style={{ padding: "13px 14px 10px" }}>
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
-          <span style={{ color: G.text, fontSize: 20, fontWeight: 700, lineHeight: 1 }}>{order.customer_name}</span>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "baseline",
+            justifyContent: "space-between",
+            gap: 8,
+            marginBottom: 6,
+          }}
+        >
+          <span
+            style={{
+              color: G.text,
+              fontSize: 20,
+              fontWeight: 700,
+              lineHeight: 1,
+            }}
+          >
+            {order.customer_name}
+          </span>
           {boxLabel && (
-            <span style={{ fontSize: 12, fontWeight: 600, color: G.gold, background: G.goldGlass, border: `1px solid ${G.goldBorder}`, padding: "3px 10px", borderRadius: 20, flexShrink: 0 }}>
+            <span
+              style={{
+                fontSize: 12,
+                fontWeight: 600,
+                color: G.gold,
+                background: G.goldGlass,
+                border: `1px solid ${G.goldBorder}`,
+                padding: "3px 10px",
+                borderRadius: 20,
+                flexShrink: 0,
+              }}
+            >
               {boxLabel}
             </span>
           )}
         </div>
-        {totalPieces > 0 && <p style={{ fontSize: 13, color: G.muted, fontWeight: 500 }}>{totalPieces} piece{totalPieces !== 1 ? "s" : ""}</p>}
+        {totalPieces > 0 && (
+          <p style={{ fontSize: 13, color: G.muted, fontWeight: 500 }}>
+            {totalPieces} piece{totalPieces !== 1 ? "s" : ""}
+          </p>
+        )}
       </div>
       {flavours.length > 0 && (
-        <div style={{ padding: "0 14px 12px", display: "flex", flexWrap: "wrap" as const }}>
-          {flavours.map(([id, qty]) => <FlavourPill key={id} name={productMap[id] || "Unknown"} qty={qty} large />)}
+        <div
+          style={{
+            padding: "0 14px 12px",
+            display: "flex",
+            flexWrap: "wrap" as const,
+          }}
+        >
+          {flavours.map(([id, qty]) => (
+            <FlavourPill
+              key={id}
+              name={productMap[id] || "Unknown"}
+              qty={qty}
+              large
+            />
+          ))}
         </div>
       )}
       {isExpanded && (
-        <div style={{ background: "rgba(167,139,250,0.06)", borderTop: `0.5px solid rgba(167,139,250,0.18)`, padding: "12px 14px" }}>
+        <div
+          style={{
+            background: "rgba(167,139,250,0.06)",
+            borderTop: `0.5px solid rgba(167,139,250,0.18)`,
+            padding: "12px 14px",
+          }}
+        >
           {order.phone && (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, gap: 8 }}>
-              <span style={{ color: G.sub, fontSize: 13 }}>📞 {order.phone}</span>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 8,
+                gap: 8,
+              }}
+            >
+              <span style={{ color: G.sub, fontSize: 13 }}>
+                📞 {order.phone}
+              </span>
               <CopyBtn value={order.phone} label="Phone" />
             </div>
           )}
           {order.address && (
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
-              <span style={{ color: G.sub, fontSize: 13, flex: 1 }}>📍 {order.address}</span>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                justifyContent: "space-between",
+                gap: 8,
+                marginBottom: 8,
+              }}
+            >
+              <span style={{ color: G.sub, fontSize: 13, flex: 1 }}>
+                📍 {order.address}
+              </span>
               <CopyBtn value={order.address} label="Addr" />
             </div>
           )}
-          {order.remarks && <p style={{ fontSize: 12, color: "#86efac", fontStyle: "italic" as const, marginBottom: 8 }}>💬 {order.remarks}</p>}
+          {order.remarks && (
+            <p
+              style={{
+                fontSize: 12,
+                color: "#86efac",
+                fontStyle: "italic" as const,
+                marginBottom: 8,
+              }}
+            >
+              💬 {order.remarks}
+            </p>
+          )}
           <button
             disabled={sendingEmail || emailSent}
-            onClick={async () => { setSendingEmail(true); await onPorterEmail(order); setSendingEmail(false); setEmailSent(true); }}
+            onClick={async () => {
+              setSendingEmail(true);
+              await onPorterEmail(order);
+              setSendingEmail(false);
+              setEmailSent(true);
+            }}
             style={{
-              width: "100%", padding: "10px 14px", borderRadius: 9, border: "none",
+              width: "100%",
+              padding: "10px 14px",
+              borderRadius: 9,
+              border: "none",
               background: emailSent ? G.greenGlass : "rgba(167,139,250,0.18)",
-              color: emailSent ? G.green : G.purple, fontSize: 13, fontWeight: 700,
-              cursor: sendingEmail || emailSent ? "not-allowed" : "pointer", opacity: sendingEmail ? 0.6 : 1,
-              fontFamily: "system-ui, sans-serif", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, transition: "all 0.2s",
+              color: emailSent ? G.green : G.purple,
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: sendingEmail || emailSent ? "not-allowed" : "pointer",
+              opacity: sendingEmail ? 0.6 : 1,
+              fontFamily: "system-ui, sans-serif",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
+              transition: "all 0.2s",
             }}
           >
-            {emailSent ? "✓ Alert Sent" : sendingEmail ? "Sending…" : "📧 Send Porter Alert"}
+            {emailSent
+              ? "✓ Alert Sent"
+              : sendingEmail
+                ? "Sending…"
+                : "📧 Send Porter Alert"}
           </button>
         </div>
       )}
-      <div style={{ display: "flex", borderTop: `0.5px solid ${G.glassBorder}` }}>
-        <button onClick={onTogglePorter} style={{ flex: 1, padding: "12px 10px", border: "none", background: isExpanded ? "rgba(167,139,250,0.18)" : G.purpleGlass, color: G.purple, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "system-ui, sans-serif", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+      <div
+        style={{
+          display: "flex",
+          borderTop: `0.5px solid ${G.glassBorder}`,
+          flexWrap: "wrap" as const,
+        }}
+      >
+        <button
+          onClick={onTogglePorter}
+          style={{
+            flex: 1,
+            minWidth: "20%",
+            padding: "12px 10px",
+            border: "none",
+            background: isExpanded ? "rgba(167,139,250,0.18)" : G.purpleGlass,
+            color: G.purple,
+            fontSize: 14,
+            fontWeight: 600,
+            cursor: "pointer",
+            fontFamily: "system-ui, sans-serif",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+          }}
+        >
           📦 {isExpanded ? "Hide Info" : "Book Porter"}
         </button>
-        <div style={{ width: "0.5px", background: G.glassBorder, flexShrink: 0 }} />
+        <div
+          style={{ width: "0.5px", background: G.glassBorder, flexShrink: 0 }}
+        />
+        <button
+          disabled={sendingToDelivery || sentToDelivery}
+          onClick={async () => {
+            setSendingToDelivery(true);
+            await onSendToDelivery(order);
+            setSendingToDelivery(false);
+            setSentToDelivery(true);
+          }}
+          style={{
+            flex: 1,
+            minWidth: "20%",
+            padding: "12px 10px",
+            background: sentToDelivery ? G.greenGlass : "rgba(240,176,64,0.14)",
+            border: "none",
+            color: sentToDelivery ? G.green : G.gold,
+            fontSize: 13,
+            fontWeight: 600,
+            cursor:
+              sendingToDelivery || sentToDelivery ? "not-allowed" : "pointer",
+            opacity: sendingToDelivery ? 0.6 : 1,
+            fontFamily: "system-ui, sans-serif",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+          }}
+        >
+          {sentToDelivery
+            ? "✓ On Route"
+            : sendingToDelivery
+              ? "Adding…"
+              : "🚚 Send to Delivery"}
+        </button>
+        <div
+          style={{ width: "0.5px", background: G.glassBorder, flexShrink: 0 }}
+        />
         <button
           disabled={dispatching}
-          onClick={async () => { setDispatching(true); await onDispatch(order.id); setDispatching(false); }}
-          style={{ flex: 1, padding: "12px 10px", background: G.greenGlass, border: "none", color: G.green, fontSize: 14, fontWeight: 600, cursor: dispatching ? "not-allowed" : "pointer", opacity: dispatching ? 0.5 : 1, fontFamily: "system-ui, sans-serif", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+          onClick={async () => {
+            setDispatching(true);
+            await onDispatch(order.id);
+            setDispatching(false);
+          }}
+          style={{
+            flex: 1,
+            minWidth: "20%",
+            padding: "12px 10px",
+            background: G.greenGlass,
+            border: "none",
+            color: G.green,
+            fontSize: 14,
+            fontWeight: 600,
+            cursor: dispatching ? "not-allowed" : "pointer",
+            opacity: dispatching ? 0.5 : 1,
+            fontFamily: "system-ui, sans-serif",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+          }}
         >
           ✓ {dispatching ? "Saving..." : "Dispatched"}
         </button>
-        <div style={{ width: "0.5px", background: G.glassBorder, flexShrink: 0 }} />
-        <button onClick={() => onEdit(order)} style={{ flex: 1, padding: "12px 10px", background: G.blueGlass, border: "none", color: G.blue, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "system-ui, sans-serif", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+        <div
+          style={{ width: "0.5px", background: G.glassBorder, flexShrink: 0 }}
+        />
+        <button
+          onClick={() => onEdit(order)}
+          style={{
+            flex: 1,
+            minWidth: "20%",
+            padding: "12px 10px",
+            background: G.blueGlass,
+            border: "none",
+            color: G.blue,
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: "pointer",
+            fontFamily: "system-ui, sans-serif",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+          }}
+        >
           ✏️ Edit
         </button>
-        <div style={{ width: "0.5px", background: G.glassBorder, flexShrink: 0 }} />
+        <div
+          style={{ width: "0.5px", background: G.glassBorder, flexShrink: 0 }}
+        />
         <button
-          onClick={async () => { if (!confirm(`Cancel order for ${order.customer_name}? This cannot be undone.`)) return; await onCancel(order.id); }}
-          style={{ flex: 1, padding: "12px 10px", background: G.redGlass, border: "none", color: G.red, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "system-ui, sans-serif", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+          onClick={async () => {
+            if (
+              !confirm(
+                `Cancel order for ${order.customer_name}? This cannot be undone.`,
+              )
+            )
+              return;
+            await onCancel(order.id);
+          }}
+          style={{
+            flex: 1,
+            minWidth: "20%",
+            padding: "12px 10px",
+            background: G.redGlass,
+            border: "none",
+            color: G.red,
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: "pointer",
+            fontFamily: "system-ui, sans-serif",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+          }}
         >
           ✕ Cancel
         </button>
@@ -3471,7 +3716,12 @@ FILE: ./src/app/admin/_components/CookTab.tsx
 import { useState } from "react";
 import type { BoxSize } from "@/lib/types";
 import { G } from "../_lib/theme";
-import { ALL_SLOTS, BATCHES, PAID_STATUSES, type ExtOrder } from "../_lib/constants";
+import {
+  ALL_SLOTS,
+  BATCHES,
+  PAID_STATUSES,
+  type ExtOrder,
+} from "../_lib/constants";
 import { MonthCalendar } from "./MonthCalendar";
 import { SlotTabs } from "./SlotTabs";
 import { CookOrderCard } from "./CookOrderCard";
@@ -3487,6 +3737,7 @@ export function CookTab({
   onDispatch,
   onEdit,
   onCancel,
+  onSendToDelivery,
 }: {
   orders: ExtOrder[];
   boxes: BoxSize[];
@@ -3497,6 +3748,7 @@ export function CookTab({
   onDispatch: (id: string) => Promise<void>;
   onEdit: (order: ExtOrder) => void;
   onCancel: (id: string) => Promise<void>;
+  onSendToDelivery: (order: ExtOrder) => Promise<void>;
 }) {
   function getCurrentSlot(): string {
     const now = new Date();
@@ -3520,18 +3772,26 @@ export function CookTab({
   const [activeBatch, setActiveBatch] = useState<string>("Morning");
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [showCalendar, setShowCalendar] = useState(false);
-  const activeOrders = orders.filter((o) => PAID_STATUSES.includes(o.status) && o.status !== "dispatched");
+  const activeOrders = orders.filter(
+    (o) => PAID_STATUSES.includes(o.status) && o.status !== "dispatched",
+  );
   const dateFilteredOrders = selectedDate
-    ? activeOrders.filter((o) => { const d = o.delivery_date || o.order_date || o.created_at?.split("T")[0]; return d === selectedDate; })
+    ? activeOrders.filter((o) => {
+        const d =
+          o.delivery_date || o.order_date || o.created_at?.split("T")[0];
+        return d === selectedDate;
+      })
     : activeOrders;
   function aggregateFlavours(orderList: ExtOrder[]) {
     const totals: Record<string, number> = {};
     orderList.forEach((o) => {
       if (!o.flavours) return;
-      Object.entries(o.flavours as Record<string, number>).forEach(([id, qty]) => {
-        const name = productMap[id] || "Unknown";
-        totals[name] = (totals[name] || 0) + qty;
-      });
+      Object.entries(o.flavours as Record<string, number>).forEach(
+        ([id, qty]) => {
+          const name = productMap[id] || "Unknown";
+          totals[name] = (totals[name] || 0) + qty;
+        },
+      );
     });
     return Object.entries(totals).sort(([, a], [, b]) => b - a);
   }
@@ -3546,62 +3806,194 @@ export function CookTab({
     const count = (ordersBySlot[label] || []).length;
     const nowIdx = ALL_SLOTS.indexOf(nowSlot);
     const thisIdx = ALL_SLOTS.indexOf(label);
-    const status: "done" | "active" | "upcoming" = count > 0 ? "active" : thisIdx < nowIdx ? "done" : thisIdx === nowIdx ? "active" : "upcoming";
+    const status: "done" | "active" | "upcoming" =
+      count > 0
+        ? "active"
+        : thisIdx < nowIdx
+          ? "done"
+          : thisIdx === nowIdx
+            ? "active"
+            : "upcoming";
     return { label, count, status };
   });
   const slotOrders = ordersBySlot[activeSlot] || [];
   const slotFlavours = aggregateFlavours(slotOrders);
   const slotTotal = slotFlavours.reduce((s, [, q]) => s + q, 0);
   const currentBatch = BATCHES.find((b) => b.label === activeBatch)!;
-  const batchOrders = dateFilteredOrders.filter((o) => { const slot = o.delivery_slot || o.batch_label || ""; return currentBatch.slots.includes(slot); });
+  const batchOrders = dateFilteredOrders.filter((o) => {
+    const slot = o.delivery_slot || o.batch_label || "";
+    return currentBatch.slots.includes(slot);
+  });
   const batchFlavours = aggregateFlavours(batchOrders);
   const batchTotal = batchFlavours.reduce((s, [, q]) => s + q, 0);
   const allFlavours = aggregateFlavours(dateFilteredOrders);
   const allTotal = allFlavours.reduce((s, [, q]) => s + q, 0);
   const friendlyDate = (d: string) => {
     if (d === todayStr) return "Today";
-    if (d === new Date(Date.now() + 86400000).toISOString().split("T")[0]) return "Tomorrow";
-    return new Date(d + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", weekday: "short" });
+    if (d === new Date(Date.now() + 86400000).toISOString().split("T")[0])
+      return "Tomorrow";
+    return new Date(d + "T00:00:00").toLocaleDateString("en-IN", {
+      day: "numeric",
+      month: "short",
+      weekday: "short",
+    });
   };
-  function FlavourSection({ flavourEntries, totalPieces, orderList, groupLabel }: { flavourEntries: [string, number][]; totalPieces: number; orderList: ExtOrder[]; groupLabel: string; }) {
+  function FlavourSection({
+    flavourEntries,
+    totalPieces,
+    orderList,
+    groupLabel,
+  }: {
+    flavourEntries: [string, number][];
+    totalPieces: number;
+    orderList: ExtOrder[];
+    groupLabel: string;
+  }) {
     return (
       <>
-        <div style={{ background: "rgba(96,165,250,0.08)", border: "1px solid rgba(96,165,250,0.2)", borderRadius: 10, padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <div
+          style={{
+            background: "rgba(96,165,250,0.08)",
+            border: "1px solid rgba(96,165,250,0.2)",
+            borderRadius: 10,
+            padding: "12px 16px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 14,
+          }}
+        >
           <div>
-            <p style={{ fontSize: 11, color: G.muted, letterSpacing: "0.12em", textTransform: "uppercase" as const, marginBottom: 3, fontWeight: 600 }}>
-              {viewMode === "slots" ? "SLOT" : viewMode === "batches" ? "BATCH" : "ALL ORDERS"}
+            <p
+              style={{
+                fontSize: 11,
+                color: G.muted,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase" as const,
+                marginBottom: 3,
+                fontWeight: 600,
+              }}
+            >
+              {viewMode === "slots"
+                ? "SLOT"
+                : viewMode === "batches"
+                  ? "BATCH"
+                  : "ALL ORDERS"}
             </p>
-            <p style={{ fontSize: 22, fontWeight: 800, color: G.blue, lineHeight: 1 }}>{groupLabel}</p>
+            <p
+              style={{
+                fontSize: 22,
+                fontWeight: 800,
+                color: G.blue,
+                lineHeight: 1,
+              }}
+            >
+              {groupLabel}
+            </p>
           </div>
           <div style={{ textAlign: "right" as const }}>
-            <p style={{ fontSize: 11, color: G.muted, letterSpacing: "0.12em", textTransform: "uppercase" as const, marginBottom: 3, fontWeight: 600 }}>MAKE</p>
-            <p style={{ fontSize: 22, fontWeight: 800, color: G.text, lineHeight: 1 }}>
-              {totalPieces} <span style={{ fontSize: 14, fontWeight: 500, color: G.muted }}>mochis</span>
+            <p
+              style={{
+                fontSize: 11,
+                color: G.muted,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase" as const,
+                marginBottom: 3,
+                fontWeight: 600,
+              }}
+            >
+              MAKE
+            </p>
+            <p
+              style={{
+                fontSize: 22,
+                fontWeight: 800,
+                color: G.text,
+                lineHeight: 1,
+              }}
+            >
+              {totalPieces}{" "}
+              <span style={{ fontSize: 14, fontWeight: 500, color: G.muted }}>
+                mochis
+              </span>
             </p>
           </div>
         </div>
-        <p style={{ fontSize: "0.65rem", color: G.muted, letterSpacing: "0.13em", textTransform: "uppercase" as const, marginBottom: 10, fontWeight: 600 }}>What to make</p>
+        <p
+          style={{
+            fontSize: "0.65rem",
+            color: G.muted,
+            letterSpacing: "0.13em",
+            textTransform: "uppercase" as const,
+            marginBottom: 10,
+            fontWeight: 600,
+          }}
+        >
+          What to make
+        </p>
         {flavourEntries.length > 0 ? (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 7, marginBottom: 16 }}>
-            {flavourEntries.map(([name, qty]) => <FlavourBigCard key={name} name={name} qty={qty} />)}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(3, 1fr)",
+              gap: 7,
+              marginBottom: 16,
+            }}
+          >
+            {flavourEntries.map(([name, qty]) => (
+              <FlavourBigCard key={name} name={name} qty={qty} />
+            ))}
           </div>
         ) : (
-          <div style={{ background: G.glass, border: `0.5px solid ${G.glassBorder}`, borderRadius: 12, padding: "32px 20px", textAlign: "center" as const, marginBottom: 16 }}>
+          <div
+            style={{
+              background: G.glass,
+              border: `0.5px solid ${G.glassBorder}`,
+              borderRadius: 12,
+              padding: "32px 20px",
+              textAlign: "center" as const,
+              marginBottom: 16,
+            }}
+          >
             <p style={{ fontSize: "2rem", marginBottom: 8 }}>✓</p>
-            <p style={{ color: G.muted, fontSize: "0.88rem" }}>No orders here</p>
+            <p style={{ color: G.muted, fontSize: "0.88rem" }}>
+              No orders here
+            </p>
           </div>
         )}
         {orderList.length > 0 && (
           <>
-            <div style={{ borderTop: `0.5px solid ${G.glassBorder}`, marginBottom: 12 }} />
-            <p style={{ fontSize: "0.65rem", color: G.muted, letterSpacing: "0.13em", textTransform: "uppercase" as const, marginBottom: 12, fontWeight: 600 }}>
+            <div
+              style={{
+                borderTop: `0.5px solid ${G.glassBorder}`,
+                marginBottom: 12,
+              }}
+            />
+            <p
+              style={{
+                fontSize: "0.65rem",
+                color: G.muted,
+                letterSpacing: "0.13em",
+                textTransform: "uppercase" as const,
+                marginBottom: 12,
+                fontWeight: 600,
+              }}
+            >
               Orders · {groupLabel} ({orderList.length})
             </p>
             {orderList.map((order) => (
               <CookOrderCard
-                key={order.id} order={order} productMap={productMap} boxes={boxes}
-                isExpanded={expandedPorter.has(order.id)} onTogglePorter={() => onTogglePorter(order.id)}
-                onPorterEmail={onPorterEmail} onDispatch={onDispatch} onEdit={onEdit} onCancel={onCancel}
+                key={order.id}
+                order={order}
+                productMap={productMap}
+                boxes={boxes}
+                isExpanded={expandedPorter.has(order.id)}
+                onTogglePorter={() => onTogglePorter(order.id)}
+                onPorterEmail={onPorterEmail}
+                onDispatch={onDispatch}
+                onEdit={onEdit}
+                onCancel={onCancel}
+                onSendToDelivery={onSendToDelivery}
               />
             ))}
           </>
@@ -3611,29 +4003,107 @@ export function CookTab({
   }
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px 8px" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "12px 14px 8px",
+        }}
+      >
         <div>
-          <p style={{ fontSize: 11, color: G.muted, letterSpacing: "0.1em", textTransform: "uppercase" as const, marginBottom: 2, fontWeight: 600 }}>Viewing</p>
-          <p style={{ fontSize: 16, fontWeight: 700, color: selectedDate ? G.blue : G.text }}>{selectedDate ? friendlyDate(selectedDate) : "All days"}</p>
+          <p
+            style={{
+              fontSize: 11,
+              color: G.muted,
+              letterSpacing: "0.1em",
+              textTransform: "uppercase" as const,
+              marginBottom: 2,
+              fontWeight: 600,
+            }}
+          >
+            Viewing
+          </p>
+          <p
+            style={{
+              fontSize: 16,
+              fontWeight: 700,
+              color: selectedDate ? G.blue : G.text,
+            }}
+          >
+            {selectedDate ? friendlyDate(selectedDate) : "All days"}
+          </p>
         </div>
         <button
           onClick={() => setShowCalendar((v) => !v)}
-          style={{ padding: "8px 14px", borderRadius: 10, border: `1px solid ${showCalendar ? G.blue : G.glassBorder}`, background: showCalendar ? G.blueGlass : G.glass, color: showCalendar ? G.blue : G.sub, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "system-ui, sans-serif", display: "flex", alignItems: "center", gap: 6 }}
+          style={{
+            padding: "8px 14px",
+            borderRadius: 10,
+            border: `1px solid ${showCalendar ? G.blue : G.glassBorder}`,
+            background: showCalendar ? G.blueGlass : G.glass,
+            color: showCalendar ? G.blue : G.sub,
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: "pointer",
+            fontFamily: "system-ui, sans-serif",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+          }}
         >
           📅 {showCalendar ? "Hide Calendar" : "Calendar"}
         </button>
       </div>
       {showCalendar && (
         <div style={{ padding: "0 14px" }}>
-          <MonthCalendar orders={orders} selectedDate={selectedDate} onSelectDate={(d) => { setSelectedDate(d); if (d) setShowCalendar(false); }} />
+          <MonthCalendar
+            orders={orders}
+            selectedDate={selectedDate}
+            onSelectDate={(d) => {
+              setSelectedDate(d);
+              if (d) setShowCalendar(false);
+            }}
+          />
         </div>
       )}
-      <div style={{ display: "flex", gap: 0, margin: "6px 14px 0", border: `1px solid ${G.glassBorder}`, borderRadius: 10, overflow: "hidden" }}>
-        {([{ id: "all", label: "All", icon: "◉" }, { id: "batches", label: "Batches", icon: "☀" }, { id: "slots", label: "Time Slots", icon: "🕐" }] as { id: ViewMode; label: string; icon: string }[]).map((v) => (
+      <div
+        style={{
+          display: "flex",
+          gap: 0,
+          margin: "6px 14px 0",
+          border: `1px solid ${G.glassBorder}`,
+          borderRadius: 10,
+          overflow: "hidden",
+        }}
+      >
+        {(
+          [
+            { id: "all", label: "All", icon: "◉" },
+            { id: "batches", label: "Batches", icon: "☀" },
+            { id: "slots", label: "Time Slots", icon: "🕐" },
+          ] as { id: ViewMode; label: string; icon: string }[]
+        ).map((v) => (
           <button
             key={v.id}
             onClick={() => setViewMode(v.id)}
-            style={{ flex: 1, padding: "9px 6px", border: "none", borderRight: v.id !== "slots" ? `1px solid ${G.glassBorder}` : "none", fontFamily: "system-ui, sans-serif", background: viewMode === v.id ? G.blueGlass : G.glass, color: viewMode === v.id ? G.blue : G.muted, fontSize: "0.78rem", fontWeight: viewMode === v.id ? 700 : 400, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5, transition: "all 0.15s" }}
+            style={{
+              flex: 1,
+              padding: "9px 6px",
+              border: "none",
+              borderRight:
+                v.id !== "slots" ? `1px solid ${G.glassBorder}` : "none",
+              fontFamily: "system-ui, sans-serif",
+              background: viewMode === v.id ? G.blueGlass : G.glass,
+              color: viewMode === v.id ? G.blue : G.muted,
+              fontSize: "0.78rem",
+              fontWeight: viewMode === v.id ? 700 : 400,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 5,
+              transition: "all 0.15s",
+            }}
           >
             <span style={{ fontSize: "0.85rem" }}>{v.icon}</span>
             {v.label}
@@ -3643,27 +4113,94 @@ export function CookTab({
       {viewMode === "batches" && (
         <div style={{ display: "flex", gap: 6, padding: "10px 14px 0" }}>
           {BATCHES.map((b) => {
-            const bOrders = dateFilteredOrders.filter((o) => { const slot = o.delivery_slot || o.batch_label || ""; return b.slots.includes(slot); });
+            const bOrders = dateFilteredOrders.filter((o) => {
+              const slot = o.delivery_slot || o.batch_label || "";
+              return b.slots.includes(slot);
+            });
             const isActive = activeBatch === b.label;
             return (
               <button
                 key={b.label}
                 onClick={() => setActiveBatch(b.label)}
-                style={{ flex: 1, padding: "9px 8px", borderRadius: 10, border: `1px solid ${isActive ? "rgba(96,165,250,0.5)" : G.glassBorder}`, background: isActive ? G.blueGlass : G.glass, color: isActive ? G.blue : G.sub, fontFamily: "system-ui, sans-serif", cursor: "pointer", textAlign: "center" as const, transition: "all 0.15s" }}
+                style={{
+                  flex: 1,
+                  padding: "9px 8px",
+                  borderRadius: 10,
+                  border: `1px solid ${isActive ? "rgba(96,165,250,0.5)" : G.glassBorder}`,
+                  background: isActive ? G.blueGlass : G.glass,
+                  color: isActive ? G.blue : G.sub,
+                  fontFamily: "system-ui, sans-serif",
+                  cursor: "pointer",
+                  textAlign: "center" as const,
+                  transition: "all 0.15s",
+                }}
               >
-                <p style={{ fontSize: "0.8rem", fontWeight: isActive ? 700 : 500, marginBottom: 2 }}>{b.label}</p>
-                <p style={{ fontSize: "0.62rem", color: isActive ? G.blue : G.muted }}>{b.range}</p>
-                {bOrders.length > 0 && <p style={{ fontSize: "0.68rem", fontWeight: 700, color: isActive ? G.blue : G.green, marginTop: 3 }}>{bOrders.length} order{bOrders.length !== 1 ? "s" : ""}</p>}
+                <p
+                  style={{
+                    fontSize: "0.8rem",
+                    fontWeight: isActive ? 700 : 500,
+                    marginBottom: 2,
+                  }}
+                >
+                  {b.label}
+                </p>
+                <p
+                  style={{
+                    fontSize: "0.62rem",
+                    color: isActive ? G.blue : G.muted,
+                  }}
+                >
+                  {b.range}
+                </p>
+                {bOrders.length > 0 && (
+                  <p
+                    style={{
+                      fontSize: "0.68rem",
+                      fontWeight: 700,
+                      color: isActive ? G.blue : G.green,
+                      marginTop: 3,
+                    }}
+                  >
+                    {bOrders.length} order{bOrders.length !== 1 ? "s" : ""}
+                  </p>
+                )}
               </button>
             );
           })}
         </div>
       )}
-      {viewMode === "slots" && <SlotTabs slots={slotMeta} activeSlot={activeSlot} onSelect={setActiveSlot} />}
+      {viewMode === "slots" && (
+        <SlotTabs
+          slots={slotMeta}
+          activeSlot={activeSlot}
+          onSelect={setActiveSlot}
+        />
+      )}
       <div style={{ padding: "14px 14px 20px" }}>
-        {viewMode === "all" && <FlavourSection flavourEntries={allFlavours} totalPieces={allTotal} orderList={dateFilteredOrders} groupLabel={selectedDate ? friendlyDate(selectedDate) : "All Days"} />}
-        {viewMode === "batches" && <FlavourSection flavourEntries={batchFlavours} totalPieces={batchTotal} orderList={batchOrders} groupLabel={`${currentBatch.label} · ${currentBatch.range}`} />}
-        {viewMode === "slots" && <FlavourSection flavourEntries={slotFlavours} totalPieces={slotTotal} orderList={slotOrders} groupLabel={activeSlot} />}
+        {viewMode === "all" && (
+          <FlavourSection
+            flavourEntries={allFlavours}
+            totalPieces={allTotal}
+            orderList={dateFilteredOrders}
+            groupLabel={selectedDate ? friendlyDate(selectedDate) : "All Days"}
+          />
+        )}
+        {viewMode === "batches" && (
+          <FlavourSection
+            flavourEntries={batchFlavours}
+            totalPieces={batchTotal}
+            orderList={batchOrders}
+            groupLabel={`${currentBatch.label} · ${currentBatch.range}`}
+          />
+        )}
+        {viewMode === "slots" && (
+          <FlavourSection
+            flavourEntries={slotFlavours}
+            totalPieces={slotTotal}
+            orderList={slotOrders}
+            groupLabel={activeSlot}
+          />
+        )}
       </div>
     </div>
   );
@@ -11994,6 +12531,11 @@ export const dynamic = "force-dynamic";
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 
+// This is the single, fixed settings row shared by /admin (Trivandrum tab)
+// and /admin/delivery. Never insert a second row — always upsert against
+// this id so both pages read/write the exact same trip_date.
+const FIXED_SETTINGS_ID = "0c62e1c2-4d73-457b-bf49-bb077ebdba3e";
+
 const G = {
   pageBg: "#ffffff",
   glass: "rgba(0,0,0,0.03)",
@@ -12032,7 +12574,7 @@ type Stop = {
 // Customer delivery charge formula: ₹50 base + ₹10 per km from dispatch point
 function customerCharge(dispatchKm: number): number {
   if (!dispatchKm || dispatchKm <= 0) return 0;
-  return 50 + 10 * dispatchKm;
+  return Math.floor(50 + 9 * dispatchKm);
 }
 
 function GlassInput({
@@ -12100,15 +12642,21 @@ export default function TvmDeliveryAdminPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data: settingsRows } = await supabase
+
+    // Always read the one fixed settings row — never "any" row via limit(1),
+    // which could silently pick a different row than the one being written to.
+    const { data: settingsRow } = await supabase
       .from("trivandrum_settings")
       .select("id, trip_date")
-      .limit(1);
-    const settings = settingsRows && settingsRows[0] ? settingsRows[0] : null;
-    setSettingsId(settings?.id || null);
+      .eq("id", FIXED_SETTINGS_ID)
+      .maybeSingle();
+
+    setSettingsId(settingsRow?.id || FIXED_SETTINGS_ID);
+
     // If no trip date has been set yet, default to today so the form
     // still works immediately — admin doesn't need to save a date first.
-    const trip = settings?.trip_date || new Date().toISOString().split("T")[0];
+    const trip =
+      settingsRow?.trip_date || new Date().toISOString().split("T")[0];
     setTripDate(trip);
     setTripDateInput(trip);
 
@@ -12139,37 +12687,24 @@ export default function TvmDeliveryAdminPage() {
     if (!savingDate) return;
     setDateSaveStatus("saving");
 
-    let saveError: string | null = null;
+    // Upsert against the fixed settings id — never blindly insert a new row.
+    // This guarantees /admin (Trivandrum tab) and /admin/delivery always
+    // read/write the exact same trip_date.
+    const { error } = await supabase.from("trivandrum_settings").upsert(
+      {
+        id: settingsId || FIXED_SETTINGS_ID,
+        trip_date: savingDate,
+      },
+      { onConflict: "id" },
+    );
 
-    if (settingsId) {
-      const { error } = await supabase
-        .from("trivandrum_settings")
-        .update({ trip_date: savingDate })
-        .eq("id", settingsId);
-      if (error) saveError = error.message;
-    } else {
-      const { data: inserted, error } = await supabase
-        .from("trivandrum_settings")
-        .insert({
-          trip_date: savingDate,
-          is_active: true,
-          pickup_name: "",
-          pickup_address: "",
-          pickup_maps_url: "",
-          pickup_locations: "",
-        })
-        .select("id")
-        .single();
-      if (error) saveError = error.message;
-      if (inserted?.id) setSettingsId(inserted.id);
-    }
-
-    if (saveError) {
-      flash(`⚠ Save failed: ${saveError}`);
+    if (error) {
+      flash(`⚠ Save failed: ${error.message}`);
       setDateSaveStatus("error");
       return;
     }
 
+    setSettingsId(settingsId || FIXED_SETTINGS_ID);
     setTripDate(savingDate);
     await load();
     setDateSaveStatus("saved");
@@ -13443,6 +13978,54 @@ export default function AdminPage() {
     }
   }
 
+  const FIXED_TVM_SETTINGS_ID = "0c62e1c2-4d73-457b-bf49-bb077ebdba3e";
+
+  async function handleSendToDelivery(order: ExtOrder) {
+    const tripDate = tvmSettings.trip_date;
+    if (!tripDate) {
+      flash("Set a Trivandrum trip date first (Trivandrum tab)", "error");
+      return;
+    }
+
+    // Avoid adding the same order twice
+    const { data: existing } = await supabase
+      .from("tvm_delivery_stops")
+      .select("id, sequence")
+      .eq("trip_date", tripDate)
+      .order("sequence", { ascending: false });
+
+    const alreadyThere = (existing || []).some(
+      (s: any) => s.notes && s.notes.includes(order.id.slice(0, 8)),
+    );
+    if (alreadyThere) {
+      flash("This order is already on the delivery route");
+      return;
+    }
+
+    const nextSeq =
+      existing && existing.length > 0 ? existing[0].sequence + 1 : 1;
+
+    const isPickup = order.fulfillment_type === "pickup";
+    const { error } = await supabase.from("tvm_delivery_stops").insert({
+      trip_date: tripDate,
+      sequence: nextSeq,
+      customer_name: order.customer_name,
+      phone: order.phone || null,
+      address: order.address || null,
+      maps_url: null,
+      distance_km: 0,
+      dispatch_distance_km: 0,
+      notes: `Order #${order.id.slice(0, 8).toUpperCase()}${isPickup ? " · Marked Pickup — confirm before dispatch" : ""}`,
+      status: "pending",
+    });
+
+    if (error) {
+      flash("Failed to add to delivery route: " + error.message, "error");
+      return;
+    }
+    flash(`${order.customer_name} added to delivery route ✓`);
+  }
+
   async function handleBulkOrderImport(text: string) {
     try {
       const data = JSON.parse(text.trim());
@@ -13969,6 +14552,7 @@ export default function AdminPage() {
                 return next;
               })
             }
+            onSendToDelivery={handleSendToDelivery}
             onPorterEmail={handlePorterEmail}
             onDispatch={async (id) => {
               await handleStatusChange(id, "dispatched");
@@ -14691,15 +15275,13 @@ export default function AdminPage() {
                 disabled={saving || !ne.description || !ne.amount}
                 onClick={async () => {
                   setSaving(true);
-                  await supabase
-                    .from("expenses")
-                    .insert({
-                      description: ne.description,
-                      amount: Number(ne.amount),
-                      category: ne.category,
-                      date: ne.date,
-                      note: ne.note,
-                    });
+                  await supabase.from("expenses").insert({
+                    description: ne.description,
+                    amount: Number(ne.amount),
+                    category: ne.category,
+                    date: ne.date,
+                    note: ne.note,
+                  });
                   setNe({
                     description: "",
                     amount: "",
@@ -15229,16 +15811,14 @@ export default function AdminPage() {
                   disabled={saving || !np.name}
                   onClick={async () => {
                     setSaving(true);
-                    await supabase
-                      .from("products")
-                      .insert({
-                        name: np.name,
-                        description: np.description,
-                        price: 0,
-                        is_premium: np.is_premium,
-                        image_url: np.image_url || null,
-                        sort_order: products.length + 1,
-                      });
+                    await supabase.from("products").insert({
+                      name: np.name,
+                      description: np.description,
+                      price: 0,
+                      is_premium: np.is_premium,
+                      image_url: np.image_url || null,
+                      sort_order: products.length + 1,
+                    });
                     setNp({
                       name: "",
                       description: "",
@@ -26133,5 +26713,5 @@ export default config
 
 ========================================
   TOTAL FILES: 48
-  TOTAL LINES:    26132
+  TOTAL LINES:    26712
 ========================================

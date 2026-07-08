@@ -48,7 +48,7 @@ type Stop = {
 // Customer delivery charge formula: ₹50 base + ₹10 per km from dispatch point
 function customerCharge(dispatchKm: number): number {
   if (!dispatchKm || dispatchKm <= 0) return 0;
-  return 50 + 10 * dispatchKm;
+  return Math.floor(50 + 9 * dispatchKm);
 }
 
 function GlassInput({

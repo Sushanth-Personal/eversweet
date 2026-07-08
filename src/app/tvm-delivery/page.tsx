@@ -14,10 +14,18 @@ type Stop = {
   address: string | null;
   maps_url: string | null;
   distance_km: number;
+  dispatch_distance_km: number;
   status: "pending" | "completed";
   completed_at: string | null;
   notes: string | null;
 };
+
+// Same formula as /admin/delivery — keep these in sync if pricing changes.
+// ₹50 base + ₹9/km from the dispatch point, floored to the nearest rupee.
+function customerCharge(dispatchKm: number): number {
+  if (!dispatchKm || dispatchKm <= 0) return 0;
+  return Math.floor(50 + 9 * dispatchKm);
+}
 
 function fmtDate(d: string) {
   if (!d) return "";
@@ -131,6 +139,11 @@ export default function TvmDeliveryPage() {
       ? Math.min(100, Math.round((distanceCovered / totalDistance) * 100))
       : 0;
 
+  const totalToCollect = stops
+    .filter((s) => s.status === "pending")
+    .reduce((sum, s) => sum + customerCharge(s.dispatch_distance_km), 0);
+  const hasCharges = stops.some((s) => s.dispatch_distance_km > 0);
+
   const allDone = total > 0 && completed === total;
   const pendingStops = stops.filter((s) => s.status === "pending");
   const currentStop = pendingStops[0] || null;
@@ -229,6 +242,7 @@ export default function TvmDeliveryPage() {
 
   function StopCard({ stop, index }: { stop: Stop; index: number }) {
     const isDone = stop.status === "completed";
+    const charge = customerCharge(stop.dispatch_distance_km);
     return (
       <div
         style={{
@@ -314,6 +328,43 @@ export default function TvmDeliveryPage() {
             </span>
           )}
         </div>
+
+        {/* Delivery charge to collect from customer */}
+        {charge > 0 && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              background: isDone
+                ? "rgba(31,168,85,0.05)"
+                : "rgba(31,168,85,0.08)",
+              border: `1px solid ${isDone ? "rgba(31,168,85,0.15)" : "rgba(31,168,85,0.3)"}`,
+              borderRadius: 10,
+              padding: "10px 12px",
+              marginBottom: 10,
+            }}
+          >
+            <span
+              style={{
+                fontSize: "0.8rem",
+                color: "#3a7d4f",
+                fontWeight: 600,
+              }}
+            >
+              💰 {isDone ? "Collected" : "Collect from customer"}
+            </span>
+            <span
+              style={{
+                fontSize: "1.05rem",
+                fontWeight: 800,
+                color: "#1fa855",
+              }}
+            >
+              ₹{charge}
+            </span>
+          </div>
+        )}
 
         {stop.notes && (
           <p
@@ -488,6 +539,7 @@ export default function TvmDeliveryPage() {
               alignItems: "center",
               fontSize: "0.72rem",
               color: "#6b6b6b",
+              marginBottom: hasCharges ? 6 : 0,
             }}
           >
             <span>
@@ -496,6 +548,23 @@ export default function TvmDeliveryPage() {
             </span>
             <span style={{ color: "#ff7a1a", fontWeight: 700 }}>
               {distancePct}%
+            </span>
+          </div>
+        )}
+
+        {/* Cash to collect */}
+        {hasCharges && (
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              fontSize: "0.78rem",
+            }}
+          >
+            <span style={{ color: "#6b6b6b" }}>💰 Total to collect</span>
+            <span style={{ color: "#1fa855", fontWeight: 700 }}>
+              ₹{totalToCollect.toLocaleString("en-IN")} remaining
             </span>
           </div>
         )}
@@ -597,6 +666,9 @@ export default function TvmDeliveryPage() {
             >
               {total} stop{total !== 1 ? "s" : ""} · {totalDistance.toFixed(1)}{" "}
               km total
+              {hasCharges
+                ? ` · ₹${totalToCollect.toLocaleString("en-IN")} to collect`
+                : ""}
             </p>
             <button
               onClick={() => {
