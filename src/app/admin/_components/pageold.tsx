@@ -26,7 +26,7 @@
      19.2 — Data loading
      19.3 — Handlers (status, cancel, imports)
      19.4 — Derived/computed values (revenue, expenses, customers)
-     19.5 — NavBtn
+     19.5 — NavBtns
      19.6 — Login screen
      19.7 — Top bar + flash message
      19.8 — TAB: Cook
@@ -44,11 +44,11 @@
    SECTION 1 — Imports & Types
 ------------------------------------------------------------ */
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { SmartOrderModal, SmartOrderNavBtn } from "./SmartOrderModal";
+import { SmartOrderModal, SmartOrderNavBtn } from "../SmartOrderModal";
 import { supabase } from "@/lib/supabase";
 import type { Product, BoxSize, Order } from "@/lib/types";
-import { TrivandrumAdminTab } from "./trivandrum-admin-section";
-import { InvoiceModal, InvoiceNavBtn } from "./InvoiceModal";
+import { TrivandrumAdminTab } from "../trivandrum-admin-section";
+import { InvoiceModal, InvoiceNavBtn } from "../InvoiceModal";
 
 type Tab =
   | "cook"

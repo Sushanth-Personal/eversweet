@@ -197,13 +197,16 @@ export async function POST(req: Request) {
             "extract-bill error (all providers failed):",
             openaiErr,
           );
-          return NextResponse.json([]);
+          return NextResponse.json({ items: [], _provider: "none" });
         }
       }
     }
 
     console.log(`extract-bill served by: ${usedProvider}`);
-    return NextResponse.json(cleanItems(items));
+    return NextResponse.json({
+      items: cleanItems(items),
+      _provider: usedProvider,
+    });
   } catch (error: any) {
     console.error("extract-bill error:", error);
     return NextResponse.json(

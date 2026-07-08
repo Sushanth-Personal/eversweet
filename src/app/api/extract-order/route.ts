@@ -193,6 +193,7 @@ export async function POST(req: Request) {
       flavours: matchedFlavours,
       box_size_id,
       box_label,
+      _provider: usedProvider,
     });
   } catch (error: any) {
     console.error("extract-order error:", error);

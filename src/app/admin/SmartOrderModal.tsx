@@ -36,6 +36,57 @@ const ALL_SLOTS = [
   "11 PM–12 AM",
 ];
 
+const PROVIDER_STYLE: Record<
+  string,
+  { bg: string; color: string; border: string; label: string }
+> = {
+  groq: {
+    bg: "rgba(167,139,250,0.15)",
+    color: "#a78bfa",
+    border: "rgba(167,139,250,0.3)",
+    label: "Groq",
+  },
+  openai: {
+    bg: "rgba(52,217,123,0.15)",
+    color: "#34d97b",
+    border: "rgba(52,217,123,0.3)",
+    label: "GPT",
+  },
+  gemini: {
+    bg: "rgba(96,165,250,0.15)",
+    color: "#60a5fa",
+    border: "rgba(96,165,250,0.3)",
+    label: "Gemini",
+  },
+};
+
+function ProviderBadge({ provider }: { provider: string | null }) {
+  if (!provider) return null;
+  const style = PROVIDER_STYLE[provider] || {
+    bg: "rgba(168,180,204,0.15)",
+    color: "#a8b4cc",
+    border: "rgba(168,180,204,0.3)",
+    label: provider,
+  };
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        fontSize: "0.6rem",
+        fontWeight: 700,
+        padding: "2px 7px",
+        borderRadius: 6,
+        marginTop: 4,
+        background: style.bg,
+        color: style.color,
+        border: `1px solid ${style.border}`,
+      }}
+    >
+      ⚡ {style.label}
+    </span>
+  );
+}
+
 const FLAVOUR_COLORS: Record<
   string,
   { bg: string; border: string; text: string; dot: string }
@@ -234,6 +285,7 @@ type AIExtracted = {
   total_price?: number;
   remarks?: string;
   fulfillment_type?: "delivery" | "pickup";
+  _provider?: string;
 };
 
 type OrderLocation = "kochi" | "trivandrum";
@@ -288,6 +340,7 @@ export function SmartOrderModal({
   const [analysed, setAnalysed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [aiProvider, setAiProvider] = useState<string | null>(null);
 
   const today = new Date().toISOString().split("T")[0];
 
@@ -400,7 +453,6 @@ export function SmartOrderModal({
     setError(null);
 
     try {
-      // Convert images to base64 for Gemini
       const imagePayload = await Promise.all(
         images.map(
           (img) =>
@@ -444,6 +496,7 @@ export function SmartOrderModal({
       }
 
       const extracted: AIExtracted = await response.json();
+      setAiProvider(extracted._provider || null);
 
       const newForm = { ...form };
       const newFilled: FilledFlags = {};
@@ -862,6 +915,7 @@ export function SmartOrderModal({
                   AI filled {Object.values(filled).filter(Boolean).length}{" "}
                   fields
                 </p>
+                <ProviderBadge provider={aiProvider} />
                 <p style={{ fontSize: "0.7rem", color: G.muted, marginTop: 2 }}>
                   {missing.length > 0
                     ? `Still needed: ${missing.join(", ")}`
