@@ -50,7 +50,7 @@ const KNOWN_AREAS = [
   "PMG",
 ];
 
-export function guessAreaHeuristic(address: string): string {
+function guessAreaHeuristic(address: string): string {
   if (!address) return "";
   const lower = address.toLowerCase();
   for (const area of KNOWN_AREAS) {
@@ -63,7 +63,10 @@ export async function POST(req: Request) {
   try {
     const { addresses } = (await req.json()) as { addresses: string[] };
     if (!Array.isArray(addresses)) {
-      return NextResponse.json({ error: "Expected addresses[]" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Expected addresses[]" },
+        { status: 400 },
+      );
     }
 
     // Only ask the AI about addresses the heuristic couldn't confidently tag —
@@ -77,9 +80,7 @@ export async function POST(req: Request) {
 
     if (needsAi.length > 0 && groq) {
       try {
-        const list = needsAi
-          .map(({ a, i }) => `${i}: ${a}`)
-          .join("\n");
+        const list = needsAi.map(({ a, i }) => `${i}: ${a}`).join("\n");
         const completion = await groq.chat.completions.create({
           model: "llama-3.1-8b-instant",
           messages: [
