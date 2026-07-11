@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase";
 import type { Product, BoxSize } from "@/lib/types";
 import { TrivandrumAdminTab } from "./trivandrum-admin-section";
 import { InvoiceModal, InvoiceNavBtn } from "./InvoiceModal";
-
+import { QuickCaptureModal, QuickCaptureNavBtn } from "./QuickCaptureModal";
 import { G, getFlavourColor } from "./_lib/theme";
 import {
   ALL_SLOTS,
@@ -56,7 +56,7 @@ export default function AdminPage() {
   const [editInsta, setEditInsta] = useState("");
   const [editingOrder, setEditingOrder] = useState<ExtOrder | null>(null);
   const [showInvoice, setShowInvoice] = useState(false);
-
+  const [showQuickCapture, setShowQuickCapture] = useState(false);
   const [np, setNp] = useState({
     name: "",
     description: "",
@@ -734,8 +734,8 @@ export default function AdminPage() {
             )}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <SmartOrderNavBtn onClick={() => setShowSmartOrder(true)} />
             <InvoiceNavBtn onClick={() => setShowInvoice(true)} />
+            <QuickCaptureNavBtn onClick={() => setShowQuickCapture(true)} />
             <button
               onClick={load}
               style={{
@@ -2272,7 +2272,16 @@ export default function AdminPage() {
         />
       )}
       {showInvoice && <InvoiceModal onClose={() => setShowInvoice(false)} />}
-
+      {showQuickCapture && (
+        <QuickCaptureModal
+          onClose={() => setShowQuickCapture(false)}
+          onOrderSelected={() => setShowSmartOrder(true)}
+          onSaved={() => {
+            load();
+            flash("Expense saved ✓");
+          }}
+        />
+      )}
       {/* Bottom nav */}
       <div
         style={{
