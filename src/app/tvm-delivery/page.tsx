@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import { DraggableStopList } from "./DraggableStopList";
 
 type Stop = {
   id: string;
@@ -48,6 +49,109 @@ function fmtTime(ts: string | null) {
   });
 }
 
+// Instant, offline first-pass area guess — same list the server uses,
+// kept here too so badges appear immediately on load, before the
+// AI refinement call (below) returns.
+const KNOWN_AREAS = [
+  "East Fort",
+  "Peroorkada",
+  "Pattom",
+  "Kesavadasapuram",
+  "Sasthamangalam",
+  "Kowdiar",
+  "Vazhuthacaud",
+  "Thampanoor",
+  "Vellayambalam",
+  "Kumarapuram",
+  "Medical College",
+  "Chackai",
+  "Karamana",
+  "Nalanchira",
+  "Sreekaryam",
+  "Kazhakootam",
+  "Technopark",
+  "Attukal",
+  "Manacaud",
+  "Poojappura",
+  "Kaimanam",
+  "Vattiyoorkavu",
+  "Muttada",
+  "Pongumoodu",
+  "Ulloor",
+  "Palayam",
+  "Statue",
+  "Chalai",
+  "Pettah",
+  "Killipalam",
+  "Thiruvallam",
+  "Kovalam",
+  "Vizhinjam",
+  "Balaramapuram",
+  "Nedumangad",
+  "Kattakada",
+  "Neyyattinkara",
+  "PMG",
+];
+function guessAreaHeuristic(address: string | null): string {
+  if (!address) return "";
+  const lower = address.toLowerCase();
+  for (const area of KNOWN_AREAS) {
+    if (lower.includes(area.toLowerCase())) return area;
+  }
+  return "";
+}
+
+// Deterministic soft colour for each area name so the same locality
+// always gets the same badge colour across the route.
+const AREA_PALETTE = [
+  {
+    bg: "rgba(96,165,250,0.12)",
+    border: "rgba(96,165,250,0.35)",
+    text: "#3f7fd6",
+  },
+  {
+    bg: "rgba(167,139,250,0.12)",
+    border: "rgba(167,139,250,0.35)",
+    text: "#8b6fe0",
+  },
+  {
+    bg: "rgba(52,217,123,0.12)",
+    border: "rgba(52,217,123,0.35)",
+    text: "#1e9a55",
+  },
+  {
+    bg: "rgba(244,114,182,0.12)",
+    border: "rgba(244,114,182,0.35)",
+    text: "#d1479f",
+  },
+  {
+    bg: "rgba(255,122,26,0.12)",
+    border: "rgba(255,122,26,0.35)",
+    text: "#c85e12",
+  },
+  {
+    bg: "rgba(250,204,21,0.14)",
+    border: "rgba(250,204,21,0.4)",
+    text: "#a37b0a",
+  },
+];
+function areaColor(area: string) {
+  let hash = 0;
+  for (let i = 0; i < area.length; i++)
+    hash = (hash * 31 + area.charCodeAt(i)) | 0;
+  return AREA_PALETTE[Math.abs(hash) % AREA_PALETTE.length];
+}
+
+// Always resolve a maps link — use the admin-set maps_url if present,
+// otherwise fall back to a Google Maps search built from the address.
+function resolveMapsHref(stop: Stop): string | null {
+  if (stop.maps_url) return stop.maps_url;
+  if (stop.address) {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(stop.address)}`;
+  }
+  return null;
+}
+
 type ViewMode = "start" | "single" | "list";
 
 export default function TvmDeliveryPage() {
@@ -57,6 +161,7 @@ export default function TvmDeliveryPage() {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("start");
   const [hasStarted, setHasStarted] = useState(false);
+  const [areaMap, setAreaMap] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     const { data: settings } = await supabase
@@ -72,9 +177,43 @@ export default function TvmDeliveryPage() {
         .select("*")
         .eq("trip_date", trip)
         .order("sequence", { ascending: true });
-      setStops((s as Stop[]) || []);
+      const list = (s as Stop[]) || [];
+      setStops(list);
+
+      // 1) Instant offline guess so badges show immediately.
+      const instant: Record<string, string> = {};
+      list.forEach((st) => {
+        const g = guessAreaHeuristic(st.address);
+        if (g) instant[st.id] = g;
+      });
+      setAreaMap(instant);
+
+      // 2) AI refinement for addresses the heuristic couldn't tag.
+      const unresolved = list.filter((st) => !instant[st.id] && st.address);
+      if (unresolved.length > 0) {
+        fetch("/api/extract-area", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            addresses: unresolved.map((st) => st.address || ""),
+          }),
+        })
+          .then((r) => r.json())
+          .then((data) => {
+            if (!Array.isArray(data.areas)) return;
+            setAreaMap((prev) => {
+              const next = { ...prev };
+              unresolved.forEach((st, i) => {
+                if (data.areas[i]) next[st.id] = data.areas[i];
+              });
+              return next;
+            });
+          })
+          .catch((e) => console.warn("area AI lookup failed", e));
+      }
     } else {
       setStops([]);
+      setAreaMap({});
     }
     setLoading(false);
   }, []);
@@ -91,8 +230,6 @@ export default function TvmDeliveryPage() {
       .update({ status: "completed", completed_at: new Date().toISOString() })
       .eq("id", id);
 
-    // Fire-and-forget — don't block the UI on the email send, and don't
-    // fail the delivery mark-complete if the email happens to fail.
     if (stop) {
       const newCompletedCount =
         stops.filter((s) => s.status === "completed").length + 1;
@@ -126,6 +263,19 @@ export default function TvmDeliveryPage() {
     setUpdatingId(null);
   }
 
+  // Press-and-drag reorder: called by DraggableStopList after a drop.
+  async function persistOrder(newStops: Stop[]) {
+    setStops(newStops);
+    await Promise.all(
+      newStops.map((s, i) =>
+        supabase
+          .from("tvm_delivery_stops")
+          .update({ sequence: i + 1 })
+          .eq("id", s.id),
+      ),
+    );
+  }
+
   const total = stops.length;
   const completed = stops.filter((s) => s.status === "completed").length;
   const progressPct = total > 0 ? Math.round((completed / total) * 100) : 0;
@@ -155,6 +305,7 @@ export default function TvmDeliveryPage() {
   function StopActions({ stop, big = false }: { stop: Stop; big?: boolean }) {
     const isDone = stop.status === "completed";
     const isBusy = updatingId === stop.id;
+    const mapsHref = resolveMapsHref(stop);
     return (
       <>
         <div style={{ display: "flex", gap: 8 }}>
@@ -180,9 +331,9 @@ export default function TvmDeliveryPage() {
               📞 Call
             </a>
           )}
-          {stop.maps_url && (
+          {mapsHref && (
             <a
-              href={stop.maps_url}
+              href={mapsHref}
               target="_blank"
               rel="noopener noreferrer"
               style={{
@@ -202,7 +353,7 @@ export default function TvmDeliveryPage() {
                 boxShadow: "0 3px 10px rgba(255,122,26,0.3)",
               }}
             >
-              🗺️ Open in Maps
+              🗺️ {stop.maps_url ? "Open in Maps" : "Find on Maps"}
             </a>
           )}
         </div>
@@ -240,20 +391,35 @@ export default function TvmDeliveryPage() {
     );
   }
 
-  function StopCard({ stop, index }: { stop: Stop; index: number }) {
+  function StopCard({
+    stop,
+    index,
+    dragHandleProps,
+    isDragging,
+  }: {
+    stop: Stop;
+    index: number;
+    dragHandleProps?: {
+      onMouseDown: (e: React.MouseEvent) => void;
+      onTouchStart: (e: React.TouchEvent) => void;
+    };
+    isDragging?: boolean;
+  }) {
     const isDone = stop.status === "completed";
     const charge = customerCharge(stop.dispatch_distance_km);
+    const area = areaMap[stop.id];
+    const areaC = area ? areaColor(area) : null;
     return (
       <div
         style={{
           background: isDone ? "rgba(31,168,85,0.05)" : "#ffffff",
-          border: `1px solid ${isDone ? "rgba(31,168,85,0.3)" : "rgba(0,0,0,0.09)"}`,
+          border: `1px solid ${isDone ? "rgba(31,168,85,0.3)" : isDragging ? "#ff7a1a" : "rgba(0,0,0,0.09)"}`,
           boxShadow: isDone ? "none" : "0 1px 4px rgba(0,0,0,0.04)",
           borderRadius: 14,
           padding: "16px 18px",
           marginBottom: 12,
           opacity: isDone ? 0.9 : 1,
-          transition: "all 0.2s",
+          transition: isDragging ? "none" : "all 0.2s",
         }}
       >
         <div
@@ -266,6 +432,28 @@ export default function TvmDeliveryPage() {
           }}
         >
           <div style={{ display: "flex", gap: 10, flex: 1, minWidth: 0 }}>
+            {dragHandleProps && !isDone && (
+              <div
+                onMouseDown={dragHandleProps.onMouseDown}
+                onTouchStart={dragHandleProps.onTouchStart}
+                style={{
+                  width: 28,
+                  height: 44,
+                  flexShrink: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "1.3rem",
+                  color: "#bbb",
+                  cursor: "grab",
+                  touchAction: "none",
+                  marginLeft: -4,
+                  marginTop: -8,
+                }}
+              >
+                ⠿
+              </div>
+            )}
             <div
               style={{
                 width: 28,
@@ -287,16 +475,41 @@ export default function TvmDeliveryPage() {
               {isDone ? "✓" : index + 1}
             </div>
             <div style={{ minWidth: 0 }}>
-              <p
+              <div
                 style={{
-                  fontSize: "1rem",
-                  fontWeight: 700,
-                  color: "#1a1a1a",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 7,
+                  flexWrap: "wrap" as const,
                   marginBottom: 2,
                 }}
               >
-                {stop.customer_name}
-              </p>
+                <p
+                  style={{
+                    fontSize: "1rem",
+                    fontWeight: 700,
+                    color: "#1a1a1a",
+                  }}
+                >
+                  {stop.customer_name}
+                </p>
+                {areaC && (
+                  <span
+                    style={{
+                      fontSize: "0.66rem",
+                      fontWeight: 700,
+                      padding: "2px 8px",
+                      borderRadius: 20,
+                      background: areaC.bg,
+                      border: `1px solid ${areaC.border}`,
+                      color: areaC.text,
+                      whiteSpace: "nowrap" as const,
+                    }}
+                  >
+                    📍 {area}
+                  </span>
+                )}
+              </div>
               {stop.address && (
                 <p
                   style={{
@@ -305,7 +518,7 @@ export default function TvmDeliveryPage() {
                     lineHeight: 1.5,
                   }}
                 >
-                  📍 {stop.address}
+                  {stop.address}
                 </p>
               )}
             </div>
@@ -329,7 +542,6 @@ export default function TvmDeliveryPage() {
           )}
         </div>
 
-        {/* Delivery charge to collect from customer */}
         {charge > 0 && (
           <div
             style={{
@@ -346,20 +558,12 @@ export default function TvmDeliveryPage() {
             }}
           >
             <span
-              style={{
-                fontSize: "0.8rem",
-                color: "#3a7d4f",
-                fontWeight: 600,
-              }}
+              style={{ fontSize: "0.8rem", color: "#3a7d4f", fontWeight: 600 }}
             >
               💰 {isDone ? "Collected" : "Collect from customer"}
             </span>
             <span
-              style={{
-                fontSize: "1.05rem",
-                fontWeight: 800,
-                color: "#1fa855",
-              }}
+              style={{ fontSize: "1.05rem", fontWeight: 800, color: "#1fa855" }}
             >
               ₹{charge}
             </span>
@@ -413,7 +617,6 @@ export default function TvmDeliveryPage() {
         dangerouslySetInnerHTML={{ __html: CSS }}
       />
 
-      {/* Sticky progress header — always visible regardless of view */}
       <div
         style={{
           position: "sticky",
@@ -473,17 +676,10 @@ export default function TvmDeliveryPage() {
             </button>
           )}
         </div>
-        <p
-          style={{
-            fontSize: "0.7rem",
-            color: "#8a8a8a",
-            marginBottom: 12,
-          }}
-        >
+        <p style={{ fontSize: "0.7rem", color: "#8a8a8a", marginBottom: 12 }}>
           {tripDate ? fmtDate(tripDate) : "No trip date set"}
         </p>
 
-        {/* Stops progress */}
         <div
           style={{
             display: "flex",
@@ -530,7 +726,6 @@ export default function TvmDeliveryPage() {
           />
         </div>
 
-        {/* Distance progress */}
         {totalDistance > 0 && (
           <div
             style={{
@@ -552,7 +747,6 @@ export default function TvmDeliveryPage() {
           </div>
         )}
 
-        {/* Cash to collect */}
         {hasCharges && (
           <div
             style={{
@@ -570,7 +764,6 @@ export default function TvmDeliveryPage() {
         )}
       </div>
 
-      {/* Body */}
       <div style={{ padding: "20px 20px 0" }}>
         {loading ? (
           <p
@@ -612,17 +805,32 @@ export default function TvmDeliveryPage() {
           </div>
         ) : viewMode === "list" ? (
           <>
-            {stops.map((stop, i) => (
-              <StopCard key={stop.id} stop={stop} index={i} />
-            ))}
+            <p
+              style={{
+                fontSize: "0.72rem",
+                color: "#8a8a8a",
+                textAlign: "center" as const,
+                marginBottom: 10,
+              }}
+            >
+              ⠿ Press and drag a stop to reorder the route
+            </p>
+            <DraggableStopList
+              items={stops}
+              getId={(s) => s.id}
+              onReorder={persistOrder}
+              renderItem={(stop, i, dragHandleProps, isDragging) => (
+                <StopCard
+                  stop={stop}
+                  index={i}
+                  dragHandleProps={dragHandleProps}
+                  isDragging={isDragging}
+                />
+              )}
+            />
           </>
         ) : allDone ? (
-          <div
-            style={{
-              textAlign: "center",
-              padding: "60px 20px",
-            }}
-          >
+          <div style={{ textAlign: "center", padding: "60px 20px" }}>
             <p style={{ fontSize: "3rem", marginBottom: 16 }}>🎉</p>
             <p
               style={{
@@ -639,12 +847,7 @@ export default function TvmDeliveryPage() {
             </p>
           </div>
         ) : viewMode === "start" || !hasStarted ? (
-          <div
-            style={{
-              textAlign: "center",
-              padding: "40px 20px 20px",
-            }}
-          >
+          <div style={{ textAlign: "center", padding: "40px 20px 20px" }}>
             <p style={{ fontSize: "2.4rem", marginBottom: 16 }}>🚂</p>
             <p
               style={{
