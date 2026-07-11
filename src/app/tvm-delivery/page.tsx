@@ -306,6 +306,37 @@ export default function TvmDeliveryPage() {
     const isDone = stop.status === "completed";
     const isBusy = updatingId === stop.id;
     const mapsHref = resolveMapsHref(stop);
+
+    // Before the driver has hit "Start Trip", this is just a route
+    // preview — don't show Call or Mark as Delivered, only the map.
+    if (!hasStarted) {
+      return mapsHref ? (
+        <a
+          href={mapsHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            width: "100%",
+            padding: big ? "13px 12px" : "10px 12px",
+            borderRadius: 9,
+            border: "1.5px solid #ff7a1a",
+            background: "#ffffff",
+            color: "#ff7a1a",
+            fontSize: big ? "0.92rem" : "0.8rem",
+            fontWeight: 700,
+            textDecoration: "none",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+            boxSizing: "border-box" as const,
+          }}
+        >
+          🗺️ {stop.maps_url ? "Open in Maps" : "Find on Maps"}
+        </a>
+      ) : null;
+    }
+
     return (
       <>
         <div style={{ display: "flex", gap: 8 }}>
@@ -814,6 +845,7 @@ export default function TvmDeliveryPage() {
               }}
             >
               ⠿ Press and drag a stop to reorder the route
+              {!hasStarted ? " · route preview" : ""}
             </p>
             <DraggableStopList
               items={stops}
