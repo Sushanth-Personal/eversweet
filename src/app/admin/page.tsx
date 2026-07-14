@@ -9,6 +9,7 @@ import { InvoiceModal, InvoiceNavBtn } from "./InvoiceModal";
 import { QuickCaptureModal, QuickCaptureNavBtn } from "./QuickCaptureModal";
 import { G, getFlavourColor } from "./_lib/theme";
 import { CostPerMochiPanel } from "./_components/CostPerMochiPanel";
+import type { IngredientRate, ProductRecipeRow } from "./_lib/costing";
 import {
   ALL_SLOTS,
   CATEGORY_CONFIG,
@@ -116,6 +117,10 @@ export default function AdminPage() {
   const [tvmSettingsId, setTvmSettingsId] = useState<string>("");
   const [savingTvm, setSavingTvm] = useState(false);
 
+  // Cost-per-mochi state
+  const [ingredientRates, setIngredientRates] = useState<IngredientRate[]>([]);
+  const [productRecipes, setProductRecipes] = useState<ProductRecipeRow[]>([]);
+
   useEffect(() => {
     if (localStorage.getItem("es_admin") === "true") setAuthed(true);
   }, []);
@@ -134,6 +139,8 @@ export default function AdminPage() {
       { data: ex },
       { data: tvmO },
       { data: tvmS },
+      { data: rates },
+      { data: recipes },
     ] = await Promise.all([
       supabase
         .from("orders")
@@ -149,6 +156,8 @@ export default function AdminPage() {
         .eq("source", "trivandrum")
         .order("created_at", { ascending: false }),
       supabase.from("trivandrum_settings").select("*").single(),
+      supabase.from("ingredient_rates").select("*"),
+      supabase.from("product_recipes").select("*"),
     ]);
     if (o) {
       setOrders(o as ExtOrder[]);
@@ -179,6 +188,8 @@ export default function AdminPage() {
       });
       setTvmSettingsId(tvmS.id);
     }
+    if (rates) setIngredientRates(rates as IngredientRate[]);
+    if (recipes) setProductRecipes(recipes as ProductRecipeRow[]);
   }, []);
 
   useEffect(() => {
@@ -1226,7 +1237,14 @@ export default function AdminPage() {
               await handleExpenseImport(JSON.stringify(data));
             }}
           />
-          <CostPerMochiPanel expenses={expenses} orders={orders} />
+          <CostPerMochiPanel
+            expenses={expenses}
+            orders={orders}
+            products={products}
+            recipe={productRecipes}
+            rates={ingredientRates}
+            reload={load}
+          />
           <div
             style={{
               display: "grid",
