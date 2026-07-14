@@ -8,6 +8,7 @@ import { TrivandrumAdminTab } from "./trivandrum-admin-section";
 import { InvoiceModal, InvoiceNavBtn } from "./InvoiceModal";
 import { QuickCaptureModal, QuickCaptureNavBtn } from "./QuickCaptureModal";
 import { G, getFlavourColor } from "./_lib/theme";
+import { CostPerMochiPanel } from "./_components/CostPerMochiPanel";
 import {
   ALL_SLOTS,
   CATEGORY_CONFIG,
@@ -85,6 +86,7 @@ export default function AdminPage() {
     category: "ingredient",
     date: new Date().toISOString().split("T")[0],
     note: "",
+    item_key: "",
   });
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ text: string; type: "success" | "error" }>({
@@ -186,6 +188,13 @@ export default function AdminPage() {
   function flash(text: string, type: "success" | "error" = "success") {
     setMsg({ text, type });
     setTimeout(() => setMsg({ text: "", type: "success" }), 3500);
+  }
+  function slugify(s: string) {
+    return s
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "");
   }
 
   /* ---------- Handlers ---------- */
@@ -1217,6 +1226,7 @@ export default function AdminPage() {
               await handleExpenseImport(JSON.stringify(data));
             }}
           />
+          <CostPerMochiPanel expenses={expenses} orders={orders} />
           <div
             style={{
               display: "grid",
@@ -1534,6 +1544,7 @@ export default function AdminPage() {
                     category: ne.category,
                     date: ne.date,
                     note: ne.note,
+                    item_key: ne.item_key || slugify(ne.description),
                   });
                   setNe({
                     description: "",
@@ -1541,6 +1552,7 @@ export default function AdminPage() {
                     category: "ingredient",
                     date: new Date().toISOString().split("T")[0],
                     note: "",
+                    item_key: "",
                   });
                   await load();
                   setSaving(false);
@@ -1783,10 +1795,21 @@ export default function AdminPage() {
                         onChange={(v) => setEp((p) => ({ ...p, name: v }))}
                       />
                       <GlassInput
-                        placeholder="Description"
-                        value={ep.description}
+                        placeholder="Description *"
+                        value={ne.description}
                         onChange={(v) =>
-                          setEp((p) => ({ ...p, description: v }))
+                          setNe((e) => ({
+                            ...e,
+                            description: v,
+                            item_key: e.item_key || slugify(v),
+                          }))
+                        }
+                      />
+                      <GlassInput
+                        placeholder="Item key (for cycle tracking, e.g. rice-flour)"
+                        value={ne.item_key}
+                        onChange={(v) =>
+                          setNe((e) => ({ ...e, item_key: slugify(v) }))
                         }
                       />
                       <GlassInput

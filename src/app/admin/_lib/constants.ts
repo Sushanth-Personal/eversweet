@@ -19,6 +19,7 @@ export type Expense = {
   category: string;
   date: string;
   note?: string;
+  item_key: string | null;
   created_at: string;
 };
 
@@ -74,15 +75,16 @@ export const PAID_STATUSES = [
   "dispatched",
 ];
 
-export const CATEGORY_CONFIG: Record<string, { label: string; icon: string }> = {
-  ingredient: { label: "Ingredients", icon: "🧪" },
-  packaging: { label: "Packaging", icon: "📦" },
-  equipment: { label: "Equipment", icon: "🔧" },
-  delivery: { label: "Delivery", icon: "🚚" },
-  fixed: { label: "Fixed Cost", icon: "🏠" },
-  marketing: { label: "Marketing", icon: "📣" },
-  other: { label: "Other", icon: "📋" },
-};
+export const CATEGORY_CONFIG: Record<string, { label: string; icon: string }> =
+  {
+    ingredient: { label: "Ingredients", icon: "🧪" },
+    packaging: { label: "Packaging", icon: "📦" },
+    equipment: { label: "Equipment", icon: "🔧" },
+    delivery: { label: "Delivery", icon: "🚚" },
+    fixed: { label: "Fixed Cost", icon: "🏠" },
+    marketing: { label: "Marketing", icon: "📣" },
+    other: { label: "Other", icon: "📋" },
+  };
 
 export const BATCHES = [
   { label: "Morning", range: "6 AM – 12 PM", slots: ["9–11 AM"] },

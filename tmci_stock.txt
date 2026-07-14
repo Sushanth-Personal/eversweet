@@ -1,6 +1,6 @@
 ========================================
   TMCI CODEBASE DUMP
-  Generated: Thu Jul  9 01:28:49 IST 2026
+  Generated: Mon Jul 13 16:24:27 IST 2026
   Root: /Users/sushanthp/Eversweet/App/eversweet
 ========================================
 
@@ -1344,6 +1344,657 @@ export function InvoiceNavBtn({ onClick }: { onClick: () => void }) {
       }}
     >
       🧾 <span>Invoice</span>
+    </button>
+  );
+}
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FILE: ./src/app/admin/QuickCaptureModal.tsx
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"use client";
+import React, { useState } from "react";
+import { supabase } from "@/lib/supabase";
+import { ExpenseScanner } from "./_components/ExpenseScanner";
+
+const G = {
+  pageBg: "#0d1520",
+  glass: "rgba(255,255,255,0.035)",
+  glassStrong: "rgba(255,255,255,0.06)",
+  glassBorder: "rgba(255,255,255,0.08)",
+  glassBorderStrong: "rgba(255,255,255,0.14)",
+  text: "#f0f4ff",
+  sub: "#a8b4cc",
+  muted: "#5a6a80",
+  gold: "#f0b040",
+  goldGlass: "rgba(240,176,64,0.13)",
+  goldBorder: "rgba(240,176,64,0.35)",
+  green: "#34d97b",
+  greenGlass: "rgba(52,217,123,0.1)",
+  red: "#ff5c6c",
+  redGlass: "rgba(255,92,108,0.1)",
+  blue: "#60a5fa",
+  blueGlass: "rgba(96,165,250,0.1)",
+  purple: "#a78bfa",
+  purpleGlass: "rgba(167,139,250,0.1)",
+};
+
+type MainCat = "personal" | "business";
+type SubCat = "food" | "travel" | "rent" | "emi" | "clothes" | "marketing";
+
+const SUBCATS: { id: SubCat; label: string; icon: string }[] = [
+  { id: "food", label: "Food", icon: "🍽️" },
+  { id: "travel", label: "Travel", icon: "🚗" },
+  { id: "rent", label: "Rent", icon: "🏠" },
+  { id: "emi", label: "EMI", icon: "💳" },
+  { id: "clothes", label: "Clothes", icon: "👕" },
+  { id: "marketing", label: "Marketing", icon: "📣" },
+];
+
+type Step =
+  | "choose"
+  | "expense-mode"
+  | "photo"
+  | "keypad"
+  | "main-cat"
+  | "sub-cat"
+  | "saved";
+
+export function QuickCaptureModal({
+  onClose,
+  onOrderSelected,
+  onSaved,
+}: {
+  onClose: () => void;
+  onOrderSelected: () => void;
+  onSaved: () => void;
+}) {
+  const [step, setStep] = useState<Step>("choose");
+  const [amount, setAmount] = useState("");
+  const [mainCat, setMainCat] = useState<MainCat | null>(null);
+  const [subCat, setSubCat] = useState<SubCat | null>(null);
+  const [description, setDescription] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  function pressDigit(d: string) {
+    setAmount((a) => {
+      if (d === "." && a.includes(".")) return a;
+      if (a === "0" && d !== ".") return d;
+      if (a.length >= 9) return a;
+      return a + d;
+    });
+  }
+  function backspace() {
+    setAmount((a) => a.slice(0, -1));
+  }
+
+  async function save() {
+    if (!amount || Number(amount) <= 0 || !mainCat || !subCat) return;
+    setSaving(true);
+    const today = new Date().toISOString().split("T")[0];
+    const subLabel = SUBCATS.find((s) => s.id === subCat)?.label || subCat;
+    const { error } = await supabase.from("expenses").insert({
+      description: description.trim() || `${subLabel} (${mainCat})`,
+      amount: Number(amount),
+      category: `${mainCat}_${subCat}`,
+      date: today,
+      note: mainCat === "personal" ? "Personal" : "Business",
+    });
+    setSaving(false);
+    if (!error) {
+      setStep("saved");
+      onSaved();
+      setTimeout(onClose, 1100);
+    }
+  }
+
+  const overlay: React.CSSProperties = {
+    position: "fixed",
+    inset: 0,
+    zIndex: 800,
+    background: "rgba(4,6,10,0.72)",
+    backdropFilter: "blur(3px)",
+    display: "flex",
+    alignItems: "flex-end",
+    justifyContent: "center",
+  };
+
+  const sheet: React.CSSProperties = {
+    background: "linear-gradient(180deg, #121b2b 0%, #0c121e 100%)",
+    border: `1px solid ${G.glassBorderStrong}`,
+    boxShadow: "0 -12px 48px rgba(0,0,0,0.5)",
+    borderRadius: "24px 24px 0 0",
+    width: "100%",
+    maxWidth: 480,
+    maxHeight: "92vh",
+    overflowY: "auto" as const,
+  };
+
+  function Header({
+    eyebrow,
+    title,
+    onBack,
+  }: {
+    eyebrow?: string;
+    title: string;
+    onBack?: () => void;
+  }) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "18px 20px 16px",
+          borderBottom: `1px solid ${G.glassBorder}`,
+          position: "sticky" as const,
+          top: 0,
+          background: "rgba(12,18,30,0.92)",
+          backdropFilter: "blur(8px)",
+          zIndex: 2,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {onBack && (
+            <button
+              onClick={onBack}
+              style={{
+                background: G.glassStrong,
+                border: `1px solid ${G.glassBorder}`,
+                color: G.sub,
+                width: 34,
+                height: 34,
+                borderRadius: 10,
+                cursor: "pointer",
+                fontSize: "1rem",
+                flexShrink: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              ←
+            </button>
+          )}
+          <div>
+            {eyebrow && (
+              <p
+                style={{
+                  fontSize: "0.62rem",
+                  color: G.gold,
+                  letterSpacing: "0.14em",
+                  textTransform: "uppercase" as const,
+                  fontWeight: 700,
+                  marginBottom: 2,
+                }}
+              >
+                {eyebrow}
+              </p>
+            )}
+            <p style={{ fontSize: "1.08rem", fontWeight: 800, color: G.text }}>
+              {title}
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={onClose}
+          style={{
+            background: G.glassStrong,
+            border: `1px solid ${G.glassBorder}`,
+            color: G.muted,
+            width: 34,
+            height: 34,
+            borderRadius: 10,
+            cursor: "pointer",
+            fontSize: "1rem",
+            flexShrink: 0,
+          }}
+        >
+          ✕
+        </button>
+      </div>
+    );
+  }
+
+  function OptionCard({
+    icon,
+    iconBg,
+    iconBorder,
+    label,
+    sub,
+    accent,
+    onClick,
+  }: {
+    icon: string;
+    iconBg: string;
+    iconBorder: string;
+    label: string;
+    sub: string;
+    accent: string;
+    onClick: () => void;
+  }) {
+    return (
+      <button
+        onClick={onClick}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 16,
+          padding: "18px",
+          borderRadius: 16,
+          border: `1px solid ${G.glassBorder}`,
+          background: G.glassStrong,
+          cursor: "pointer",
+          marginBottom: 12,
+          fontFamily: "system-ui, sans-serif",
+          textAlign: "left" as const,
+          transition: "border-color 0.15s, background 0.15s",
+        }}
+      >
+        <div
+          style={{
+            width: 52,
+            height: 52,
+            borderRadius: 16,
+            background: iconBg,
+            border: `1px solid ${iconBorder}`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: "1.5rem",
+            flexShrink: 0,
+          }}
+        >
+          {icon}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ fontSize: "1rem", fontWeight: 700, color: G.text }}>
+            {label}
+          </p>
+          <p style={{ fontSize: "0.78rem", color: G.muted, marginTop: 3 }}>
+            {sub}
+          </p>
+        </div>
+        <span style={{ fontSize: "1.1rem", color: accent, flexShrink: 0 }}>
+          →
+        </span>
+      </button>
+    );
+  }
+
+  return (
+    <div
+      style={overlay}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div style={sheet}>
+        {step === "choose" && (
+          <>
+            <Header eyebrow="Quick Capture" title="What are you logging?" />
+            <div style={{ padding: "20px 18px 28px" }}>
+              <OptionCard
+                icon="📦"
+                iconBg="rgba(96,165,250,0.14)"
+                iconBorder="rgba(96,165,250,0.35)"
+                label="Record an Order"
+                sub="Add a new customer order"
+                accent={G.blue}
+                onClick={() => {
+                  onClose();
+                  onOrderSelected();
+                }}
+              />
+              <OptionCard
+                icon="💵"
+                iconBg="rgba(240,176,64,0.14)"
+                iconBorder="rgba(240,176,64,0.4)"
+                label="Record an Expense"
+                sub="Scan a bill or type an amount"
+                accent={G.gold}
+                onClick={() => setStep("expense-mode")}
+              />
+            </div>
+          </>
+        )}
+
+        {step === "expense-mode" && (
+          <>
+            <Header
+              eyebrow="Expense"
+              title="How do you want to add it?"
+              onBack={() => setStep("choose")}
+            />
+            <div style={{ padding: "20px 18px 28px" }}>
+              <OptionCard
+                icon="📸"
+                iconBg="rgba(167,139,250,0.14)"
+                iconBorder="rgba(167,139,250,0.4)"
+                label="Attach a Photo"
+                sub="Scan a bill — AI extracts the items"
+                accent={G.purple}
+                onClick={() => setStep("photo")}
+              />
+              <OptionCard
+                icon="🔢"
+                iconBg="rgba(52,217,123,0.14)"
+                iconBorder="rgba(52,217,123,0.4)"
+                label="Type Amount"
+                sub="Enter amount and pick a category"
+                accent={G.green}
+                onClick={() => setStep("keypad")}
+              />
+            </div>
+          </>
+        )}
+
+        {step === "photo" && (
+          <>
+            <Header
+              eyebrow="Expense"
+              title="Scan a Bill"
+              onBack={() => setStep("expense-mode")}
+            />
+            <div style={{ padding: "20px 18px 28px" }}>
+              <ExpenseScanner
+                onDataExtracted={async (items) => {
+                  const today = new Date().toISOString().split("T")[0];
+                  const rows = (items as any[])
+                    .filter((i) => i.description && Number(i.amount) > 0)
+                    .map((i) => ({
+                      description: String(i.description).trim(),
+                      amount: Number(i.amount),
+                      category: i.category || "other",
+                      date: today,
+                      note: "AI Scanned Bill",
+                    }));
+                  if (rows.length > 0) {
+                    await supabase.from("expenses").insert(rows);
+                  }
+                  setStep("saved");
+                  onSaved();
+                  setTimeout(onClose, 1100);
+                }}
+              />
+            </div>
+          </>
+        )}
+
+        {step === "keypad" && (
+          <>
+            <Header
+              eyebrow="Expense"
+              title="Enter Amount"
+              onBack={() => setStep("expense-mode")}
+            />
+            <div style={{ padding: "24px 20px 28px" }}>
+              <div
+                style={{ textAlign: "center" as const, padding: "8px 0 28px" }}
+              >
+                <p
+                  style={{
+                    fontSize: "0.68rem",
+                    color: G.muted,
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase" as const,
+                    marginBottom: 8,
+                    fontWeight: 600,
+                  }}
+                >
+                  Amount
+                </p>
+                <p
+                  style={{
+                    fontSize: "3rem",
+                    fontWeight: 800,
+                    color: amount ? G.gold : G.muted,
+                    fontFamily: "system-ui, sans-serif",
+                    lineHeight: 1,
+                  }}
+                >
+                  ₹{amount || "0"}
+                </p>
+              </div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr 1fr",
+                  gap: 10,
+                  marginBottom: 20,
+                }}
+              >
+                {[
+                  "1",
+                  "2",
+                  "3",
+                  "4",
+                  "5",
+                  "6",
+                  "7",
+                  "8",
+                  "9",
+                  ".",
+                  "0",
+                  "⌫",
+                ].map((k) => (
+                  <button
+                    key={k}
+                    onClick={() => (k === "⌫" ? backspace() : pressDigit(k))}
+                    style={{
+                      padding: "20px 0",
+                      borderRadius: 14,
+                      border: `1px solid ${G.glassBorder}`,
+                      background: k === "⌫" ? G.redGlass : G.glassStrong,
+                      color: k === "⌫" ? G.red : G.text,
+                      fontSize: "1.4rem",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      fontFamily: "system-ui, sans-serif",
+                    }}
+                  >
+                    {k}
+                  </button>
+                ))}
+              </div>
+              <button
+                disabled={!amount || Number(amount) <= 0}
+                onClick={() => setStep("main-cat")}
+                style={{
+                  width: "100%",
+                  padding: "16px",
+                  borderRadius: 14,
+                  border: "none",
+                  background:
+                    amount && Number(amount) > 0
+                      ? "linear-gradient(135deg, rgba(240,176,64,0.9), rgba(180,130,40,0.8))"
+                      : G.glass,
+                  color: amount && Number(amount) > 0 ? "#160c08" : G.muted,
+                  fontSize: "0.98rem",
+                  fontWeight: 700,
+                  cursor:
+                    amount && Number(amount) > 0 ? "pointer" : "not-allowed",
+                  fontFamily: "system-ui, sans-serif",
+                }}
+              >
+                Next: Choose Category →
+              </button>
+            </div>
+          </>
+        )}
+
+        {step === "main-cat" && (
+          <>
+            <Header
+              eyebrow={`₹${amount}`}
+              title="Personal or Business?"
+              onBack={() => setStep("keypad")}
+            />
+            <div style={{ padding: "20px 18px 28px" }}>
+              <OptionCard
+                icon="🙋"
+                iconBg="rgba(96,165,250,0.14)"
+                iconBorder="rgba(96,165,250,0.35)"
+                label="Personal"
+                sub="Your own personal spending"
+                accent={G.blue}
+                onClick={() => {
+                  setMainCat("personal");
+                  setStep("sub-cat");
+                }}
+              />
+              <OptionCard
+                icon="🏢"
+                iconBg="rgba(240,176,64,0.14)"
+                iconBorder="rgba(240,176,64,0.4)"
+                label="Business"
+                sub="Eversweet business expense"
+                accent={G.gold}
+                onClick={() => {
+                  setMainCat("business");
+                  setStep("sub-cat");
+                }}
+              />
+            </div>
+          </>
+        )}
+
+        {step === "sub-cat" && (
+          <>
+            <Header
+              eyebrow={`₹${amount} · ${mainCat === "personal" ? "Personal" : "Business"}`}
+              title="Pick a Category"
+              onBack={() => setStep("main-cat")}
+            />
+            <div style={{ padding: "20px 18px 28px" }}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 10,
+                  marginBottom: 18,
+                }}
+              >
+                {SUBCATS.map((s) => {
+                  const active = subCat === s.id;
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() => setSubCat(s.id)}
+                      style={{
+                        padding: "18px 10px",
+                        borderRadius: 14,
+                        border: `1px solid ${active ? G.goldBorder : G.glassBorder}`,
+                        background: active ? G.goldGlass : G.glassStrong,
+                        color: active ? G.gold : G.sub,
+                        cursor: "pointer",
+                        fontFamily: "system-ui, sans-serif",
+                        textAlign: "center" as const,
+                        transition: "all 0.15s",
+                      }}
+                    >
+                      <div style={{ fontSize: "1.6rem", marginBottom: 6 }}>
+                        {s.icon}
+                      </div>
+                      <div style={{ fontSize: "0.85rem", fontWeight: 700 }}>
+                        {s.label}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              <input
+                placeholder="Note (optional)"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                style={{
+                  width: "100%",
+                  background: G.glass,
+                  border: `1px solid ${G.glassBorder}`,
+                  color: G.text,
+                  padding: "13px 14px",
+                  borderRadius: 12,
+                  fontSize: "0.9rem",
+                  marginBottom: 16,
+                  outline: "none",
+                  fontFamily: "system-ui, sans-serif",
+                  boxSizing: "border-box" as const,
+                }}
+              />
+              <button
+                disabled={!subCat || saving}
+                onClick={save}
+                style={{
+                  width: "100%",
+                  padding: "16px",
+                  borderRadius: 14,
+                  border: "none",
+                  background: subCat
+                    ? "linear-gradient(135deg, rgba(52,217,123,0.9), rgba(30,160,90,0.85))"
+                    : G.glass,
+                  color: subCat ? "#062713" : G.muted,
+                  fontSize: "0.98rem",
+                  fontWeight: 700,
+                  cursor: subCat ? "pointer" : "not-allowed",
+                  fontFamily: "system-ui, sans-serif",
+                }}
+              >
+                {saving ? "Saving…" : `✓ Save Expense · ₹${amount}`}
+              </button>
+            </div>
+          </>
+        )}
+
+        {step === "saved" && (
+          <div style={{ padding: "56px 24px", textAlign: "center" as const }}>
+            <div
+              style={{
+                width: 64,
+                height: 64,
+                borderRadius: "50%",
+                background: G.greenGlass,
+                border: `1.5px solid rgba(52,217,123,0.4)`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "1.8rem",
+                margin: "0 auto 16px",
+                color: G.green,
+              }}
+            >
+              ✓
+            </div>
+            <p style={{ fontSize: "1.05rem", fontWeight: 700, color: G.green }}>
+              Saved!
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function QuickCaptureNavBtn({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        background:
+          "linear-gradient(135deg, rgba(240,176,64,0.22), rgba(240,176,64,0.1))",
+        border: `1px solid ${G.goldBorder}`,
+        color: G.gold,
+        width: 34,
+        height: 34,
+        borderRadius: 10,
+        cursor: "pointer",
+        fontSize: "1.05rem",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      ⚡
     </button>
   );
 }
@@ -4203,6 +4854,375 @@ export function CookTab({
         )}
       </div>
     </div>
+  );
+}
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FILE: ./src/app/admin/_components/CostPerMochiPanel.tsx
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"use client";
+import React, { useEffect, useMemo, useState } from "react";
+import { G } from "../_lib/theme";
+
+type Expense = {
+  id: string;
+  item_key: string | null;
+  description: string;
+  amount: number;
+  date: string;
+  category: string;
+};
+
+type OrderLite = {
+  status: string;
+  delivery_date?: string;
+  order_date?: string;
+  created_at?: string;
+  flavours?: Record<string, number>;
+};
+
+const PAID = ["confirmed", "cooking", "cooked", "porter_booked", "dispatched"];
+// Only these categories feed the per-mochi calc. Everything else
+// (personal_*, marketing, fixed, equipment, delivery) is excluded —
+// they aren't consumable inputs into a mochi.
+const MOCHI_COST_CATEGORIES = ["ingredient", "packaging"];
+
+function mochisInRange(orders: OrderLite[], start: string, end: string | null) {
+  return orders
+    .filter((o) => PAID.includes(o.status))
+    .filter((o) => {
+      const d =
+        o.delivery_date || o.order_date || o.created_at?.split("T")[0] || "";
+      if (!d) return false;
+      if (d < start) return false;
+      if (end && d >= end) return false;
+      return true;
+    })
+    .reduce((sum, o) => {
+      if (!o.flavours) return sum;
+      return sum + Object.values(o.flavours).reduce((a, b) => a + b, 0);
+    }, 0);
+}
+
+export function CostPerMochiPanel({
+  expenses,
+  orders,
+}: {
+  expenses: Expense[];
+  orders: OrderLite[];
+}) {
+  const [canonMap, setCanonMap] = useState<Record<string, string>>({});
+  const [normalizing, setNormalizing] = useState(false);
+
+  // Personal spend — completely separate bucket, never touches mochi cost
+  const personalExpenses = useMemo(
+    () => expenses.filter((e) => e.category.startsWith("personal_")),
+    [expenses],
+  );
+  const personalTotal = personalExpenses.reduce((s, e) => s + e.amount, 0);
+  const personalByCat = useMemo(() => {
+    const m: Record<string, number> = {};
+    personalExpenses.forEach((e) => {
+      const sub = e.category.replace("personal_", "");
+      m[sub] = (m[sub] || 0) + e.amount;
+    });
+    return m;
+  }, [personalExpenses]);
+
+  // Only ingredient + packaging feed mochi cost
+  const mochiExpenses = useMemo(
+    () => expenses.filter((e) => MOCHI_COST_CATEGORIES.includes(e.category)),
+    [expenses],
+  );
+
+  // Ask AI to cluster synonymous item descriptions into canonical names
+  useEffect(() => {
+    const descriptions = mochiExpenses.map((e) => e.item_key || e.description);
+    const unique = Array.from(
+      new Set(descriptions.map((d) => d.trim()).filter(Boolean)),
+    );
+    if (unique.length === 0) return;
+    // skip re-fetch if we already have canon names for all of them
+    const missing = unique.filter((u) => !canonMap[u]);
+    if (missing.length === 0) return;
+
+    setNormalizing(true);
+    fetch("/api/normalize-items", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items: unique }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.groups) setCanonMap((prev) => ({ ...prev, ...data.groups }));
+      })
+      .catch((e) => console.warn("item normalization failed", e))
+      .finally(() => setNormalizing(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mochiExpenses]);
+
+  const { closed, pending, totalPerMochi } = useMemo(() => {
+    const byItem: Record<string, Expense[]> = {};
+    mochiExpenses.forEach((e) => {
+      const rawKey = (e.item_key || e.description).trim();
+      const canon = canonMap[rawKey] || rawKey; // fall back to raw until AI resolves
+      (byItem[canon] ||= []).push(e);
+    });
+
+    const closedResults: {
+      key: string;
+      cycles: {
+        start: string;
+        end: string;
+        amount: number;
+        mochis: number;
+        perMochi: number | null;
+      }[];
+      latestPerMochi: number | null;
+    }[] = [];
+    const pendingResults: { key: string; sinceDate: string; amount: number }[] =
+      [];
+
+    Object.entries(byItem).forEach(([key, list]) => {
+      const sorted = [...list].sort((a, b) => a.date.localeCompare(b.date));
+      const cycles: {
+        start: string;
+        end: string;
+        amount: number;
+        mochis: number;
+        perMochi: number | null;
+      }[] = [];
+
+      for (let i = 0; i < sorted.length - 1; i++) {
+        const start = sorted[i].date;
+        const end = sorted[i + 1].date;
+        const mochis = mochisInRange(orders, start, end);
+        cycles.push({
+          start,
+          end,
+          amount: sorted[i].amount,
+          mochis,
+          perMochi: mochis > 0 ? sorted[i].amount / mochis : null,
+        });
+      }
+
+      const last = sorted[sorted.length - 1];
+      pendingResults.push({ key, sinceDate: last.date, amount: last.amount });
+
+      if (cycles.length > 0) {
+        const latest = cycles[cycles.length - 1];
+        closedResults.push({ key, cycles, latestPerMochi: latest.perMochi });
+      }
+    });
+
+    const total = closedResults.reduce(
+      (s, r) => s + (r.latestPerMochi || 0),
+      0,
+    );
+    return {
+      closed: closedResults,
+      pending: pendingResults,
+      totalPerMochi: total,
+    };
+  }, [mochiExpenses, orders, canonMap]);
+
+  return (
+    <>
+      {/* Personal spending — separate, excluded from mochi cost */}
+      {personalExpenses.length > 0 && (
+        <div
+          style={{
+            background: "rgba(167,139,250,0.06)",
+            border: "1px solid rgba(167,139,250,0.2)",
+            borderRadius: 14,
+            padding: 16,
+            marginBottom: 14,
+          }}
+        >
+          <p
+            style={{
+              fontSize: "0.65rem",
+              color: G.purple,
+              letterSpacing: "0.12em",
+              textTransform: "uppercase" as const,
+              marginBottom: 4,
+              fontWeight: 700,
+            }}
+          >
+            Personal Spending (excluded from mochi cost)
+          </p>
+          <p
+            style={{
+              fontSize: "1.4rem",
+              fontWeight: 800,
+              color: G.purple,
+              marginBottom: 10,
+            }}
+          >
+            ₹{personalTotal.toLocaleString("en-IN")}
+            <span
+              style={{ fontSize: "0.68rem", color: G.muted, fontWeight: 400 }}
+            >
+              {" "}
+              net · {personalExpenses.length} entries
+            </span>
+          </p>
+          {Object.entries(personalByCat).map(([sub, amt]) => (
+            <div
+              key={sub}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                padding: "4px 0",
+                fontSize: "0.78rem",
+              }}
+            >
+              <span
+                style={{ color: G.sub, textTransform: "capitalize" as const }}
+              >
+                {sub}
+              </span>
+              <span style={{ color: G.text, fontWeight: 600 }}>
+                ₹{amt.toLocaleString("en-IN")}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Cost per mochi — ingredient + packaging only, AI-clustered */}
+      <div
+        style={{
+          background: G.glass,
+          border: `1px solid ${G.glassBorder}`,
+          borderRadius: 14,
+          padding: 16,
+          marginBottom: 14,
+        }}
+      >
+        <p
+          style={{
+            fontSize: "0.65rem",
+            color: G.muted,
+            letterSpacing: "0.12em",
+            textTransform: "uppercase" as const,
+            marginBottom: 4,
+            fontWeight: 700,
+          }}
+        >
+          Cost Per Mochi — By Item Cycle
+          {normalizing && (
+            <span style={{ color: G.gold, marginLeft: 8 }}>
+              · grouping items…
+            </span>
+          )}
+        </p>
+        <p
+          style={{
+            fontSize: "1.6rem",
+            fontWeight: 800,
+            color: G.gold,
+            marginBottom: 14,
+          }}
+        >
+          ₹{totalPerMochi.toFixed(2)}
+          <span style={{ fontSize: "0.7rem", color: G.muted, fontWeight: 400 }}>
+            {" "}
+            / mochi (from {closed.length} completed-cycle item
+            {closed.length !== 1 ? "s" : ""})
+          </span>
+        </p>
+
+        {closed.length > 0 && (
+          <>
+            <p
+              style={{
+                fontSize: "0.62rem",
+                color: G.green,
+                fontWeight: 700,
+                marginBottom: 8,
+                textTransform: "uppercase" as const,
+              }}
+            >
+              ✓ Calculated
+            </p>
+            {closed.map((r) => (
+              <div
+                key={r.key}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "8px 0",
+                  borderBottom: `1px solid ${G.glassBorder}`,
+                }}
+              >
+                <div>
+                  <p
+                    style={{
+                      fontSize: "0.85rem",
+                      color: G.text,
+                      fontWeight: 600,
+                    }}
+                  >
+                    {r.key}
+                  </p>
+                  <p style={{ fontSize: "0.68rem", color: G.muted }}>
+                    latest cycle {r.cycles[r.cycles.length - 1].start} →{" "}
+                    {r.cycles[r.cycles.length - 1].end} ·{" "}
+                    {r.cycles[r.cycles.length - 1].mochis} mochis
+                  </p>
+                </div>
+                <p
+                  style={{
+                    fontSize: "0.9rem",
+                    fontWeight: 700,
+                    color: G.green,
+                  }}
+                >
+                  {r.latestPerMochi != null
+                    ? `₹${r.latestPerMochi.toFixed(2)}`
+                    : "—"}
+                </p>
+              </div>
+            ))}
+          </>
+        )}
+
+        {pending.length > 0 && (
+          <>
+            <p
+              style={{
+                fontSize: "0.62rem",
+                color: G.gold,
+                fontWeight: 700,
+                marginTop: 16,
+                marginBottom: 8,
+                textTransform: "uppercase" as const,
+              }}
+            >
+              ⏳ Pending — cycle not yet complete
+            </p>
+            {pending.map((p) => (
+              <div
+                key={p.key}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  padding: "6px 0",
+                }}
+              >
+                <p style={{ fontSize: "0.8rem", color: G.sub }}>{p.key}</p>
+                <p style={{ fontSize: "0.72rem", color: G.muted }}>
+                  bought {p.sinceDate} · ₹{p.amount}
+                </p>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -12384,6 +13404,7 @@ export type Expense = {
   category: string;
   date: string;
   note?: string;
+  item_key?: string | null;
   created_at: string;
 };
 
@@ -12439,15 +13460,16 @@ export const PAID_STATUSES = [
   "dispatched",
 ];
 
-export const CATEGORY_CONFIG: Record<string, { label: string; icon: string }> = {
-  ingredient: { label: "Ingredients", icon: "🧪" },
-  packaging: { label: "Packaging", icon: "📦" },
-  equipment: { label: "Equipment", icon: "🔧" },
-  delivery: { label: "Delivery", icon: "🚚" },
-  fixed: { label: "Fixed Cost", icon: "🏠" },
-  marketing: { label: "Marketing", icon: "📣" },
-  other: { label: "Other", icon: "📋" },
-};
+export const CATEGORY_CONFIG: Record<string, { label: string; icon: string }> =
+  {
+    ingredient: { label: "Ingredients", icon: "🧪" },
+    packaging: { label: "Packaging", icon: "📦" },
+    equipment: { label: "Equipment", icon: "🔧" },
+    delivery: { label: "Delivery", icon: "🚚" },
+    fixed: { label: "Fixed Cost", icon: "🏠" },
+    marketing: { label: "Marketing", icon: "📣" },
+    other: { label: "Other", icon: "📋" },
+  };
 
 export const BATCHES = [
   { label: "Morning", range: "6 AM – 12 PM", slots: ["9–11 AM"] },
@@ -13753,8 +14775,9 @@ import { supabase } from "@/lib/supabase";
 import type { Product, BoxSize } from "@/lib/types";
 import { TrivandrumAdminTab } from "./trivandrum-admin-section";
 import { InvoiceModal, InvoiceNavBtn } from "./InvoiceModal";
-
+import { QuickCaptureModal, QuickCaptureNavBtn } from "./QuickCaptureModal";
 import { G, getFlavourColor } from "./_lib/theme";
+import { CostPerMochiPanel } from "./_components/CostPerMochiPanel";
 import {
   ALL_SLOTS,
   CATEGORY_CONFIG,
@@ -13803,7 +14826,7 @@ export default function AdminPage() {
   const [editInsta, setEditInsta] = useState("");
   const [editingOrder, setEditingOrder] = useState<ExtOrder | null>(null);
   const [showInvoice, setShowInvoice] = useState(false);
-
+  const [showQuickCapture, setShowQuickCapture] = useState(false);
   const [np, setNp] = useState({
     name: "",
     description: "",
@@ -13832,6 +14855,7 @@ export default function AdminPage() {
     category: "ingredient",
     date: new Date().toISOString().split("T")[0],
     note: "",
+    item_key: "",
   });
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ text: string; type: "success" | "error" }>({
@@ -13933,6 +14957,13 @@ export default function AdminPage() {
   function flash(text: string, type: "success" | "error" = "success") {
     setMsg({ text, type });
     setTimeout(() => setMsg({ text: "", type: "success" }), 3500);
+  }
+  function slugify(s: string) {
+    return s
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "");
   }
 
   /* ---------- Handlers ---------- */
@@ -14481,8 +15512,8 @@ export default function AdminPage() {
             )}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <SmartOrderNavBtn onClick={() => setShowSmartOrder(true)} />
             <InvoiceNavBtn onClick={() => setShowInvoice(true)} />
+            <QuickCaptureNavBtn onClick={() => setShowQuickCapture(true)} />
             <button
               onClick={load}
               style={{
@@ -14964,6 +15995,7 @@ export default function AdminPage() {
               await handleExpenseImport(JSON.stringify(data));
             }}
           />
+          <CostPerMochiPanel expenses={expenses} orders={orders} />
           <div
             style={{
               display: "grid",
@@ -15281,6 +16313,7 @@ export default function AdminPage() {
                     category: ne.category,
                     date: ne.date,
                     note: ne.note,
+                    item_key: ne.item_key || slugify(ne.description),
                   });
                   setNe({
                     description: "",
@@ -15288,6 +16321,7 @@ export default function AdminPage() {
                     category: "ingredient",
                     date: new Date().toISOString().split("T")[0],
                     note: "",
+                    item_key: "",
                   });
                   await load();
                   setSaving(false);
@@ -15530,10 +16564,21 @@ export default function AdminPage() {
                         onChange={(v) => setEp((p) => ({ ...p, name: v }))}
                       />
                       <GlassInput
-                        placeholder="Description"
-                        value={ep.description}
+                        placeholder="Description *"
+                        value={ne.description}
                         onChange={(v) =>
-                          setEp((p) => ({ ...p, description: v }))
+                          setNe((e) => ({
+                            ...e,
+                            description: v,
+                            item_key: e.item_key || slugify(v),
+                          }))
+                        }
+                      />
+                      <GlassInput
+                        placeholder="Item key (for cycle tracking, e.g. rice-flour)"
+                        value={ne.item_key}
+                        onChange={(v) =>
+                          setNe((e) => ({ ...e, item_key: slugify(v) }))
                         }
                       />
                       <GlassInput
@@ -16019,7 +17064,16 @@ export default function AdminPage() {
         />
       )}
       {showInvoice && <InvoiceModal onClose={() => setShowInvoice(false)} />}
-
+      {showQuickCapture && (
+        <QuickCaptureModal
+          onClose={() => setShowQuickCapture(false)}
+          onOrderSelected={() => setShowSmartOrder(true)}
+          onSaved={() => {
+            load();
+            flash("Expense saved ✓");
+          }}
+        />
+      )}
       {/* Bottom nav */}
       <div
         style={{
@@ -17389,6 +18443,126 @@ export async function POST(req: NextRequest) {
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FILE: ./src/app/api/extract-area/route.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Location: src/app/api/extract-area/route.ts
+import { NextResponse } from "next/server";
+import Groq from "groq-sdk";
+
+const groq = process.env.GROQ_API_KEY
+  ? new Groq({ apiKey: process.env.GROQ_API_KEY })
+  : null;
+
+// Fast, offline, zero-cost first pass — a curated list of common
+// Trivandrum localities. Longest names are checked first so
+// "East Fort" wins over a bare "Fort" match, etc.
+const KNOWN_AREAS = [
+  "East Fort",
+  "Peroorkada",
+  "Pattom",
+  "Kesavadasapuram",
+  "Sasthamangalam",
+  "Kowdiar",
+  "Vazhuthacaud",
+  "Thampanoor",
+  "Vellayambalam",
+  "Kumarapuram",
+  "Medical College",
+  "Chackai",
+  "Karamana",
+  "Nalanchira",
+  "Sreekaryam",
+  "Kazhakootam",
+  "Technopark",
+  "Attukal",
+  "Manacaud",
+  "Poojappura",
+  "Kaimanam",
+  "Vattiyoorkavu",
+  "Muttada",
+  "Pongumoodu",
+  "Ulloor",
+  "Palayam",
+  "Statue",
+  "Chalai",
+  "Pettah",
+  "Killipalam",
+  "Thiruvallam",
+  "Kovalam",
+  "Vizhinjam",
+  "Balaramapuram",
+  "Nedumangad",
+  "Kattakada",
+  "Neyyattinkara",
+  "PMG",
+];
+
+function guessAreaHeuristic(address: string): string {
+  if (!address) return "";
+  const lower = address.toLowerCase();
+  for (const area of KNOWN_AREAS) {
+    if (lower.includes(area.toLowerCase())) return area;
+  }
+  return "";
+}
+
+export async function POST(req: Request) {
+  try {
+    const { addresses } = (await req.json()) as { addresses: string[] };
+    if (!Array.isArray(addresses)) {
+      return NextResponse.json(
+        { error: "Expected addresses[]" },
+        { status: 400 },
+      );
+    }
+
+    // Only ask the AI about addresses the heuristic couldn't confidently tag —
+    // saves calls and keeps this fast.
+    const heuristics = addresses.map(guessAreaHeuristic);
+    const needsAi = addresses
+      .map((a, i) => ({ a, i }))
+      .filter(({ a, i }) => a && !heuristics[i]);
+
+    const areas = [...heuristics];
+
+    if (needsAi.length > 0 && groq) {
+      try {
+        const list = needsAi.map(({ a, i }) => `${i}: ${a}`).join("\n");
+        const completion = await groq.chat.completions.create({
+          model: "llama-3.1-8b-instant",
+          messages: [
+            {
+              role: "user",
+              content: `These are delivery addresses in and around Thiruvananthapuram (Trivandrum), Kerala. For each numbered address, return the single most recognisable locality/area name (e.g. Peroorkada, Pattom, Sreekaryam, Kowdiar). Keep it short — just the area name, no "near" or extra words. If you can't tell, use "".
+
+${list}
+
+Return ONLY a JSON object like {"0":"Peroorkada","1":""} — keys are the numbers above.`,
+            },
+          ],
+          temperature: 0.1,
+          response_format: { type: "json_object" },
+        });
+        const raw = completion.choices[0]?.message?.content?.trim() || "{}";
+        const parsed = JSON.parse(raw);
+        for (const { i } of needsAi) {
+          const val = parsed[String(i)];
+          if (val && typeof val === "string") areas[i] = val.trim();
+        }
+      } catch (e) {
+        console.warn("extract-area: Groq call failed, using heuristic only", e);
+      }
+    }
+
+    return NextResponse.json({ areas });
+  } catch (err) {
+    console.error("extract-area error:", err);
+    return NextResponse.json({ error: "Failed" }, { status: 500 });
+  }
+}
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 FILE: ./src/app/api/extract-bill/route.ts
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 import { NextResponse } from "next/server";
@@ -17903,6 +19077,75 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error("Import orders error:", err);
     return NextResponse.json({ error: String(err) }, { status: 500 });
+  }
+}
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FILE: ./src/app/api/normalize-items/route.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// src/app/api/normalize-items/route.ts
+import { NextResponse } from "next/server";
+import Groq from "groq-sdk";
+
+const groq = process.env.GROQ_API_KEY
+  ? new Groq({ apiKey: process.env.GROQ_API_KEY })
+  : null;
+
+// Groups item descriptions that refer to the same underlying product,
+// even if wording/brand/spelling differs across bills.
+export async function POST(req: Request) {
+  try {
+    const { items } = (await req.json()) as { items: string[] };
+    if (!Array.isArray(items) || items.length === 0) {
+      return NextResponse.json({ groups: {} });
+    }
+
+    const unique = Array.from(
+      new Set(items.map((s) => s.trim()).filter(Boolean)),
+    );
+    if (unique.length <= 1 || !groq) {
+      // Nothing to cluster, or no AI available — identity mapping
+      const groups: Record<string, string> = {};
+      unique.forEach((u) => (groups[u] = u));
+      return NextResponse.json({ groups });
+    }
+
+    const list = unique.map((u, i) => `${i}: ${u}`).join("\n");
+    const completion = await groq.chat.completions.create({
+      model: "llama-3.1-8b-instant",
+      messages: [
+        {
+          role: "user",
+          content: `These are ingredient/packaging line items from purchase bills for a mochi (Japanese dessert) business. Some entries refer to the SAME underlying product but are worded differently (different brand names, spelling, units, abbreviations, etc — e.g. "Mango Mallika", "Mango pulp Mallika 1kg", "Mallika Mango" are the same item).
+
+Group these into canonical product groups. For each numbered item, assign a short canonical name (use the most common/clean version, no units or quantities).
+
+${list}
+
+Return ONLY a JSON object mapping each number to its canonical name, e.g. {"0":"Mango Mallika Pulp","1":"Paper Carry Bag (Mini)"}. Every number must appear.`,
+        },
+      ],
+      temperature: 0.1,
+      response_format: { type: "json_object" },
+    });
+
+    const raw = completion.choices[0]?.message?.content?.trim() || "{}";
+    const parsed = JSON.parse(raw);
+    const groups: Record<string, string> = {};
+    unique.forEach((u, i) => {
+      const canon = parsed[String(i)];
+      groups[u] = typeof canon === "string" && canon.trim() ? canon.trim() : u;
+    });
+
+    return NextResponse.json({ groups });
+  } catch (err) {
+    console.error("normalize-items error:", err);
+    // fail-safe: identity mapping so the panel still works
+    const { items } = await req.json().catch(() => ({ items: [] as string[] }));
+    const groups: Record<string, string> = {};
+    (items || []).forEach((u: string) => (groups[u] = u));
+    return NextResponse.json({ groups });
   }
 }
 
@@ -25430,6 +26673,188 @@ export default function Home() {
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FILE: ./src/app/tvm-delivery/DraggableStopList.tsx
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"use client";
+import React, { useEffect, useRef, useState } from "react";
+
+/**
+ * Generic press-and-drag reorderable list.
+ * Works with touch (phone) and mouse (desktop testing).
+ *
+ * Usage:
+ *   <DraggableStopList
+ *     items={stops}
+ *     getId={(s) => s.id}
+ *     onReorder={(newOrder) => persistOrder(newOrder)}
+ *     renderItem={(stop, index, dragHandleProps, isDragging) => (
+ *       <StopCard stop={stop} index={index} dragHandleProps={dragHandleProps} isDragging={isDragging} />
+ *     )}
+ *   />
+ */
+export function DraggableStopList<T>({
+  items,
+  getId,
+  onReorder,
+  renderItem,
+}: {
+  items: T[];
+  getId: (item: T) => string;
+  onReorder: (items: T[]) => void;
+  renderItem: (
+    item: T,
+    index: number,
+    dragHandleProps: {
+      onMouseDown: (e: React.MouseEvent) => void;
+      onTouchStart: (e: React.TouchEvent) => void;
+    },
+    isDragging: boolean,
+  ) => React.ReactNode;
+}) {
+  const [list, setList] = useState<T[]>(items);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragY, setDragY] = useState(0);
+  const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const startY = useRef(0);
+  const listRef = useRef<T[]>(items);
+
+  // Keep local list in sync with incoming props, but not mid-drag
+  useEffect(() => {
+    if (dragIndex === null) {
+      setList(items);
+      listRef.current = items;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items]);
+
+  useEffect(() => {
+    listRef.current = list;
+  }, [list]);
+
+  function beginDrag(index: number, clientY: number) {
+    setDragIndex(index);
+    startY.current = clientY;
+    setDragY(0);
+    document.body.style.userSelect = "none";
+    document.body.style.touchAction = "none";
+  }
+
+  function onMouseDown(index: number) {
+    return (e: React.MouseEvent) => {
+      e.preventDefault();
+      beginDrag(index, e.clientY);
+    };
+  }
+  function onTouchStart(index: number) {
+    return (e: React.TouchEvent) => {
+      beginDrag(index, e.touches[0].clientY);
+    };
+  }
+
+  useEffect(() => {
+    if (dragIndex === null) return;
+
+    function handleMove(clientY: number) {
+      const delta = clientY - startY.current;
+      setDragY(delta);
+
+      const draggedEl = itemRefs.current[dragIndex as number];
+      if (!draggedEl) return;
+      const draggedRect = draggedEl.getBoundingClientRect();
+      const draggedCenter = draggedRect.top + draggedRect.height / 2 + delta;
+
+      let newIndex = dragIndex as number;
+      for (let i = 0; i < listRef.current.length; i++) {
+        if (i === dragIndex) continue;
+        const el = itemRefs.current[i];
+        if (!el) continue;
+        const r = el.getBoundingClientRect();
+        const center = r.top + r.height / 2;
+        if (i < (dragIndex as number) && draggedCenter < center) {
+          newIndex = Math.min(newIndex, i);
+        }
+        if (i > (dragIndex as number) && draggedCenter > center) {
+          newIndex = Math.max(newIndex, i);
+        }
+      }
+
+      if (newIndex !== dragIndex) {
+        setList((prev) => {
+          const copy = [...prev];
+          const [moved] = copy.splice(dragIndex as number, 1);
+          copy.splice(newIndex, 0, moved);
+          return copy;
+        });
+        setDragIndex(newIndex);
+        startY.current = clientY;
+        setDragY(0);
+      }
+    }
+
+    function onMouseMove(e: MouseEvent) {
+      handleMove(e.clientY);
+    }
+    function onTouchMove(e: TouchEvent) {
+      e.preventDefault();
+      handleMove(e.touches[0].clientY);
+    }
+    function endDrag() {
+      setDragIndex(null);
+      setDragY(0);
+      document.body.style.userSelect = "";
+      document.body.style.touchAction = "";
+      onReorder(listRef.current);
+    }
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", endDrag);
+    window.addEventListener("touchmove", onTouchMove, { passive: false });
+    window.addEventListener("touchend", endDrag);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", endDrag);
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("touchend", endDrag);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragIndex]);
+
+  return (
+    <div>
+      {list.map((item, i) => {
+        const isDragging = dragIndex === i;
+        return (
+          <div
+            key={getId(item)}
+            ref={(el) => {
+              itemRefs.current[i] = el;
+            }}
+            style={{
+              transform: isDragging
+                ? `translateY(${dragY}px) scale(1.02)`
+                : "none",
+              transition: isDragging ? "none" : "transform 0.2s ease",
+              position: "relative",
+              zIndex: isDragging ? 10 : 1,
+              boxShadow: isDragging ? "0 10px 28px rgba(0,0,0,0.35)" : "none",
+              borderRadius: 14,
+            }}
+          >
+            {renderItem(
+              item,
+              i,
+              { onMouseDown: onMouseDown(i), onTouchStart: onTouchStart(i) },
+              isDragging,
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 FILE: ./src/app/tvm-delivery/page.tsx
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Location: src/app/tvm-delivery/page.tsx
@@ -25438,6 +26863,7 @@ export const dynamic = "force-dynamic";
 
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import { DraggableStopList } from "./DraggableStopList";
 
 type Stop = {
   id: string;
@@ -25448,10 +26874,18 @@ type Stop = {
   address: string | null;
   maps_url: string | null;
   distance_km: number;
+  dispatch_distance_km: number;
   status: "pending" | "completed";
   completed_at: string | null;
   notes: string | null;
 };
+
+// Same formula as /admin/delivery — keep these in sync if pricing changes.
+// ₹50 base + ₹9/km from the dispatch point, floored to the nearest rupee.
+function customerCharge(dispatchKm: number): number {
+  if (!dispatchKm || dispatchKm <= 0) return 0;
+  return Math.floor(50 + 9 * dispatchKm);
+}
 
 function fmtDate(d: string) {
   if (!d) return "";
@@ -25474,6 +26908,109 @@ function fmtTime(ts: string | null) {
   });
 }
 
+// Instant, offline first-pass area guess — same list the server uses,
+// kept here too so badges appear immediately on load, before the
+// AI refinement call (below) returns.
+const KNOWN_AREAS = [
+  "East Fort",
+  "Peroorkada",
+  "Pattom",
+  "Kesavadasapuram",
+  "Sasthamangalam",
+  "Kowdiar",
+  "Vazhuthacaud",
+  "Thampanoor",
+  "Vellayambalam",
+  "Kumarapuram",
+  "Medical College",
+  "Chackai",
+  "Karamana",
+  "Nalanchira",
+  "Sreekaryam",
+  "Kazhakootam",
+  "Technopark",
+  "Attukal",
+  "Manacaud",
+  "Poojappura",
+  "Kaimanam",
+  "Vattiyoorkavu",
+  "Muttada",
+  "Pongumoodu",
+  "Ulloor",
+  "Palayam",
+  "Statue",
+  "Chalai",
+  "Pettah",
+  "Killipalam",
+  "Thiruvallam",
+  "Kovalam",
+  "Vizhinjam",
+  "Balaramapuram",
+  "Nedumangad",
+  "Kattakada",
+  "Neyyattinkara",
+  "PMG",
+];
+function guessAreaHeuristic(address: string | null): string {
+  if (!address) return "";
+  const lower = address.toLowerCase();
+  for (const area of KNOWN_AREAS) {
+    if (lower.includes(area.toLowerCase())) return area;
+  }
+  return "";
+}
+
+// Deterministic soft colour for each area name so the same locality
+// always gets the same badge colour across the route.
+const AREA_PALETTE = [
+  {
+    bg: "rgba(96,165,250,0.12)",
+    border: "rgba(96,165,250,0.35)",
+    text: "#3f7fd6",
+  },
+  {
+    bg: "rgba(167,139,250,0.12)",
+    border: "rgba(167,139,250,0.35)",
+    text: "#8b6fe0",
+  },
+  {
+    bg: "rgba(52,217,123,0.12)",
+    border: "rgba(52,217,123,0.35)",
+    text: "#1e9a55",
+  },
+  {
+    bg: "rgba(244,114,182,0.12)",
+    border: "rgba(244,114,182,0.35)",
+    text: "#d1479f",
+  },
+  {
+    bg: "rgba(255,122,26,0.12)",
+    border: "rgba(255,122,26,0.35)",
+    text: "#c85e12",
+  },
+  {
+    bg: "rgba(250,204,21,0.14)",
+    border: "rgba(250,204,21,0.4)",
+    text: "#a37b0a",
+  },
+];
+function areaColor(area: string) {
+  let hash = 0;
+  for (let i = 0; i < area.length; i++)
+    hash = (hash * 31 + area.charCodeAt(i)) | 0;
+  return AREA_PALETTE[Math.abs(hash) % AREA_PALETTE.length];
+}
+
+// Always resolve a maps link — use the admin-set maps_url if present,
+// otherwise fall back to a Google Maps search built from the address.
+function resolveMapsHref(stop: Stop): string | null {
+  if (stop.maps_url) return stop.maps_url;
+  if (stop.address) {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(stop.address)}`;
+  }
+  return null;
+}
+
 type ViewMode = "start" | "single" | "list";
 
 export default function TvmDeliveryPage() {
@@ -25483,6 +27020,7 @@ export default function TvmDeliveryPage() {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("start");
   const [hasStarted, setHasStarted] = useState(false);
+  const [areaMap, setAreaMap] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     const { data: settings } = await supabase
@@ -25498,9 +27036,43 @@ export default function TvmDeliveryPage() {
         .select("*")
         .eq("trip_date", trip)
         .order("sequence", { ascending: true });
-      setStops((s as Stop[]) || []);
+      const list = (s as Stop[]) || [];
+      setStops(list);
+
+      // 1) Instant offline guess so badges show immediately.
+      const instant: Record<string, string> = {};
+      list.forEach((st) => {
+        const g = guessAreaHeuristic(st.address);
+        if (g) instant[st.id] = g;
+      });
+      setAreaMap(instant);
+
+      // 2) AI refinement for addresses the heuristic couldn't tag.
+      const unresolved = list.filter((st) => !instant[st.id] && st.address);
+      if (unresolved.length > 0) {
+        fetch("/api/extract-area", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            addresses: unresolved.map((st) => st.address || ""),
+          }),
+        })
+          .then((r) => r.json())
+          .then((data) => {
+            if (!Array.isArray(data.areas)) return;
+            setAreaMap((prev) => {
+              const next = { ...prev };
+              unresolved.forEach((st, i) => {
+                if (data.areas[i]) next[st.id] = data.areas[i];
+              });
+              return next;
+            });
+          })
+          .catch((e) => console.warn("area AI lookup failed", e));
+      }
     } else {
       setStops([]);
+      setAreaMap({});
     }
     setLoading(false);
   }, []);
@@ -25517,8 +27089,6 @@ export default function TvmDeliveryPage() {
       .update({ status: "completed", completed_at: new Date().toISOString() })
       .eq("id", id);
 
-    // Fire-and-forget — don't block the UI on the email send, and don't
-    // fail the delivery mark-complete if the email happens to fail.
     if (stop) {
       const newCompletedCount =
         stops.filter((s) => s.status === "completed").length + 1;
@@ -25552,6 +27122,19 @@ export default function TvmDeliveryPage() {
     setUpdatingId(null);
   }
 
+  // Press-and-drag reorder: called by DraggableStopList after a drop.
+  async function persistOrder(newStops: Stop[]) {
+    setStops(newStops);
+    await Promise.all(
+      newStops.map((s, i) =>
+        supabase
+          .from("tvm_delivery_stops")
+          .update({ sequence: i + 1 })
+          .eq("id", s.id),
+      ),
+    );
+  }
+
   const total = stops.length;
   const completed = stops.filter((s) => s.status === "completed").length;
   const progressPct = total > 0 ? Math.round((completed / total) * 100) : 0;
@@ -25565,6 +27148,11 @@ export default function TvmDeliveryPage() {
       ? Math.min(100, Math.round((distanceCovered / totalDistance) * 100))
       : 0;
 
+  const totalToCollect = stops
+    .filter((s) => s.status === "pending")
+    .reduce((sum, s) => sum + customerCharge(s.dispatch_distance_km), 0);
+  const hasCharges = stops.some((s) => s.dispatch_distance_km > 0);
+
   const allDone = total > 0 && completed === total;
   const pendingStops = stops.filter((s) => s.status === "pending");
   const currentStop = pendingStops[0] || null;
@@ -25576,6 +27164,38 @@ export default function TvmDeliveryPage() {
   function StopActions({ stop, big = false }: { stop: Stop; big?: boolean }) {
     const isDone = stop.status === "completed";
     const isBusy = updatingId === stop.id;
+    const mapsHref = resolveMapsHref(stop);
+
+    // Before the driver has hit "Start Trip", this is just a route
+    // preview — don't show Call or Mark as Delivered, only the map.
+    if (!hasStarted) {
+      return mapsHref ? (
+        <a
+          href={mapsHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            width: "100%",
+            padding: big ? "13px 12px" : "10px 12px",
+            borderRadius: 9,
+            border: "1.5px solid #ff7a1a",
+            background: "#ffffff",
+            color: "#ff7a1a",
+            fontSize: big ? "0.92rem" : "0.8rem",
+            fontWeight: 700,
+            textDecoration: "none",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+            boxSizing: "border-box" as const,
+          }}
+        >
+          🗺️ {stop.maps_url ? "Open in Maps" : "Find on Maps"}
+        </a>
+      ) : null;
+    }
+
     return (
       <>
         <div style={{ display: "flex", gap: 8 }}>
@@ -25601,9 +27221,9 @@ export default function TvmDeliveryPage() {
               📞 Call
             </a>
           )}
-          {stop.maps_url && (
+          {mapsHref && (
             <a
-              href={stop.maps_url}
+              href={mapsHref}
               target="_blank"
               rel="noopener noreferrer"
               style={{
@@ -25623,7 +27243,7 @@ export default function TvmDeliveryPage() {
                 boxShadow: "0 3px 10px rgba(255,122,26,0.3)",
               }}
             >
-              🗺️ Open in Maps
+              🗺️ {stop.maps_url ? "Open in Maps" : "Find on Maps"}
             </a>
           )}
         </div>
@@ -25661,19 +27281,35 @@ export default function TvmDeliveryPage() {
     );
   }
 
-  function StopCard({ stop, index }: { stop: Stop; index: number }) {
+  function StopCard({
+    stop,
+    index,
+    dragHandleProps,
+    isDragging,
+  }: {
+    stop: Stop;
+    index: number;
+    dragHandleProps?: {
+      onMouseDown: (e: React.MouseEvent) => void;
+      onTouchStart: (e: React.TouchEvent) => void;
+    };
+    isDragging?: boolean;
+  }) {
     const isDone = stop.status === "completed";
+    const charge = customerCharge(stop.dispatch_distance_km);
+    const area = areaMap[stop.id];
+    const areaC = area ? areaColor(area) : null;
     return (
       <div
         style={{
           background: isDone ? "rgba(31,168,85,0.05)" : "#ffffff",
-          border: `1px solid ${isDone ? "rgba(31,168,85,0.3)" : "rgba(0,0,0,0.09)"}`,
+          border: `1px solid ${isDone ? "rgba(31,168,85,0.3)" : isDragging ? "#ff7a1a" : "rgba(0,0,0,0.09)"}`,
           boxShadow: isDone ? "none" : "0 1px 4px rgba(0,0,0,0.04)",
           borderRadius: 14,
           padding: "16px 18px",
           marginBottom: 12,
           opacity: isDone ? 0.9 : 1,
-          transition: "all 0.2s",
+          transition: isDragging ? "none" : "all 0.2s",
         }}
       >
         <div
@@ -25686,6 +27322,28 @@ export default function TvmDeliveryPage() {
           }}
         >
           <div style={{ display: "flex", gap: 10, flex: 1, minWidth: 0 }}>
+            {dragHandleProps && !isDone && (
+              <div
+                onMouseDown={dragHandleProps.onMouseDown}
+                onTouchStart={dragHandleProps.onTouchStart}
+                style={{
+                  width: 28,
+                  height: 44,
+                  flexShrink: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "1.3rem",
+                  color: "#bbb",
+                  cursor: "grab",
+                  touchAction: "none",
+                  marginLeft: -4,
+                  marginTop: -8,
+                }}
+              >
+                ⠿
+              </div>
+            )}
             <div
               style={{
                 width: 28,
@@ -25707,16 +27365,41 @@ export default function TvmDeliveryPage() {
               {isDone ? "✓" : index + 1}
             </div>
             <div style={{ minWidth: 0 }}>
-              <p
+              <div
                 style={{
-                  fontSize: "1rem",
-                  fontWeight: 700,
-                  color: "#1a1a1a",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 7,
+                  flexWrap: "wrap" as const,
                   marginBottom: 2,
                 }}
               >
-                {stop.customer_name}
-              </p>
+                <p
+                  style={{
+                    fontSize: "1rem",
+                    fontWeight: 700,
+                    color: "#1a1a1a",
+                  }}
+                >
+                  {stop.customer_name}
+                </p>
+                {areaC && (
+                  <span
+                    style={{
+                      fontSize: "0.66rem",
+                      fontWeight: 700,
+                      padding: "2px 8px",
+                      borderRadius: 20,
+                      background: areaC.bg,
+                      border: `1px solid ${areaC.border}`,
+                      color: areaC.text,
+                      whiteSpace: "nowrap" as const,
+                    }}
+                  >
+                    📍 {area}
+                  </span>
+                )}
+              </div>
               {stop.address && (
                 <p
                   style={{
@@ -25725,7 +27408,7 @@ export default function TvmDeliveryPage() {
                     lineHeight: 1.5,
                   }}
                 >
-                  📍 {stop.address}
+                  {stop.address}
                 </p>
               )}
             </div>
@@ -25748,6 +27431,34 @@ export default function TvmDeliveryPage() {
             </span>
           )}
         </div>
+
+        {charge > 0 && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              background: isDone
+                ? "rgba(31,168,85,0.05)"
+                : "rgba(31,168,85,0.08)",
+              border: `1px solid ${isDone ? "rgba(31,168,85,0.15)" : "rgba(31,168,85,0.3)"}`,
+              borderRadius: 10,
+              padding: "10px 12px",
+              marginBottom: 10,
+            }}
+          >
+            <span
+              style={{ fontSize: "0.8rem", color: "#3a7d4f", fontWeight: 600 }}
+            >
+              💰 {isDone ? "Collected" : "Collect from customer"}
+            </span>
+            <span
+              style={{ fontSize: "1.05rem", fontWeight: 800, color: "#1fa855" }}
+            >
+              ₹{charge}
+            </span>
+          </div>
+        )}
 
         {stop.notes && (
           <p
@@ -25796,7 +27507,6 @@ export default function TvmDeliveryPage() {
         dangerouslySetInnerHTML={{ __html: CSS }}
       />
 
-      {/* Sticky progress header — always visible regardless of view */}
       <div
         style={{
           position: "sticky",
@@ -25856,17 +27566,10 @@ export default function TvmDeliveryPage() {
             </button>
           )}
         </div>
-        <p
-          style={{
-            fontSize: "0.7rem",
-            color: "#8a8a8a",
-            marginBottom: 12,
-          }}
-        >
+        <p style={{ fontSize: "0.7rem", color: "#8a8a8a", marginBottom: 12 }}>
           {tripDate ? fmtDate(tripDate) : "No trip date set"}
         </p>
 
-        {/* Stops progress */}
         <div
           style={{
             display: "flex",
@@ -25913,7 +27616,6 @@ export default function TvmDeliveryPage() {
           />
         </div>
 
-        {/* Distance progress */}
         {totalDistance > 0 && (
           <div
             style={{
@@ -25922,6 +27624,7 @@ export default function TvmDeliveryPage() {
               alignItems: "center",
               fontSize: "0.72rem",
               color: "#6b6b6b",
+              marginBottom: hasCharges ? 6 : 0,
             }}
           >
             <span>
@@ -25933,9 +27636,24 @@ export default function TvmDeliveryPage() {
             </span>
           </div>
         )}
+
+        {hasCharges && (
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              fontSize: "0.78rem",
+            }}
+          >
+            <span style={{ color: "#6b6b6b" }}>💰 Total to collect</span>
+            <span style={{ color: "#1fa855", fontWeight: 700 }}>
+              ₹{totalToCollect.toLocaleString("en-IN")} remaining
+            </span>
+          </div>
+        )}
       </div>
 
-      {/* Body */}
       <div style={{ padding: "20px 20px 0" }}>
         {loading ? (
           <p
@@ -25977,17 +27695,33 @@ export default function TvmDeliveryPage() {
           </div>
         ) : viewMode === "list" ? (
           <>
-            {stops.map((stop, i) => (
-              <StopCard key={stop.id} stop={stop} index={i} />
-            ))}
+            <p
+              style={{
+                fontSize: "0.72rem",
+                color: "#8a8a8a",
+                textAlign: "center" as const,
+                marginBottom: 10,
+              }}
+            >
+              ⠿ Press and drag a stop to reorder the route
+              {!hasStarted ? " · route preview" : ""}
+            </p>
+            <DraggableStopList
+              items={stops}
+              getId={(s) => s.id}
+              onReorder={persistOrder}
+              renderItem={(stop, i, dragHandleProps, isDragging) => (
+                <StopCard
+                  stop={stop}
+                  index={i}
+                  dragHandleProps={dragHandleProps}
+                  isDragging={isDragging}
+                />
+              )}
+            />
           </>
         ) : allDone ? (
-          <div
-            style={{
-              textAlign: "center",
-              padding: "60px 20px",
-            }}
-          >
+          <div style={{ textAlign: "center", padding: "60px 20px" }}>
             <p style={{ fontSize: "3rem", marginBottom: 16 }}>🎉</p>
             <p
               style={{
@@ -26004,12 +27738,7 @@ export default function TvmDeliveryPage() {
             </p>
           </div>
         ) : viewMode === "start" || !hasStarted ? (
-          <div
-            style={{
-              textAlign: "center",
-              padding: "40px 20px 20px",
-            }}
-          >
+          <div style={{ textAlign: "center", padding: "40px 20px 20px" }}>
             <p style={{ fontSize: "2.4rem", marginBottom: 16 }}>🚂</p>
             <p
               style={{
@@ -26031,6 +27760,9 @@ export default function TvmDeliveryPage() {
             >
               {total} stop{total !== 1 ? "s" : ""} · {totalDistance.toFixed(1)}{" "}
               km total
+              {hasCharges
+                ? ` · ₹${totalToCollect.toLocaleString("en-IN")} to collect`
+                : ""}
             </p>
             <button
               onClick={() => {
@@ -26712,6 +28444,6 @@ export default config
 
 
 ========================================
-  TOTAL FILES: 48
-  TOTAL LINES:    26712
+  TOTAL FILES: 53
+  TOTAL LINES:    28444
 ========================================
