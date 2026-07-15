@@ -11,16 +11,21 @@ const groq = process.env.GROQ_API_KEY
   ? new Groq({ apiKey: process.env.GROQ_API_KEY })
   : null;
 
+// Groq's vision models (llama-4-scout) cap out at 5 images per request.
+const MAX_IMAGES = 5;
+
 const PROMPT = `
 You are a specialized accountant for "Eversweet", a mochi and pastry business.
 
-Analyze this purchase bill/receipt image carefully.
+Analyze this purchase bill/receipt image (there may be more than one image —
+some bills span multiple photos, or multiple separate bills were uploaded
+together. Extract line items from ALL images provided).
 
 Your job:
-1. Extract every line item from the bill
+1. Extract every line item from the bill(s)
 2. Classify each item as either 'ingredient' or 'packaging'
 3. INCLUDE: food ingredients (flour, sugar, cream, fruit, mango pulp, milk, butter, food color, flavoring, etc.), packaging materials (boxes, bags, ribbons, stickers, tape, wrappers, tissue, etc.)
-4. EXCLUDE: household items, personal care items, electronics, unrelated purchases
+4. EXCLUDE: household items (mops, brooms, cleaning supplies), personal care items, electronics, or anything unrelated to making/packaging mochi
 
 For each item return:
 - description: clean readable name of the item
@@ -31,7 +36,9 @@ For each item return:
 Return ONLY a JSON object with a single key "items" containing the array. No explanation.
 Example: {"items": [{"description":"Mango Pulp 1kg","amount":120,"category":"ingredient","date":"2026-04-22"}]}
 
-If no relevant items found, return: {"items": []}
+If the bill(s) contain no ingredient or packaging items (e.g. it's a bill for
+household/cleaning supplies, electronics, or anything unrelated to mochi),
+return: {"items": []}
 `;
 
 function cleanItems(items: any[]) {
@@ -54,7 +61,9 @@ function cleanItems(items: any[]) {
     }));
 }
 
-async function tryGemini(imageBase64: string, mimeType: string) {
+type ImageInput = { imageBase64: string; mimeType: string };
+
+async function tryGemini(images: ImageInput[]) {
   if (!genAI) throw new Error("Gemini not configured");
 
   const model = genAI.getGenerativeModel({
@@ -67,7 +76,9 @@ async function tryGemini(imageBase64: string, mimeType: string) {
 
   const result = await model.generateContent([
     { text: PROMPT },
-    { inlineData: { data: imageBase64, mimeType } },
+    ...images.map((img) => ({
+      inlineData: { data: img.imageBase64, mimeType: img.mimeType },
+    })),
   ]);
 
   const rawText = result.response.text().trim();
@@ -81,23 +92,24 @@ async function tryGemini(imageBase64: string, mimeType: string) {
   return items;
 }
 
-async function tryGroq(imageBase64: string, mimeType: string) {
+async function tryGroqScout(images: ImageInput[]) {
   if (!groq) throw new Error("Groq not configured");
 
+  const content: any[] = [
+    { type: "text", text: PROMPT },
+    ...images.map((img) => ({
+      type: "image_url",
+      image_url: { url: `data:${img.mimeType};base64,${img.imageBase64}` },
+    })),
+  ];
+
   const completion = await groq.chat.completions.create({
+    // NOTE: meta-llama/llama-4-scout-17b-16e-instruct is on Groq's
+    // deprecation list. Keeping it as the first Groq attempt since it
+    // still works today; tryGroqMaverick below is the safety net for
+    // when Groq actually shuts it off.
     model: "meta-llama/llama-4-scout-17b-16e-instruct",
-    messages: [
-      {
-        role: "user",
-        content: [
-          { type: "text", text: PROMPT },
-          {
-            type: "image_url",
-            image_url: { url: `data:${mimeType};base64,${imageBase64}` },
-          },
-        ],
-      },
-    ],
+    messages: [{ role: "user", content }],
     temperature: 0.1,
     response_format: { type: "json_object" },
   });
@@ -112,23 +124,54 @@ async function tryGroq(imageBase64: string, mimeType: string) {
   return items;
 }
 
-async function tryOpenAI(imageBase64: string, mimeType: string) {
+async function tryGroqMaverick(images: ImageInput[]) {
+  if (!groq) throw new Error("Groq not configured");
+
+  const content: any[] = [
+    { type: "text", text: PROMPT },
+    ...images.map((img) => ({
+      type: "image_url",
+      image_url: { url: `data:${img.mimeType};base64,${img.imageBase64}` },
+    })),
+  ];
+
+  // Same provider/speed as Scout, still vision-capable, not on Groq's
+  // deprecation list — the fallback for when Scout is retired or errors.
+  const completion = await groq.chat.completions.create({
+    model: "meta-llama/llama-4-maverick-17b-128e-instruct",
+    messages: [{ role: "user", content }],
+    temperature: 0.1,
+    response_format: { type: "json_object" },
+  });
+
+  const rawText = completion.choices[0]?.message?.content?.trim() ?? "";
+  if (!rawText) throw new Error("Empty Groq (Maverick) response");
+
+  const parsed = JSON.parse(rawText);
+  const items = Array.isArray(parsed) ? parsed : parsed.items;
+  if (!Array.isArray(items))
+    throw new Error("Groq (Maverick) returned unexpected shape");
+
+  return items;
+}
+
+async function tryOpenAI(images: ImageInput[]) {
+  const content: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
+    { type: "text", text: PROMPT },
+    ...images.map((img) => ({
+      type: "image_url" as const,
+      image_url: { url: `data:${img.mimeType};base64,${img.imageBase64}` },
+    })),
+  ];
+
+  // Final backup — uses your own OpenAI API account (separate billing from
+  // a ChatGPT Plus/Team subscription; needs an OPENAI_API_KEY with credits).
+  // Full gpt-4o rather than mini since this is the last line of defense.
   let completion;
   try {
     completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: PROMPT },
-            {
-              type: "image_url",
-              image_url: { url: `data:${mimeType};base64,${imageBase64}` },
-            },
-          ],
-        },
-      ],
+      model: "gpt-4o",
+      messages: [{ role: "user", content }],
       temperature: 0.1,
       max_tokens: 2048,
       response_format: { type: "json_object" },
@@ -136,19 +179,8 @@ async function tryOpenAI(imageBase64: string, mimeType: string) {
   } catch (apiErr) {
     await new Promise((r) => setTimeout(r, 1200));
     completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: PROMPT },
-            {
-              type: "image_url",
-              image_url: { url: `data:${mimeType};base64,${imageBase64}` },
-            },
-          ],
-        },
-      ],
+      model: "gpt-4o",
+      messages: [{ role: "user", content }],
       temperature: 0.1,
       max_tokens: 2048,
       response_format: { type: "json_object" },
@@ -165,39 +197,70 @@ async function tryOpenAI(imageBase64: string, mimeType: string) {
 
 export async function POST(req: Request) {
   try {
-    const { imageBase64, mimeType = "image/jpeg" } = await req.json();
+    const body = await req.json();
 
-    if (!imageBase64) {
+    // Back-compat: accept either the old single-image shape
+    // { imageBase64, mimeType } or the new multi-image shape
+    // { images: [{ imageBase64, mimeType }, ...] }
+    const images: ImageInput[] = Array.isArray(body.images)
+      ? body.images
+      : body.imageBase64
+        ? [
+            {
+              imageBase64: body.imageBase64,
+              mimeType: body.mimeType || "image/jpeg",
+            },
+          ]
+        : [];
+
+    if (images.length === 0) {
       return NextResponse.json({ error: "No image provided" }, { status: 400 });
+    }
+    if (images.length > MAX_IMAGES) {
+      return NextResponse.json(
+        {
+          error: `You can scan up to ${MAX_IMAGES} bills at once. Please split into smaller batches.`,
+        },
+        { status: 400 },
+      );
     }
 
     let items: any[] = [];
     let usedProvider = "gemini";
 
     try {
-      items = await tryGemini(imageBase64, mimeType);
+      items = await tryGemini(images);
     } catch (geminiErr) {
       console.warn(
-        "Gemini failed, trying Groq:",
+        "Gemini failed, trying Groq (Scout):",
         geminiErr instanceof Error ? geminiErr.message : geminiErr,
       );
       usedProvider = "groq";
       try {
-        items = await tryGroq(imageBase64, mimeType);
-      } catch (groqErr) {
+        items = await tryGroqScout(images);
+      } catch (scoutErr) {
         console.warn(
-          "Groq failed, falling back to OpenAI:",
-          groqErr instanceof Error ? groqErr.message : groqErr,
+          "Groq Scout failed, trying Groq (Maverick):",
+          scoutErr instanceof Error ? scoutErr.message : scoutErr,
         );
-        usedProvider = "openai";
+        usedProvider = "groq-maverick";
         try {
-          items = await tryOpenAI(imageBase64, mimeType);
-        } catch (openaiErr) {
-          console.error(
-            "extract-bill error (all providers failed):",
-            openaiErr,
+          items = await tryGroqMaverick(images);
+        } catch (maverickErr) {
+          console.warn(
+            "Groq Maverick failed, falling back to OpenAI:",
+            maverickErr instanceof Error ? maverickErr.message : maverickErr,
           );
-          return NextResponse.json({ items: [], _provider: "none" });
+          usedProvider = "openai";
+          try {
+            items = await tryOpenAI(images);
+          } catch (openaiErr) {
+            console.error(
+              "extract-bill error (all providers failed):",
+              openaiErr,
+            );
+            return NextResponse.json({ items: [], _provider: "none" });
+          }
         }
       }
     }

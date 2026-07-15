@@ -2,6 +2,8 @@
 import React, { useRef, useState } from "react";
 import { G } from "../_lib/theme";
 
+const MAX_IMAGES = 5;
+
 const PROVIDER_STYLE: Record<
   string,
   { bg: string; color: string; border: string; label: string }
@@ -10,13 +12,19 @@ const PROVIDER_STYLE: Record<
     bg: "rgba(167,139,250,0.15)",
     color: "#a78bfa",
     border: "rgba(167,139,250,0.3)",
-    label: "Groq",
+    label: "Groq (Scout)",
+  },
+  "groq-maverick": {
+    bg: "rgba(167,139,250,0.15)",
+    color: "#a78bfa",
+    border: "rgba(167,139,250,0.3)",
+    label: "Groq (Maverick)",
   },
   openai: {
     bg: "rgba(52,217,123,0.15)",
     color: "#34d97b",
     border: "rgba(52,217,123,0.3)",
-    label: "GPT",
+    label: "GPT-4o",
   },
   gemini: {
     bg: "rgba(96,165,250,0.15)",
@@ -58,56 +66,100 @@ export function ExpenseScanner({
 }: {
   onDataExtracted: (data: unknown[]) => void;
 }) {
+  const [images, setImages] = useState<{ file: File; preview: string }[]>([]);
   const [scanning, setScanning] = useState(false);
-  const [preview, setPreview] = useState<string | null>(null);
   const [results, setResults] = useState<unknown[] | null>(null);
   const [provider, setProvider] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setPreview(URL.createObjectURL(file));
+  function addFiles(files: FileList | null) {
+    if (!files) return;
     setResults(null);
     setProvider(null);
     setError(null);
+    setInfo(null);
+    setImages((prev) => {
+      const next = [
+        ...prev,
+        ...Array.from(files).map((file) => ({
+          file,
+          preview: URL.createObjectURL(file),
+        })),
+      ];
+      return next.slice(0, MAX_IMAGES);
+    });
+  }
+
+  function removeImage(i: number) {
+    setImages((prev) => {
+      URL.revokeObjectURL(prev[i].preview);
+      return prev.filter((_, j) => j !== i);
+    });
+  }
+
+  function reset() {
+    images.forEach((img) => URL.revokeObjectURL(img.preview));
+    setImages([]);
+    setResults(null);
+    setProvider(null);
+    setError(null);
+    setInfo(null);
+  }
+
+  async function scan() {
+    if (images.length === 0) return;
     setScanning(true);
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = async () => {
-      const base64 = (reader.result as string).split(",")[1];
-      try {
-        const res = await fetch("/api/extract-bill", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ imageBase64: base64, mimeType: file.type }),
-        });
-        if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.error || "API error");
-        }
-        const data = await res.json();
-        const items = data.items || [];
-        if (!Array.isArray(items) || items.length === 0) {
-          setError("No items found in this bill.");
-          setScanning(false);
-          return;
-        }
-        setResults(items);
-        setProvider(data._provider || null);
-      } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : "Something went wrong");
-      } finally {
-        setScanning(false);
-        if (fileInputRef.current) fileInputRef.current.value = "";
+    setError(null);
+    setInfo(null);
+    try {
+      const encoded = await Promise.all(
+        images.map(
+          (img) =>
+            new Promise<{ imageBase64: string; mimeType: string }>(
+              (resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(img.file);
+                reader.onload = () =>
+                  resolve({
+                    imageBase64: (reader.result as string).split(",")[1],
+                    mimeType: img.file.type,
+                  });
+                reader.onerror = reject;
+              },
+            ),
+        ),
+      );
+
+      const res = await fetch("/api/extract-bill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ images: encoded }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "API error");
       }
-    };
-    reader.onerror = () => {
-      setError("Failed to read file");
+      const data = await res.json();
+      const items = data.items || [];
+      if (!Array.isArray(items) || items.length === 0) {
+        // Not an error — the scan worked fine, it just found nothing worth
+        // logging (e.g. household items, cleaning supplies, non-mochi stuff).
+        setInfo(
+          "No ingredient or packaging items found — this looks like a bill for something else (household items, supplies, etc.), so nothing was added.",
+        );
+        setScanning(false);
+        return;
+      }
+      setResults(items);
+      setProvider(data._provider || null);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
       setScanning(false);
-    };
-  };
+    }
+  }
 
   return (
     <div
@@ -131,61 +183,200 @@ export function ExpenseScanner({
       >
         ✨ AI Bill Scanner
       </p>
+
       {!results && (
+        <>
+          <div
+            onClick={() => !scanning && fileInputRef.current?.click()}
+            style={{
+              border: `2px dashed ${scanning ? G.goldBorder : G.glassBorder}`,
+              borderRadius: 10,
+              padding: images.length > 0 ? "12px" : "24px 16px",
+              textAlign: "center" as const,
+              cursor: scanning ? "not-allowed" : "pointer",
+              background: scanning ? G.goldGlass : "rgba(0,0,0,0.1)",
+              marginBottom: images.length > 0 ? 10 : 0,
+            }}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              hidden
+              onChange={(e) => addFiles(e.target.files)}
+              disabled={scanning}
+            />
+
+            {images.length === 0 ? (
+              <>
+                <p
+                  style={{
+                    fontSize: scanning ? "0.9rem" : "1.8rem",
+                    marginBottom: 6,
+                  }}
+                >
+                  {scanning ? "⏳" : "📸"}
+                </p>
+                <p
+                  style={{
+                    fontSize: "0.85rem",
+                    fontWeight: 600,
+                    color: scanning ? G.gold : G.sub,
+                  }}
+                >
+                  {scanning
+                    ? "Analyzing with AI..."
+                    : "Tap to upload bill photo(s)"}
+                </p>
+                <p style={{ fontSize: "0.7rem", color: G.muted, marginTop: 4 }}>
+                  JPG, PNG, HEIC · up to {MAX_IMAGES} at once
+                </p>
+              </>
+            ) : (
+              <div
+                style={{ display: "flex", gap: 8, flexWrap: "wrap" as const }}
+              >
+                {images.map((img, i) => (
+                  <div
+                    key={i}
+                    style={{ position: "relative" as const, flexShrink: 0 }}
+                  >
+                    <img
+                      src={img.preview}
+                      alt={`bill-${i}`}
+                      style={{
+                        width: 64,
+                        height: 64,
+                        objectFit: "cover" as const,
+                        borderRadius: 8,
+                        border: `1px solid ${G.glassBorder}`,
+                      }}
+                    />
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeImage(i);
+                      }}
+                      style={{
+                        position: "absolute" as const,
+                        top: -6,
+                        right: -6,
+                        width: 18,
+                        height: 18,
+                        borderRadius: "50%",
+                        background: G.red,
+                        border: "none",
+                        color: "#fff",
+                        fontSize: "0.6rem",
+                        cursor: "pointer",
+                        fontWeight: 700,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                {images.length < MAX_IMAGES && (
+                  <div
+                    style={{
+                      width: 64,
+                      height: 64,
+                      borderRadius: 8,
+                      border: `2px dashed ${G.glassBorder}`,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: G.muted,
+                      fontSize: "1.3rem",
+                      flexShrink: 0,
+                    }}
+                  >
+                    +
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {images.length > 0 && (
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                disabled={scanning}
+                onClick={scan}
+                style={{
+                  flex: 1,
+                  padding: "11px",
+                  borderRadius: 9,
+                  border: "none",
+                  background: scanning
+                    ? "rgba(167,139,250,0.1)"
+                    : "linear-gradient(135deg, rgba(167,139,250,0.9), rgba(96,165,250,0.85))",
+                  color: scanning ? G.purple : "#0d0620",
+                  fontSize: "0.85rem",
+                  fontWeight: 700,
+                  cursor: scanning ? "not-allowed" : "pointer",
+                  fontFamily: "system-ui, sans-serif",
+                }}
+              >
+                {scanning
+                  ? "Analysing..."
+                  : `Analyse ${images.length} bill${images.length > 1 ? "s" : ""}`}
+              </button>
+              <button
+                disabled={scanning}
+                onClick={reset}
+                style={{
+                  padding: "11px 16px",
+                  borderRadius: 9,
+                  border: `1px solid ${G.glassBorder}`,
+                  background: G.glass,
+                  color: G.sub,
+                  fontSize: "0.85rem",
+                  cursor: "pointer",
+                  fontFamily: "system-ui, sans-serif",
+                }}
+              >
+                Clear
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Informational, non-error state: scan succeeded but found nothing relevant */}
+      {info && (
         <div
-          onClick={() => !scanning && fileInputRef.current?.click()}
           style={{
-            border: `2px dashed ${scanning ? G.goldBorder : G.glassBorder}`,
-            borderRadius: 10,
-            padding: "24px 16px",
-            textAlign: "center" as const,
-            cursor: scanning ? "not-allowed" : "pointer",
-            background: scanning ? G.goldGlass : "rgba(0,0,0,0.1)",
+            background: G.glassStrong,
+            border: `1px solid ${G.glassBorder}`,
+            borderRadius: 8,
+            padding: "10px 12px",
+            marginTop: 10,
           }}
         >
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            hidden
-            onChange={handleFileChange}
-            disabled={scanning}
-          />
-          {preview && !scanning && (
-            <img
-              src={preview}
-              alt="Bill"
-              style={{
-                maxHeight: 100,
-                maxWidth: "100%",
-                borderRadius: 8,
-                marginBottom: 10,
-                objectFit: "contain" as const,
-              }}
-            />
-          )}
-          <p
+          <p style={{ fontSize: "0.82rem", color: G.sub }}>ℹ️ {info}</p>
+          <button
+            onClick={reset}
             style={{
-              fontSize: scanning ? "0.9rem" : "1.8rem",
-              marginBottom: 6,
+              marginTop: 6,
+              fontSize: "0.75rem",
+              color: G.blue,
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              textDecoration: "underline",
             }}
           >
-            {scanning ? "⏳" : "📸"}
-          </p>
-          <p
-            style={{
-              fontSize: "0.85rem",
-              fontWeight: 600,
-              color: scanning ? G.gold : G.sub,
-            }}
-          >
-            {scanning ? "Analyzing with AI..." : "Tap to upload bill photo"}
-          </p>
-          <p style={{ fontSize: "0.7rem", color: G.muted, marginTop: 4 }}>
-            JPG, PNG, HEIC supported
-          </p>
+            Try a different bill
+          </button>
         </div>
       )}
+
+      {/* Genuine error state (API/network failure) */}
       {error && (
         <div
           style={{
@@ -198,10 +389,7 @@ export function ExpenseScanner({
         >
           <p style={{ fontSize: "0.82rem", color: G.red }}>⚠ {error}</p>
           <button
-            onClick={() => {
-              setError(null);
-              setPreview(null);
-            }}
+            onClick={reset}
             style={{
               marginTop: 6,
               fontSize: "0.75rem",
@@ -216,6 +404,7 @@ export function ExpenseScanner({
           </button>
         </div>
       )}
+
       {results && (
         <div>
           <p
@@ -291,10 +480,7 @@ export function ExpenseScanner({
             <button
               onClick={() => {
                 onDataExtracted(results!);
-                setResults(null);
-                setPreview(null);
-                setProvider(null);
-                setError(null);
+                reset();
               }}
               style={{
                 flex: 1,
@@ -312,12 +498,7 @@ export function ExpenseScanner({
               ✓ Save All to Expenses
             </button>
             <button
-              onClick={() => {
-                setResults(null);
-                setPreview(null);
-                setProvider(null);
-                setError(null);
-              }}
+              onClick={reset}
               style={{
                 padding: "10px 16px",
                 borderRadius: 8,
