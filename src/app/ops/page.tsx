@@ -89,13 +89,6 @@ export default function OpsHub() {
       desc: "Unni & Amma income, settlements",
       gradient: "linear-gradient(135deg, #f472b6, #db2777)",
     },
-    {
-      href: "/admin",
-      icon: "🚂",
-      label: "Trivandrum",
-      desc: "Delivery route, pre-orders",
-      gradient: "linear-gradient(135deg, #34d399, #059669)",
-    },
   ];
 
   return (
@@ -195,16 +188,21 @@ export default function OpsHub() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 1fr",
+            gridTemplateColumns: "1fr 1fr 1fr",
             gap: 12,
             marginBottom: 20,
+            alignItems: "stretch",
           }}
         >
           {tiles.map((t) => (
             <Link
               key={t.label}
               href={t.href}
-              style={{ textDecoration: "none" }}
+              style={{
+                textDecoration: "none",
+                display: "block",
+                height: "100%",
+              }}
             >
               <div
                 style={{
@@ -216,6 +214,11 @@ export default function OpsHub() {
                   padding: 20,
                   cursor: "pointer",
                   transition: "transform 0.15s",
+                  height: "100%",
+                  minHeight: 160,
+                  boxSizing: "border-box" as const,
+                  display: "flex",
+                  flexDirection: "column" as const,
                 }}
               >
                 <div
