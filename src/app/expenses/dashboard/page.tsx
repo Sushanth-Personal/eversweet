@@ -2,7 +2,7 @@
 "use client";
 export const dynamic = "force-dynamic";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
@@ -184,6 +184,7 @@ export default function ExpensesDashboardPage() {
   const [scope, setScope] = useState<Scope>("total");
   const [dateScope, setDateScope] = useState<DateScope>("all");
   const [customDate, setCustomDate] = useState(istToday());
+  const dateInputRef = useRef<HTMLInputElement>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [historyTab, setHistoryTab] = useState<"all" | "personal" | "company">(
     "all",
@@ -319,9 +320,14 @@ export default function ExpensesDashboardPage() {
         </div>
         {dateScope === "custom" && (
           <input
+            ref={dateInputRef}
             type="date"
             value={customDate}
             onChange={(e) => setCustomDate(e.target.value)}
+            onClick={() => {
+              const el = dateInputRef.current as any;
+              if (el?.showPicker) el.showPicker();
+            }}
             style={{
               width: "100%",
               background: "rgba(255,255,255,0.9)",
@@ -334,6 +340,7 @@ export default function ExpensesDashboardPage() {
               fontFamily: "inherit",
               boxSizing: "border-box" as const,
               marginBottom: 14,
+              cursor: "pointer",
             }}
           />
         )}
