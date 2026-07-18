@@ -1,3 +1,4 @@
+// Location: src/app/api/extract-order/route.ts
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import Groq from "groq-sdk";
@@ -6,6 +7,11 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const groq = process.env.GROQ_API_KEY
   ? new Groq({ apiKey: process.env.GROQ_API_KEY })
   : null;
+
+// Groq retired llama-4-scout and llama-4-maverick (Feb 2026). Their current
+// vision-capable model is qwen/qwen3.6-27b — served as "preview", so it can
+// still be unstable; OpenAI remains the safety net below.
+const GROQ_VISION_MODEL = "qwen/qwen3.6-27b";
 
 function buildPrompt(
   today: string,
@@ -64,9 +70,12 @@ async function tryGroq(
   }
 
   const completion = await groq.chat.completions.create({
-    model: "meta-llama/llama-4-scout-17b-16e-instruct",
+    model: GROQ_VISION_MODEL,
     messages: [{ role: "user", content }],
     temperature: 0.1,
+    max_completion_tokens: 4096,
+    reasoning_effort: "none",
+    reasoning_format: "hidden",
     response_format: { type: "json_object" },
   });
 
@@ -89,17 +98,16 @@ async function tryOpenAI(
   let completion;
   try {
     completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-4o",
       messages: [{ role: "user", content }],
       temperature: 0.1,
       max_tokens: 1024,
       response_format: { type: "json_object" },
     });
   } catch (apiErr) {
-    // one retry on transient failure (rate limit / 5xx)
     await new Promise((r) => setTimeout(r, 1200));
     completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-4o",
       messages: [{ role: "user", content }],
       temperature: 0.1,
       max_tokens: 1024,
@@ -141,10 +149,10 @@ export async function POST(req: Request) {
       parsed = await tryGroq(prompt, images);
     } catch (groqErr) {
       console.warn(
-        "Groq failed, falling back to OpenAI:",
+        "Groq failed, falling back to ChatGPT:",
         groqErr instanceof Error ? groqErr.message : groqErr,
       );
-      usedProvider = "openai";
+      usedProvider = "chatgpt";
       try {
         parsed = await tryOpenAI(prompt, images);
       } catch (openaiErr) {
@@ -165,7 +173,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Map flavour numbers → product IDs
     const matchedFlavours: Record<string, number> = {};
     if (parsed.flavours && typeof parsed.flavours === "object") {
       for (const [numStr, qty] of Object.entries(parsed.flavours)) {
@@ -176,7 +183,6 @@ export async function POST(req: Request) {
       }
     }
 
-    // Match total_price → box
     let box_size_id: string | null = null;
     let box_label: string | null = null;
     if (parsed.total_price) {

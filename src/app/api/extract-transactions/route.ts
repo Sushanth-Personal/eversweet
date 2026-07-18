@@ -10,6 +10,11 @@ const groq = process.env.GROQ_API_KEY
 
 const MAX_IMAGES = 5;
 
+// Groq retired llama-4-scout and llama-4-maverick (Feb 2026). Their current
+// vision-capable model is qwen/qwen3.6-27b — served as "preview", so it can
+// still be unstable; OpenAI remains the safety net below.
+const GROQ_VISION_MODEL = "qwen/qwen3.6-27b";
+
 const PROMPT = `
 You are extracting expense transactions from bank/UPI app SMS or notification
 screenshots (e.g. "Rs.450.00 debited from A/c...", GPay/PhonePe/Paytm payment
@@ -44,8 +49,6 @@ function sanitizeDate(raw: string | undefined): string {
   if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return today;
   const year = Number(raw.slice(0, 4));
   const currentYear = new Date().getFullYear();
-  // Reject anything more than 1 year away from now — almost certainly a
-  // misread rather than a real old transaction.
   if (Math.abs(year - currentYear) > 1) return today;
   return raw;
 }
@@ -67,7 +70,7 @@ function cleanItems(items: any[]) {
 
 type ImageInput = { imageBase64: string; mimeType: string };
 
-async function tryGroqScout(images: ImageInput[]) {
+async function tryGroq(images: ImageInput[]) {
   if (!groq) throw new Error("Groq not configured");
   const content: any[] = [
     { type: "text", text: PROMPT },
@@ -77,9 +80,12 @@ async function tryGroqScout(images: ImageInput[]) {
     })),
   ];
   const completion = await groq.chat.completions.create({
-    model: "meta-llama/llama-4-scout-17b-16e-instruct",
+    model: GROQ_VISION_MODEL,
     messages: [{ role: "user", content }],
     temperature: 0.1,
+    max_completion_tokens: 4096,
+    reasoning_effort: "none",
+    reasoning_format: "hidden",
     response_format: { type: "json_object" },
   });
   const rawText = completion.choices[0]?.message?.content?.trim() ?? "";
@@ -87,30 +93,6 @@ async function tryGroqScout(images: ImageInput[]) {
   const parsed = JSON.parse(rawText);
   const items = Array.isArray(parsed) ? parsed : parsed.items;
   if (!Array.isArray(items)) throw new Error("Groq returned unexpected shape");
-  return items;
-}
-
-async function tryGroqMaverick(images: ImageInput[]) {
-  if (!groq) throw new Error("Groq not configured");
-  const content: any[] = [
-    { type: "text", text: PROMPT },
-    ...images.map((img) => ({
-      type: "image_url",
-      image_url: { url: `data:${img.mimeType};base64,${img.imageBase64}` },
-    })),
-  ];
-  const completion = await groq.chat.completions.create({
-    model: "meta-llama/llama-4-maverick-17b-128e-instruct",
-    messages: [{ role: "user", content }],
-    temperature: 0.1,
-    response_format: { type: "json_object" },
-  });
-  const rawText = completion.choices[0]?.message?.content?.trim() ?? "";
-  if (!rawText) throw new Error("Empty Groq (Maverick) response");
-  const parsed = JSON.parse(rawText);
-  const items = Array.isArray(parsed) ? parsed : parsed.items;
-  if (!Array.isArray(items))
-    throw new Error("Groq (Maverick) returned unexpected shape");
   return items;
 }
 
@@ -170,29 +152,21 @@ export async function POST(req: Request) {
     let usedProvider = "groq";
 
     try {
-      items = await tryGroqScout(images);
-    } catch (scoutErr) {
+      items = await tryGroq(images);
+    } catch (groqErr) {
       console.warn(
-        "Groq Scout failed, trying Groq (Maverick):",
-        scoutErr instanceof Error ? scoutErr.message : scoutErr,
+        "Groq failed, falling back to ChatGPT:",
+        groqErr instanceof Error ? groqErr.message : groqErr,
       );
+      usedProvider = "chatgpt";
       try {
-        items = await tryGroqMaverick(images);
-      } catch (maverickErr) {
-        console.warn(
-          "Groq Maverick failed, falling back to ChatGPT:",
-          maverickErr instanceof Error ? maverickErr.message : maverickErr,
+        items = await tryOpenAI(images);
+      } catch (openaiErr) {
+        console.error(
+          "extract-transactions error (all providers failed):",
+          openaiErr,
         );
-        usedProvider = "chatgpt";
-        try {
-          items = await tryOpenAI(images);
-        } catch (openaiErr) {
-          console.error(
-            "extract-transactions error (all providers failed):",
-            openaiErr,
-          );
-          return NextResponse.json({ items: [], _provider: "none" });
-        }
+        return NextResponse.json({ items: [], _provider: "none" });
       }
     }
 

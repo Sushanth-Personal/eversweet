@@ -89,6 +89,12 @@ type Settlement = {
   created_at: string;
 };
 
+type AccountBalance = {
+  account_id: string;
+  balance: number;
+  updated_at: string;
+};
+
 type ExpenseRow = {
   id: string;
   description: string;
@@ -189,6 +195,25 @@ function Card({
   );
 }
 
+function timeAgo(iso: string | undefined) {
+  if (!iso) return null;
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
+/* ────────────────────────────────────────────────────────────────
+   BalanceCard — now also renders a "money to move" badge with a
+   one-tap confirm action. The badge is purely derived from
+   (actual balance − ledger float), so it disappears automatically
+   the moment that gap closes — whether via Confirm, a manual
+   balance edit, or a new expense being logged against the account.
+──────────────────────────────────────────────────────────────── */
 function BalanceCard({
   label,
   amount,
@@ -196,6 +221,11 @@ function BalanceCard({
   glass,
   border,
   sub,
+  accountId,
+  actual,
+  onSaveBalance,
+  transfer,
+  onConfirmTransfer,
 }: {
   label: string;
   amount: number;
@@ -203,7 +233,21 @@ function BalanceCard({
   glass: string;
   border: string;
   sub: string;
+  accountId?: string;
+  actual?: AccountBalance;
+  onSaveBalance?: (accountId: string, balance: number) => Promise<void>;
+  transfer?: {
+    amount: number;
+    toLabel: string;
+    predictedBalance: number;
+  };
+  onConfirmTransfer?: () => Promise<void>;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(actual ? String(actual.balance) : "");
+  const [saving, setSaving] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+
   return (
     <Card
       style={{ background: glass, border: `1px solid ${border}`, padding: 18 }}
@@ -230,17 +274,178 @@ function BalanceCard({
       >
         {label}
       </p>
-      <p
-        style={{
-          fontSize: "1.7rem",
-          fontWeight: 800,
-          color: V.text,
-          lineHeight: 1,
-        }}
-      >
-        {fmt(amount)}
-      </p>
-      <p style={{ fontSize: "0.72rem", color: V.sub, marginTop: 6 }}>{sub}</p>
+
+      {editing ? (
+        <div style={{ marginBottom: 6 }}>
+          <input
+            autoFocus
+            type="number"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            style={{
+              width: "100%",
+              background: "#fff",
+              border: "1.5px solid rgba(99,60,180,0.25)",
+              borderRadius: 8,
+              padding: "8px 10px",
+              fontSize: "1.1rem",
+              fontWeight: 800,
+              color: V.text,
+              outline: "none",
+              boxSizing: "border-box" as const,
+              marginBottom: 6,
+            }}
+          />
+          <div style={{ display: "flex", gap: 6 }}>
+            <button
+              disabled={saving || !draft}
+              onClick={async () => {
+                if (!onSaveBalance || !accountId) return;
+                setSaving(true);
+                await onSaveBalance(accountId, Number(draft));
+                setSaving(false);
+                setEditing(false);
+              }}
+              style={{
+                flex: 1,
+                padding: "6px",
+                borderRadius: 7,
+                border: "none",
+                background: V.green,
+                color: "#fff",
+                fontSize: "0.72rem",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              {saving ? "..." : "Save"}
+            </button>
+            <button
+              onClick={() => setEditing(false)}
+              style={{
+                padding: "6px 10px",
+                borderRadius: 7,
+                border: "1px solid rgba(0,0,0,0.1)",
+                background: "transparent",
+                color: V.sub,
+                fontSize: "0.72rem",
+                cursor: "pointer",
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      ) : actual ? (
+        <>
+          <p
+            style={{
+              fontSize: "1.7rem",
+              fontWeight: 800,
+              color: V.text,
+              lineHeight: 1,
+            }}
+          >
+            {fmt(actual.balance)}
+          </p>
+          <p style={{ fontSize: "0.68rem", color: V.muted, marginTop: 5 }}>
+            Actual balance · {timeAgo(actual.updated_at)}
+          </p>
+          <p style={{ fontSize: "0.68rem", color: V.sub, marginTop: 2 }}>
+            Ledger says {fmt(amount)}
+          </p>
+        </>
+      ) : (
+        <>
+          <p
+            style={{
+              fontSize: "1.7rem",
+              fontWeight: 800,
+              color: V.text,
+              lineHeight: 1,
+            }}
+          >
+            {fmt(amount)}
+          </p>
+          <p style={{ fontSize: "0.72rem", color: V.sub, marginTop: 6 }}>
+            {sub} (ledger estimate)
+          </p>
+        </>
+      )}
+
+      {!editing && accountId && onSaveBalance && (
+        <button
+          onClick={() => {
+            setDraft(
+              actual ? String(actual.balance) : String(Math.round(amount)),
+            );
+            setEditing(true);
+          }}
+          style={{
+            marginTop: 8,
+            padding: "5px 10px",
+            borderRadius: 20,
+            border: "1px solid rgba(0,0,0,0.1)",
+            background: "rgba(255,255,255,0.6)",
+            color: V.sub,
+            fontSize: "0.68rem",
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          {actual ? "✎ Update balance" : "+ Enter actual balance"}
+        </button>
+      )}
+
+      {transfer && (
+        <div
+          style={{
+            marginTop: 10,
+            padding: "10px 12px",
+            borderRadius: 10,
+            background: "rgba(217,119,6,0.12)",
+            border: "1px solid rgba(217,119,6,0.35)",
+          }}
+        >
+          <p
+            style={{
+              fontSize: "0.72rem",
+              fontWeight: 800,
+              color: "#b45309",
+              lineHeight: 1.4,
+            }}
+          >
+            💸 Transfer {fmt(transfer.amount)} → {transfer.toLabel}
+          </p>
+          <p style={{ fontSize: "0.66rem", color: "#92640a", marginTop: 3 }}>
+            Balance after: {fmt(transfer.predictedBalance)}
+          </p>
+          <button
+            disabled={confirming}
+            onClick={async () => {
+              if (!onConfirmTransfer) return;
+              setConfirming(true);
+              await onConfirmTransfer();
+              setConfirming(false);
+            }}
+            style={{
+              marginTop: 8,
+              width: "100%",
+              padding: "7px",
+              borderRadius: 8,
+              border: "none",
+              background: "#d97706",
+              color: "#fff",
+              fontSize: "0.72rem",
+              fontWeight: 700,
+              cursor: confirming ? "not-allowed" : "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            {confirming ? "..." : "✓ Confirm transfer sent"}
+          </button>
+        </div>
+      )}
     </Card>
   );
 }
@@ -316,10 +521,13 @@ export default function FinancePage() {
     "all",
   );
   const [showSettle, setShowSettle] = useState(false);
+  const [accountBalances, setAccountBalances] = useState<
+    Record<string, AccountBalance>
+  >({});
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: o }, { data: s }, { data: st }, { data: ex }] =
+    const [{ data: o }, { data: s }, { data: st }, { data: ex }, { data: ab }] =
       await Promise.all([
         supabase
           .from("orders")
@@ -341,11 +549,19 @@ export default function FinancePage() {
           .from("expenses")
           .select("id, description, amount, category, date, paid_by, split")
           .order("date", { ascending: false }),
+        supabase.from("account_balances").select("*"),
       ]);
     if (o) setOrders(o as Order[]);
     if (s) setSplits(s as IncomeSplit[]);
     if (st) setSettlements(st as Settlement[]);
     if (ex) setExpenses(ex as ExpenseRow[]);
+    if (ab) {
+      const map: Record<string, AccountBalance> = {};
+      (ab as AccountBalance[]).forEach((row) => {
+        map[row.account_id] = row;
+      });
+      setAccountBalances(map);
+    }
     setLoading(false);
   }, []);
 
@@ -424,6 +640,43 @@ export default function FinancePage() {
       netOutstanding,
     };
   }, [splits, settlements, expenses]);
+
+  /* ---------- Transfer suggestions (drives the badges) ----------
+     Purely derived from (actual balance − ledger float). This means
+     the badge disappears automatically the instant that gap closes —
+     whether the person taps Confirm below, edits the balance down
+     manually, or a newly logged expense raises the ledger float to
+     match the actual balance. No separate "confirmed" flag needed. */
+  const transferMap = useMemo(() => {
+    const map: Record<
+      string,
+      {
+        amount: number;
+        toAccountId: string;
+        toLabel: string;
+        predictedBalance: number;
+      }
+    > = {};
+    const pairs: [string, string, number][] = [
+      ["company_other", "unni_personal", totals.companyOtherBalance],
+      ["company_kochi", "amma_personal", totals.companyKochiBalance],
+    ];
+    pairs.forEach(([fromId, toId, ledgerFloat]) => {
+      const actual = accountBalances[fromId];
+      if (!actual) return;
+      const excess = actual.balance - ledgerFloat;
+      if (excess > 1) {
+        map[fromId] = {
+          amount: excess,
+          toAccountId: toId,
+          toLabel:
+            toId === "unni_personal" ? "Unni · Personal" : "Amma · Personal",
+          predictedBalance: ledgerFloat,
+        };
+      }
+    });
+    return map;
+  }, [accountBalances, totals]);
 
   /* ---------- Unified activity feed ---------- */
   const activity = useMemo<ActivityRow[]>(() => {
@@ -544,6 +797,52 @@ export default function FinancePage() {
     setShowSettle(false);
     await load();
     flash("Settlement recorded ✓");
+  }
+
+  async function saveAccountBalance(accountId: string, balance: number) {
+    await supabase.from("account_balances").upsert(
+      {
+        account_id: accountId,
+        balance,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "account_id" },
+    );
+    await load();
+    flash("Balance updated ✓");
+  }
+
+  /* Confirms that money has actually moved out of a company account
+     into the linked personal account. Sets the "from" account's
+     balance to the predicted post-transfer float, and adds the
+     transferred amount onto the "to" account's actual balance.
+     Once this runs, transferMap recomputes to (near) zero excess,
+     so the badge disappears immediately — no page reload needed. */
+  async function confirmAccountTransfer(
+    fromId: string,
+    toId: string,
+    amount: number,
+    predictedFromBalance: number,
+  ) {
+    const toActual = accountBalances[toId];
+    const now = new Date().toISOString();
+    const { error } = await supabase.from("account_balances").upsert(
+      [
+        { account_id: fromId, balance: predictedFromBalance, updated_at: now },
+        {
+          account_id: toId,
+          balance: (toActual?.balance || 0) + amount,
+          updated_at: now,
+        },
+      ],
+      { onConflict: "account_id" },
+    );
+    if (error) {
+      flash("Transfer save failed: " + error.message);
+      return;
+    }
+    await load();
+    flash(`✓ Transfer confirmed — ${fmt(amount)} moved`);
   }
 
   const outstanding = totals.netOutstanding;
@@ -707,7 +1006,9 @@ export default function FinancePage() {
           )}
         </Card>
 
-        {/* Balance grid */}
+        {/* Balance grid — company accounts now carry a live
+            "money to move" badge derived straight from
+            actual vs. ledger-float balances. */}
         <div
           style={{
             display: "grid",
@@ -723,6 +1024,9 @@ export default function FinancePage() {
             glass={V.unniGlass}
             border={V.unniBorder}
             sub="Lifetime personal income"
+            accountId="unni_personal"
+            actual={accountBalances["unni_personal"]}
+            onSaveBalance={saveAccountBalance}
           />
           <BalanceCard
             label="Amma · Personal"
@@ -731,6 +1035,9 @@ export default function FinancePage() {
             glass={V.ammaGlass}
             border={V.ammaBorder}
             sub="Lifetime personal income"
+            accountId="amma_personal"
+            actual={accountBalances["amma_personal"]}
+            onSaveBalance={saveAccountBalance}
           />
           <BalanceCard
             label="Company (Other)"
@@ -739,6 +1046,30 @@ export default function FinancePage() {
             glass={V.otherGlass}
             border={V.otherBorder}
             sub="Unni's company account"
+            accountId="company_other"
+            actual={accountBalances["company_other"]}
+            onSaveBalance={saveAccountBalance}
+            transfer={
+              transferMap["company_other"]
+                ? {
+                    amount: transferMap["company_other"].amount,
+                    toLabel: transferMap["company_other"].toLabel,
+                    predictedBalance:
+                      transferMap["company_other"].predictedBalance,
+                  }
+                : undefined
+            }
+            onConfirmTransfer={
+              transferMap["company_other"]
+                ? () =>
+                    confirmAccountTransfer(
+                      "company_other",
+                      transferMap["company_other"].toAccountId,
+                      transferMap["company_other"].amount,
+                      transferMap["company_other"].predictedBalance,
+                    )
+                : undefined
+            }
           />
           <BalanceCard
             label="Company (Kochi)"
@@ -747,6 +1078,30 @@ export default function FinancePage() {
             glass={V.kochiGlass}
             border={V.kochiBorder}
             sub="Amma's company account"
+            accountId="company_kochi"
+            actual={accountBalances["company_kochi"]}
+            onSaveBalance={saveAccountBalance}
+            transfer={
+              transferMap["company_kochi"]
+                ? {
+                    amount: transferMap["company_kochi"].amount,
+                    toLabel: transferMap["company_kochi"].toLabel,
+                    predictedBalance:
+                      transferMap["company_kochi"].predictedBalance,
+                  }
+                : undefined
+            }
+            onConfirmTransfer={
+              transferMap["company_kochi"]
+                ? () =>
+                    confirmAccountTransfer(
+                      "company_kochi",
+                      transferMap["company_kochi"].toAccountId,
+                      transferMap["company_kochi"].amount,
+                      transferMap["company_kochi"].predictedBalance,
+                    )
+                : undefined
+            }
           />
         </div>
 
