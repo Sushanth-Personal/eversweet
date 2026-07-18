@@ -1,13 +1,9 @@
 // Location: src/app/api/extract-transactions/route.ts
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import Groq from "groq-sdk";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const genAI = process.env.GEMINI_API_KEY
-  ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-  : null;
 const groq = process.env.GROQ_API_KEY
   ? new Groq({ apiKey: process.env.GROQ_API_KEY })
   : null;
@@ -19,26 +15,40 @@ You are extracting expense transactions from bank/UPI app SMS or notification
 screenshots (e.g. "Rs.450.00 debited from A/c...", GPay/PhonePe/Paytm payment
 notifications, credit card SMS alerts).
 
+Today's date is ${new Date().toISOString().split("T")[0]}.
+
+IMPORTANT — date format warning: Indian bank SMS often show dates as
+DD-Mon-YY with a 2-DIGIT year, e.g. "17-Jul-26". That "26" means the YEAR
+2026, NOT 2024 and NOT day 26. Convert 2-digit years by prefixing "20" —
+so "26" → 2026, "25" → 2025, etc. Do NOT guess or default to an older year;
+read the exact digits shown and prefix them with "20".
+
 Rules:
 - ONLY extract DEBIT transactions (money going OUT / spent / paid). Completely
   ignore credits, refunds, incoming transfers, OTPs, balance-check messages,
   promotional messages, and anything that isn't a real spend.
-- IGNORE any transaction where the payee/recipient is "Kavitha Anil" or
-  "Sushanth" (in any spelling/case, with or without a middle name) — these
-  are internal transfers between family accounts, not real expenses, and
-  must never be included.
 - If the same transaction appears in more than one screenshot, only include it once.
 - description: the merchant/payee name if shown, otherwise a short plain-English
   guess of what it was for based on context. Keep it short and clean.
 - amount: numeric value in INR, no currency symbol or commas.
-- date: use the date/time shown in the message if visible (YYYY-MM-DD). If no
-  date is visible, use today's date.
+- date: YYYY-MM-DD. Read the exact date shown in the message (see the 2-digit
+  year warning above). If no date is visible at all anywhere in the message,
+  use today's date exactly.
 
 Return ONLY a JSON object: {"items": [{"description":"...","amount":123,"date":"YYYY-MM-DD"}]}
 If no valid debit transactions are found, return {"items": []}.
 `;
 
-const IGNORED_PAYEE_PATTERNS = [/kavitha\s*anil/i, /\bsushanth\b/i];
+function sanitizeDate(raw: string | undefined): string {
+  const today = new Date().toISOString().split("T")[0];
+  if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return today;
+  const year = Number(raw.slice(0, 4));
+  const currentYear = new Date().getFullYear();
+  // Reject anything more than 1 year away from now — almost certainly a
+  // misread rather than a real old transaction.
+  if (Math.abs(year - currentYear) > 1) return today;
+  return raw;
+}
 
 function cleanItems(items: any[]) {
   return items
@@ -48,45 +58,14 @@ function cleanItems(items: any[]) {
         typeof item.amount === "number" &&
         item.amount > 0,
     )
-    .filter(
-      (item: any) =>
-        !IGNORED_PAYEE_PATTERNS.some((re) => re.test(item.description)),
-    )
     .map((item: any) => ({
       description: String(item.description).trim(),
       amount: Number(item.amount),
-      date:
-        item.date && /^\d{4}-\d{2}-\d{2}$/.test(item.date)
-          ? item.date
-          : new Date().toISOString().split("T")[0],
+      date: sanitizeDate(item.date),
     }));
 }
 
 type ImageInput = { imageBase64: string; mimeType: string };
-
-async function tryGemini(images: ImageInput[]) {
-  if (!genAI) throw new Error("Gemini not configured");
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
-    generationConfig: {
-      temperature: 0.1,
-      responseMimeType: "application/json",
-    },
-  });
-  const result = await model.generateContent([
-    { text: PROMPT },
-    ...images.map((img) => ({
-      inlineData: { data: img.imageBase64, mimeType: img.mimeType },
-    })),
-  ]);
-  const rawText = result.response.text().trim();
-  if (!rawText) throw new Error("Empty Gemini response");
-  const parsed = JSON.parse(rawText);
-  const items = Array.isArray(parsed) ? parsed : parsed.items;
-  if (!Array.isArray(items))
-    throw new Error("Gemini returned unexpected shape");
-  return items;
-}
 
 async function tryGroqScout(images: ImageInput[]) {
   if (!groq) throw new Error("Groq not configured");
@@ -188,41 +167,31 @@ export async function POST(req: Request) {
     }
 
     let items: any[] = [];
-    let usedProvider = "gemini";
+    let usedProvider = "groq";
 
     try {
-      items = await tryGemini(images);
-    } catch (geminiErr) {
+      items = await tryGroqScout(images);
+    } catch (scoutErr) {
       console.warn(
-        "Gemini failed, trying Groq (Scout):",
-        geminiErr instanceof Error ? geminiErr.message : geminiErr,
+        "Groq Scout failed, trying Groq (Maverick):",
+        scoutErr instanceof Error ? scoutErr.message : scoutErr,
       );
-      usedProvider = "groq";
       try {
-        items = await tryGroqScout(images);
-      } catch (scoutErr) {
+        items = await tryGroqMaverick(images);
+      } catch (maverickErr) {
         console.warn(
-          "Groq Scout failed, trying Groq (Maverick):",
-          scoutErr instanceof Error ? scoutErr.message : scoutErr,
+          "Groq Maverick failed, falling back to ChatGPT:",
+          maverickErr instanceof Error ? maverickErr.message : maverickErr,
         );
-        usedProvider = "groq-maverick";
+        usedProvider = "chatgpt";
         try {
-          items = await tryGroqMaverick(images);
-        } catch (maverickErr) {
-          console.warn(
-            "Groq Maverick failed, falling back to OpenAI:",
-            maverickErr instanceof Error ? maverickErr.message : maverickErr,
+          items = await tryOpenAI(images);
+        } catch (openaiErr) {
+          console.error(
+            "extract-transactions error (all providers failed):",
+            openaiErr,
           );
-          usedProvider = "openai";
-          try {
-            items = await tryOpenAI(images);
-          } catch (openaiErr) {
-            console.error(
-              "extract-transactions error (all providers failed):",
-              openaiErr,
-            );
-            return NextResponse.json({ items: [], _provider: "none" });
-          }
+          return NextResponse.json({ items: [], _provider: "none" });
         }
       }
     }

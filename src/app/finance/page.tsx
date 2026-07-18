@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase";
    CONFIG — tune these two lines if the deal changes
 ──────────────────────────────────────────────────────────────── */
 const COMPANY_SHARE_PER_MOCHI = 80; // ₹ kept as company float, per mochi sold
+const FEED_START_DATE = "2026-07-17"; // hide anything dated before this in the activity feed
 const PAID_STATUSES = [
   "confirmed",
   "cooking",
@@ -53,6 +54,7 @@ const V = {
 
   green: "#16a34a",
   red: "#e11d48",
+  gold: "#d97706",
 };
 
 type Order = {
@@ -87,7 +89,7 @@ type Settlement = {
   created_at: string;
 };
 
-type CompanyExpense = {
+type ExpenseRow = {
   id: string;
   description: string;
   amount: number;
@@ -99,6 +101,7 @@ type CompanyExpense = {
     | "company_other"
     | "company_kochi"
     | null;
+  split: boolean;
 };
 
 const EXPENSE_CATEGORIES = [
@@ -110,6 +113,38 @@ const EXPENSE_CATEGORIES = [
   { id: "marketing", label: "📣 Marketing" },
   { id: "other", label: "📋 Other" },
 ];
+
+type CategoryDef = { id: string; label: string; icon: string; color: string };
+
+const ALL_CATEGORY_DEFS: CategoryDef[] = [
+  { id: "personal_food", label: "Food", icon: "🍔", color: "#ea580c" },
+  { id: "personal_travel", label: "Travel", icon: "🚗", color: "#0891b2" },
+  { id: "personal_loan", label: "Loan", icon: "💳", color: "#7c3aed" },
+  { id: "personal_purchase", label: "Purchase", icon: "🛍️", color: "#db2777" },
+  { id: "personal_other", label: "Other", icon: "📋", color: "#64748b" },
+  { id: "marketing", label: "Ads", icon: "📣", color: "#e11d48" },
+  { id: "ingredient", label: "Ingredients", icon: "🧪", color: "#16a34a" },
+  { id: "packaging", label: "Packing", icon: "📦", color: "#2563eb" },
+  { id: "delivery", label: "Traveling", icon: "🚚", color: "#d97706" },
+  { id: "equipment", label: "Equipment", icon: "🔧", color: "#0891b2" },
+  { id: "fixed", label: "Fixed Cost", icon: "🏠", color: "#64748b" },
+  { id: "other", label: "Other", icon: "📋", color: "#64748b" },
+];
+
+function categoryDef(id: string): CategoryDef {
+  return (
+    ALL_CATEGORY_DEFS.find((c) => c.id === id) || {
+      id,
+      label: id,
+      icon: "📋",
+      color: "#64748b",
+    }
+  );
+}
+
+function isPersonalCategory(id: string) {
+  return id.startsWith("personal_");
+}
 
 const PAYER_OPTIONS = [
   { id: "unni_personal", label: "Unni · Personal", color: V.unni },
@@ -249,21 +284,38 @@ const inputStyle: React.CSSProperties = {
 };
 
 /* ────────────────────────────────────────────────────────────────
+   Unified activity feed row types
+──────────────────────────────────────────────────────────────── */
+type ActivityRow =
+  | {
+      kind: "income";
+      date: string;
+      sortKey: string;
+      label: string;
+      amount: number;
+      recipient: "unni" | "amma";
+    }
+  | { kind: "unclassified"; date: string; sortKey: string; order: Order }
+  | { kind: "expense"; date: string; sortKey: string; expense: ExpenseRow };
+
+/* ────────────────────────────────────────────────────────────────
    Main page
 ──────────────────────────────────────────────────────────────── */
 export default function FinancePage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [splits, setSplits] = useState<IncomeSplit[]>([]);
   const [settlements, setSettlements] = useState<Settlement[]>([]);
-  const [companyExpenses, setCompanyExpenses] = useState<CompanyExpense[]>([]);
+  const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
 
   const [classifyingOrder, setClassifyingOrder] = useState<Order | null>(null);
   const [showManualIncome, setShowManualIncome] = useState(false);
   const [showAddExpense, setShowAddExpense] = useState(false);
+  const [feedFilter, setFeedFilter] = useState<"all" | "orders" | "expenses">(
+    "all",
+  );
   const [showSettle, setShowSettle] = useState(false);
-
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -287,14 +339,13 @@ export default function FinancePage() {
           .order("created_at", { ascending: false }),
         supabase
           .from("expenses")
-          .select("id, description, amount, category, date, paid_by")
-          .not("category", "like", "personal_%")
+          .select("id, description, amount, category, date, paid_by, split")
           .order("date", { ascending: false }),
       ]);
     if (o) setOrders(o as Order[]);
     if (s) setSplits(s as IncomeSplit[]);
     if (st) setSettlements(st as Settlement[]);
-    if (ex) setCompanyExpenses(ex as CompanyExpense[]);
+    if (ex) setExpenses(ex as ExpenseRow[]);
     setLoading(false);
   }, []);
 
@@ -335,6 +386,24 @@ export default function FinancePage() {
       }
     });
 
+    let unniPersonalExp = 0;
+    let ammaPersonalExp = 0;
+    let companyOtherExp = 0;
+    let companyKochiExp = 0;
+    expenses.forEach((e) => {
+      if (e.paid_by === "unni_personal") unniPersonalExp += e.amount;
+      else if (e.paid_by === "amma_personal") ammaPersonalExp += e.amount;
+      else if (e.paid_by === "company_other") companyOtherExp += e.amount;
+      else if (e.paid_by === "company_kochi") companyKochiExp += e.amount;
+
+      // Split personal expenses fold into the same settlement ledger as
+      // income splits: whoever paid personally is owed the other half back.
+      if (e.split && e.paid_by === "unni_personal")
+        ammaOwesUnniRaw += e.amount / 2;
+      if (e.split && e.paid_by === "amma_personal")
+        unniOwesAmmaRaw += e.amount / 2;
+    });
+
     let settledUnniToAmma = 0;
     let settledAmmaToUnni = 0;
     settlements.forEach((s) => {
@@ -347,17 +416,6 @@ export default function FinancePage() {
       settledUnniToAmma -
       (ammaOwesUnniRaw - settledAmmaToUnni);
 
-    let unniPersonalExp = 0;
-    let ammaPersonalExp = 0;
-    let companyOtherExp = 0;
-    let companyKochiExp = 0;
-    companyExpenses.forEach((e) => {
-      if (e.paid_by === "unni_personal") unniPersonalExp += e.amount;
-      else if (e.paid_by === "amma_personal") ammaPersonalExp += e.amount;
-      else if (e.paid_by === "company_other") companyOtherExp += e.amount;
-      else if (e.paid_by === "company_kochi") companyKochiExp += e.amount;
-    });
-
     return {
       companyOtherBalance: companyOther - companyOtherExp,
       companyKochiBalance: companyKochi - companyKochiExp,
@@ -365,7 +423,38 @@ export default function FinancePage() {
       ammaPersonalBalance: lifetimePersonalEach - ammaPersonalExp,
       netOutstanding,
     };
-  }, [splits, settlements, companyExpenses]);
+  }, [splits, settlements, expenses]);
+
+  /* ---------- Unified activity feed ---------- */
+  const activity = useMemo<ActivityRow[]>(() => {
+    const rows: ActivityRow[] = [];
+    splits.forEach((s) => {
+      rows.push({
+        kind: "income",
+        date: s.entry_date,
+        sortKey: s.created_at,
+        label: s.label || "Income",
+        amount: s.order_total,
+        recipient: s.recipient,
+      });
+    });
+    unclassifiedOrders.forEach((o) => {
+      const d =
+        o.delivery_date || o.order_date || o.created_at?.split("T")[0] || "";
+      rows.push({
+        kind: "unclassified",
+        date: d,
+        sortKey: o.created_at || d,
+        order: o,
+      });
+    });
+    expenses.forEach((e) => {
+      rows.push({ kind: "expense", date: e.date, sortKey: e.date, expense: e });
+    });
+    return rows
+      .filter((r) => r.date >= FEED_START_DATE)
+      .sort((a, b) => (a.sortKey < b.sortKey ? 1 : -1));
+  }, [splits, unclassifiedOrders, expenses]);
 
   /* ---------- Actions ---------- */
   async function saveClassification(order: Order, recipient: "unni" | "amma") {
@@ -423,13 +512,27 @@ export default function FinancePage() {
     category: string,
     date: string,
     paidBy: string,
+    split: boolean,
   ) {
     await supabase
       .from("expenses")
-      .insert({ description, amount, category, date, paid_by: paidBy });
+      .insert({ description, amount, category, date, paid_by: paidBy, split });
     setShowAddExpense(false);
     await load();
     flash("Expense logged ✓");
+  }
+
+  async function toggleSplit(expenseId: string, currentSplit: boolean) {
+    await supabase
+      .from("expenses")
+      .update({ split: !currentSplit })
+      .eq("id", expenseId);
+    await load();
+    flash(
+      !currentSplit
+        ? "Marked as split — other person owes half ✓"
+        : "Split removed",
+    );
   }
 
   async function confirmSettlement(amount: number) {
@@ -647,7 +750,7 @@ export default function FinancePage() {
           />
         </div>
 
-        {/* Unclassified income */}
+        {/* Unified activity feed */}
         <Card style={{ marginBottom: 16 }}>
           <div
             style={{
@@ -655,148 +758,289 @@ export default function FinancePage() {
               justifyContent: "space-between",
               alignItems: "center",
               marginBottom: 12,
+              flexWrap: "wrap" as const,
+              gap: 8,
             }}
           >
             <p style={{ fontSize: "0.95rem", fontWeight: 800 }}>
-              📥 Unclassified Income
+              📒 All Transactions
             </p>
-            <button
-              onClick={() => setShowManualIncome(true)}
-              style={{
-                padding: "6px 12px",
-                borderRadius: 8,
-                border: "1px solid rgba(99,60,180,0.25)",
-                background: "rgba(99,60,180,0.06)",
-                color: V.unni,
-                fontSize: "0.75rem",
-                fontWeight: 700,
-                cursor: "pointer",
-              }}
-            >
-              + Manual entry
-            </button>
-          </div>
-          {loading ? (
-            <p style={{ fontSize: "0.85rem", color: V.muted }}>Loading…</p>
-          ) : unclassifiedOrders.length === 0 ? (
-            <p style={{ fontSize: "0.85rem", color: V.muted }}>
-              Nothing to classify — every paid order has been logged.
-            </p>
-          ) : (
-            unclassifiedOrders.map((o) => (
-              <div
-                key={o.id}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={() => setShowManualIncome(true)}
                 style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  padding: "10px 0",
-                  borderBottom: "1px solid rgba(99,60,180,0.08)",
+                  padding: "6px 12px",
+                  borderRadius: 8,
+                  border: "1px solid rgba(99,60,180,0.25)",
+                  background: "rgba(99,60,180,0.06)",
+                  color: V.unni,
+                  fontSize: "0.72rem",
+                  fontWeight: 700,
+                  cursor: "pointer",
                 }}
               >
-                <div>
-                  <p style={{ fontSize: "0.88rem", fontWeight: 700 }}>
-                    {o.customer_name}
-                  </p>
-                  <p style={{ fontSize: "0.72rem", color: V.sub }}>
-                    {mochiCount(o)} mochis · {fmt(o.total_price)}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setClassifyingOrder(o)}
-                  style={{
-                    padding: "7px 14px",
-                    borderRadius: 9,
-                    border: "none",
-                    background: "linear-gradient(135deg, #6366f1, #db2777)",
-                    color: "#fff",
-                    fontSize: "0.78rem",
-                    fontWeight: 700,
-                    cursor: "pointer",
-                  }}
-                >
-                  Classify →
-                </button>
-              </div>
-            ))
-          )}
-        </Card>
-
-        {/* Company expenses */}
-        <Card style={{ marginBottom: 16 }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 12,
-            }}
-          >
-            <p style={{ fontSize: "0.95rem", fontWeight: 800 }}>
-              🧾 Company Expenses
-            </p>
-            <button
-              onClick={() => setShowAddExpense(true)}
-              style={{
-                padding: "6px 12px",
-                borderRadius: 8,
-                border: "1px solid rgba(217,119,6,0.3)",
-                background: "rgba(217,119,6,0.08)",
-                color: V.other,
-                fontSize: "0.75rem",
-                fontWeight: 700,
-                cursor: "pointer",
-              }}
-            >
-              + Add expense
-            </button>
+                + Income
+              </button>
+              <button
+                onClick={() => setShowAddExpense(true)}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 8,
+                  border: "1px solid rgba(217,119,6,0.3)",
+                  background: "rgba(217,119,6,0.08)",
+                  color: V.other,
+                  fontSize: "0.72rem",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                + Expense
+              </button>
+            </div>
           </div>
-          {companyExpenses.length === 0 ? (
-            <p style={{ fontSize: "0.85rem", color: V.muted }}>
-              No company expenses logged yet.
-            </p>
-          ) : (
-            companyExpenses.slice(0, 8).map((e) => {
+
+          <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+            {(
+              [
+                { id: "all", label: "All" },
+                { id: "orders", label: "Orders" },
+                { id: "expenses", label: "Expenses" },
+              ] as { id: "all" | "orders" | "expenses"; label: string }[]
+            ).map((f) => (
+              <button
+                key={f.id}
+                onClick={() => setFeedFilter(f.id)}
+                style={{
+                  padding: "7px 14px",
+                  borderRadius: 20,
+                  fontSize: "0.78rem",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  border: `1.5px solid ${feedFilter === f.id ? V.unni : "rgba(99,60,180,0.15)"}`,
+                  background:
+                    feedFilter === f.id ? V.unniGlass : "rgba(255,255,255,0.5)",
+                  color: feedFilter === f.id ? V.unni : V.sub,
+                }}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          {(() => {
+            const filtered = activity.filter((row) => {
+              if (feedFilter === "all") return true;
+              if (feedFilter === "orders")
+                return row.kind === "income" || row.kind === "unclassified";
+              return row.kind === "expense";
+            });
+            if (loading)
+              return (
+                <p style={{ fontSize: "0.85rem", color: V.muted }}>Loading…</p>
+              );
+            if (filtered.length === 0)
+              return (
+                <p style={{ fontSize: "0.85rem", color: V.muted }}>
+                  Nothing here yet.
+                </p>
+              );
+            return filtered.map((row, i) => {
+              if (row.kind === "income") {
+                return (
+                  <div
+                    key={`income-${i}`}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "11px 0",
+                      borderBottom: "1px solid rgba(99,60,180,0.08)",
+                    }}
+                  >
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <p
+                        style={{
+                          fontSize: "0.78rem",
+                          fontWeight: 500,
+                          color: V.sub,
+                          marginBottom: 2,
+                        }}
+                      >
+                        {row.label}
+                      </p>
+                      <p style={{ fontSize: "0.68rem", color: V.muted }}>
+                        {row.date} ·{" "}
+                        {row.recipient === "unni" ? "→ Unni" : "→ Amma"}
+                      </p>
+                    </div>
+                    <p
+                      style={{
+                        fontSize: "1.05rem",
+                        fontWeight: 800,
+                        color: V.green,
+                        whiteSpace: "nowrap" as const,
+                        marginLeft: 10,
+                      }}
+                    >
+                      +{fmt(row.amount)}
+                    </p>
+                  </div>
+                );
+              }
+              if (row.kind === "unclassified") {
+                const o = row.order;
+                return (
+                  <div
+                    key={`unc-${o.id}`}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "11px 0",
+                      borderBottom: "1px solid rgba(99,60,180,0.08)",
+                      background: "rgba(217,119,6,0.05)",
+                    }}
+                  >
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <p
+                        style={{
+                          fontSize: "0.78rem",
+                          fontWeight: 500,
+                          color: V.sub,
+                          marginBottom: 2,
+                        }}
+                      >
+                        {o.customer_name}{" "}
+                        <span style={{ color: V.gold, fontWeight: 700 }}>
+                          · needs classifying
+                        </span>
+                      </p>
+                      <p style={{ fontSize: "0.68rem", color: V.muted }}>
+                        {row.date} · {mochiCount(o)} mochis
+                      </p>
+                    </div>
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 8 }}
+                    >
+                      <p
+                        style={{
+                          fontSize: "1.05rem",
+                          fontWeight: 800,
+                          color: V.gold,
+                          whiteSpace: "nowrap" as const,
+                        }}
+                      >
+                        {fmt(o.total_price)}
+                      </p>
+                      <button
+                        onClick={() => setClassifyingOrder(o)}
+                        style={{
+                          padding: "6px 12px",
+                          borderRadius: 8,
+                          border: "none",
+                          background:
+                            "linear-gradient(135deg, #6366f1, #db2777)",
+                          color: "#fff",
+                          fontSize: "0.72rem",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Classify
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
+              const e = row.expense;
+              const cat = categoryDef(e.category);
               const payer = PAYER_OPTIONS.find((p) => p.id === e.paid_by);
+              const canSplit =
+                e.paid_by === "unni_personal" || e.paid_by === "amma_personal";
               return (
                 <div
-                  key={e.id}
+                  key={`exp-${e.id}`}
                   style={{
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
-                    padding: "9px 0",
+                    padding: "11px 0",
                     borderBottom: "1px solid rgba(99,60,180,0.08)",
                   }}
                 >
-                  <div>
-                    <p style={{ fontSize: "0.85rem", fontWeight: 600 }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <p
+                      style={{
+                        fontSize: "0.78rem",
+                        fontWeight: 500,
+                        color: V.sub,
+                        marginBottom: 2,
+                      }}
+                    >
+                      <span style={{ marginRight: 4 }}>{cat.icon}</span>
                       {e.description}
                     </p>
-                    <p style={{ fontSize: "0.7rem", color: V.sub }}>
+                    <p style={{ fontSize: "0.68rem", color: V.muted }}>
                       {e.date} ·{" "}
+                      <span style={{ color: cat.color, fontWeight: 700 }}>
+                        {cat.label}
+                      </span>
                       {payer ? (
-                        <span style={{ color: payer.color, fontWeight: 700 }}>
-                          {payer.label}
-                        </span>
+                        <>
+                          {" "}
+                          ·{" "}
+                          <span style={{ color: payer.color, fontWeight: 700 }}>
+                            {payer.label}
+                          </span>
+                        </>
                       ) : (
-                        "unpaid-by unset"
+                        ""
                       )}
                     </p>
                   </div>
-                  <p
+                  <div
                     style={{
-                      fontSize: "0.88rem",
-                      fontWeight: 700,
-                      color: V.red,
+                      display: "flex",
+                      flexDirection: "column" as const,
+                      alignItems: "flex-end",
+                      gap: 6,
+                      marginLeft: 10,
                     }}
                   >
-                    −{fmt(e.amount)}
-                  </p>
+                    <p
+                      style={{
+                        fontSize: "1.05rem",
+                        fontWeight: 800,
+                        color: V.text,
+                        whiteSpace: "nowrap" as const,
+                      }}
+                    >
+                      −{fmt(e.amount)}
+                    </p>
+                    {canSplit && !e.split && (
+                      <button
+                        onClick={() => toggleSplit(e.id, e.split)}
+                        style={{
+                          padding: "6px 14px",
+                          borderRadius: 8,
+                          fontSize: "0.75rem",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          whiteSpace: "nowrap" as const,
+                          border: "none",
+                          background:
+                            "linear-gradient(135deg, #6366f1, #db2777)",
+                          color: "#fff",
+                        }}
+                      >
+                        Split
+                      </button>
+                    )}
+                  </div>
                 </div>
               );
-            })
-          )}
+            });
+          })()}
         </Card>
 
         {/* Settlement history */}
@@ -817,7 +1061,9 @@ export default function FinancePage() {
                   borderBottom: "1px solid rgba(99,60,180,0.08)",
                 }}
               >
-                <p style={{ fontSize: "0.82rem", color: V.sub }}>
+                <p
+                  style={{ fontSize: "0.78rem", fontWeight: 500, color: V.sub }}
+                >
                   {s.direction === "unni_to_amma"
                     ? "Unni → Amma"
                     : "Amma → Unni"}{" "}
@@ -828,11 +1074,7 @@ export default function FinancePage() {
                   })}
                 </p>
                 <p
-                  style={{
-                    fontSize: "0.85rem",
-                    fontWeight: 700,
-                    color: V.green,
-                  }}
+                  style={{ fontSize: "1rem", fontWeight: 800, color: V.green }}
                 >
                   {fmt(s.amount)}
                 </p>
@@ -1090,6 +1332,7 @@ function AddExpenseModal({
     category: string,
     date: string,
     paidBy: string,
+    split: boolean,
   ) => Promise<void>;
 }) {
   const [description, setDescription] = useState("");
@@ -1097,7 +1340,10 @@ function AddExpenseModal({
   const [category, setCategory] = useState("ingredient");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [paidBy, setPaidBy] = useState<string>("");
+  const [split, setSplit] = useState(false);
   const [saving, setSaving] = useState(false);
+  const isPersonalPayer =
+    paidBy === "unni_personal" || paidBy === "amma_personal";
   return (
     <Modal title="Add Company Expense" onClose={onClose}>
       <Field label="Description *">
@@ -1143,7 +1389,11 @@ function AddExpenseModal({
           {PAYER_OPTIONS.map((p) => (
             <button
               key={p.id}
-              onClick={() => setPaidBy(p.id)}
+              onClick={() => {
+                setPaidBy(p.id);
+                if (p.id !== "unni_personal" && p.id !== "amma_personal")
+                  setSplit(false);
+              }}
               style={{
                 padding: "9px 8px",
                 borderRadius: 10,
@@ -1160,11 +1410,40 @@ function AddExpenseModal({
           ))}
         </div>
       </Field>
+      {isPersonalPayer && (
+        <Field label="Split 50/50 with the other person?">
+          <button
+            onClick={() => setSplit((v) => !v)}
+            style={{
+              width: "100%",
+              padding: "11px",
+              borderRadius: 10,
+              fontSize: "0.82rem",
+              fontWeight: 700,
+              cursor: "pointer",
+              border: `1.5px solid ${split ? V.unni : "rgba(99,60,180,0.15)"}`,
+              background: split ? V.unniGlass : "transparent",
+              color: split ? V.unni : V.sub,
+            }}
+          >
+            {split
+              ? "✓ Split 50/50 — other person owes half"
+              : "Not split — fully mine"}
+          </button>
+        </Field>
+      )}
       <button
         disabled={saving || !description || !amount || !paidBy}
         onClick={async () => {
           setSaving(true);
-          await onSave(description, Number(amount), category, date, paidBy);
+          await onSave(
+            description,
+            Number(amount),
+            category,
+            date,
+            paidBy,
+            split,
+          );
           setSaving(false);
         }}
         style={{

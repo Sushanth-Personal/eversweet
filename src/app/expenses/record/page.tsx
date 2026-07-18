@@ -17,6 +17,7 @@ const V = {
   green: "#16a34a",
   red: "#e11d48",
   indigo: "#4f46e5",
+  settlement: "#0891b2",
 };
 
 type CategoryDef = {
@@ -117,6 +118,14 @@ const COMPANY_CATEGORIES: CategoryDef[] = [
   },
 ];
 
+const SETTLEMENT_DEF: CategoryDef = {
+  id: "settlement",
+  label: "Settlement",
+  icon: "🔁",
+  color: "#0891b2",
+  bg: "rgba(8,145,178,0.1)",
+};
+
 function isPersonal(categoryId: string) {
   return categoryId.startsWith("personal_");
 }
@@ -128,6 +137,50 @@ const PAYER_OPTIONS = [
   { id: "company_kochi", label: "Company (Kochi)", color: "#059669" },
 ] as const;
 
+function istToday() {
+  return new Date(Date.now() + 5.5 * 3600000).toISOString().split("T")[0];
+}
+
+function inferSettlementDirection(
+  description: string,
+): "unni_to_amma" | "amma_to_unni" | null {
+  const d = description.toLowerCase();
+  if (d.includes("kavitha")) return "unni_to_amma";
+  if (d.includes("sushanth")) return "amma_to_unni";
+  return null;
+}
+
+async function isDuplicateExpense(
+  description: string,
+  amount: number,
+  date: string,
+): Promise<boolean> {
+  const { data } = await supabase
+    .from("expenses")
+    .select("id")
+    .eq("amount", amount)
+    .eq("date", date)
+    .ilike("description", description);
+  return !!(data && data.length > 0);
+}
+
+async function isDuplicateSettlement(
+  amount: number,
+  date: string,
+): Promise<boolean> {
+  const { data } = await supabase
+    .from("settlements")
+    .select("created_at")
+    .eq("amount", amount);
+  if (!data) return false;
+  const target = new Date(date).getTime();
+  return data.some(
+    (s: any) =>
+      Math.abs(new Date(s.created_at).getTime() - target) <
+      1000 * 60 * 60 * 24 * 2,
+  );
+}
+
 type PendingTxn = {
   tempId: string;
   description: string;
@@ -135,7 +188,18 @@ type PendingTxn = {
   date: string;
   category: string | null;
   paidBy: string | null;
+  split: boolean;
+  settlementDirection: "unni_to_amma" | "amma_to_unni" | null;
 };
+
+type PickResult =
+  | {
+      kind: "category";
+      category: string;
+      paidBy: string | null;
+      split: boolean;
+    }
+  | { kind: "settlement"; direction: "unni_to_amma" | "amma_to_unni" };
 
 function Card({
   children,
@@ -182,7 +246,7 @@ export default function RecordExpensePage() {
 
   function flash(text: string) {
     setMsg(text);
-    setTimeout(() => setMsg(""), 3000);
+    setTimeout(() => setMsg(""), 3500);
   }
 
   return (
@@ -304,16 +368,16 @@ export default function RecordExpensePage() {
 
         {mode === "screenshot" && (
           <ScreenshotFlow
-            onSaved={() => {
-              flash("Saved ✓");
+            onSaved={(text) => {
+              flash(text);
               setMode("choose");
             }}
           />
         )}
         {mode === "manual" && (
           <ManualFlow
-            onSaved={() => {
-              flash("Saved ✓");
+            onSaved={(text) => {
+              flash(text);
               setMode("choose");
             }}
           />
@@ -323,16 +387,17 @@ export default function RecordExpensePage() {
   );
 }
 
-/* ────────────────────────────────────────────────────────────────
-   Screenshot scan flow
-──────────────────────────────────────────────────────────────── */
-function ScreenshotFlow({ onSaved }: { onSaved: () => void }) {
+function ScreenshotFlow({ onSaved }: { onSaved: (msg: string) => void }) {
   const [images, setImages] = useState<{ file: File; preview: string }[]>([]);
   const [scanning, setScanning] = useState(false);
   const [pending, setPending] = useState<PendingTxn[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [provider, setProvider] = useState<string | null>(null);
   const [pickerFor, setPickerFor] = useState<string | null>(null);
+  const [defaultPayer, setDefaultPayer] = useState<string | null>(null);
+  const [defaultCategory, setDefaultCategory] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function addFiles(files: FileList | null) {
@@ -361,6 +426,8 @@ function ScreenshotFlow({ onSaved }: { onSaved: () => void }) {
     setPending([]);
     setError(null);
     setProvider(null);
+    setDefaultPayer(null);
+    setDefaultCategory(null);
   }
 
   async function scan() {
@@ -411,6 +478,8 @@ function ScreenshotFlow({ onSaved }: { onSaved: () => void }) {
             date: it.date,
             category: null,
             paidBy: null,
+            split: false,
+            settlementDirection: inferSettlementDirection(it.description),
           })),
         );
         setProvider(data._provider || null);
@@ -425,25 +494,138 @@ function ScreenshotFlow({ onSaved }: { onSaved: () => void }) {
   async function saveAll() {
     const ready = pending.filter((p) => p.category);
     if (ready.length === 0) return;
-    await supabase
-      .from("expenses")
-      .insert(
-        ready.map((p) => ({
+    setSaveError(null);
+    setSaving(true);
+
+    const expenseRows: any[] = [];
+    const settlementRows: {
+      direction: string;
+      amount: number;
+      note: string;
+    }[] = [];
+    let skippedDupes = 0;
+
+    for (const p of ready) {
+      if (p.category === "settlement") {
+        const direction = p.settlementDirection;
+        if (!direction) continue;
+        const dupe = await isDuplicateSettlement(p.amount, p.date);
+        if (dupe) {
+          skippedDupes++;
+          continue;
+        }
+        settlementRows.push({
+          direction,
+          amount: p.amount,
+          note: `Auto-detected from bank message: ${p.description}`,
+        });
+      } else {
+        const dupe = await isDuplicateExpense(p.description, p.amount, p.date);
+        if (dupe) {
+          skippedDupes++;
+          continue;
+        }
+        expenseRows.push({
           description: p.description,
           amount: p.amount,
           category: p.category,
           date: p.date,
           paid_by: p.paidBy,
+          split: p.split,
           note: "Scanned from bank message",
-        })),
-      );
+        });
+      }
+    }
+
+    if (expenseRows.length > 0) {
+      const { error: e1 } = await supabase.from("expenses").insert(expenseRows);
+      if (e1) {
+        setSaveError(e1.message);
+        setSaving(false);
+        return;
+      }
+    }
+    if (settlementRows.length > 0) {
+      const { error: e2 } = await supabase
+        .from("settlements")
+        .insert(settlementRows);
+      if (e2) {
+        setSaveError(e2.message);
+        setSaving(false);
+        return;
+      }
+    }
+
+    setSaving(false);
     reset();
-    onSaved();
+    const parts: string[] = [];
+    if (expenseRows.length)
+      parts.push(
+        `${expenseRows.length} expense${expenseRows.length > 1 ? "s" : ""}`,
+      );
+    if (settlementRows.length)
+      parts.push(
+        `${settlementRows.length} settlement${settlementRows.length > 1 ? "s" : ""}`,
+      );
+    if (skippedDupes)
+      parts.push(
+        `${skippedDupes} duplicate${skippedDupes > 1 ? "s" : ""} skipped`,
+      );
+    onSaved(`✓ Saved: ${parts.join(", ")}`);
+  }
+
+  function removePending(tempId: string) {
+    setPending((prev) => prev.filter((p) => p.tempId !== tempId));
+  }
+
+  function quickTag(tempId: string) {
+    if (!defaultCategory) return;
+    setPending((prev) =>
+      prev.map((p) =>
+        p.tempId === tempId
+          ? {
+              ...p,
+              category: defaultCategory,
+              paidBy: defaultPayer,
+              split: false,
+            }
+          : p,
+      ),
+    );
+  }
+
+  function applyPick(tempId: string, result: PickResult) {
+    setPending((prev) =>
+      prev.map((p) => {
+        if (p.tempId !== tempId) return p;
+        if (result.kind === "settlement")
+          return {
+            ...p,
+            category: "settlement",
+            settlementDirection: result.direction,
+          };
+        return {
+          ...p,
+          category: result.category,
+          paidBy: result.paidBy,
+          split: result.split,
+        };
+      }),
+    );
+    setPickerFor(null);
+  }
+
+  function providerLabel(id: string | null) {
+    if (!id) return null;
+    if (id === "chatgpt") return "ChatGPT";
+    return "Groq";
   }
 
   const catAll = [...PERSONAL_CATEGORIES, ...COMPANY_CATEGORIES];
-  function catDef(id: string) {
-    return catAll.find((c) => c.id === id)!;
+  function displayDef(p: PendingTxn): CategoryDef | null {
+    if (p.category === "settlement") return SETTLEMENT_DEF;
+    if (p.category) return catAll.find((c) => c.id === p.category) || null;
+    return null;
   }
 
   return (
@@ -624,7 +806,7 @@ function ScreenshotFlow({ onSaved }: { onSaved: () => void }) {
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
-              marginBottom: 10,
+              marginBottom: 14,
             }}
           >
             <p style={{ fontSize: "0.82rem", fontWeight: 700, color: V.green }}>
@@ -632,25 +814,154 @@ function ScreenshotFlow({ onSaved }: { onSaved: () => void }) {
               {pending.length > 1 ? "s" : ""}
             </p>
             {provider && (
-              <span style={{ fontSize: "0.65rem", color: V.muted }}>
-                via {provider}
+              <span
+                style={{ fontSize: "0.68rem", color: V.muted, fontWeight: 600 }}
+              >
+                via {providerLabel(provider)}
               </span>
             )}
           </div>
+
+          <p
+            style={{
+              fontSize: "0.68rem",
+              fontWeight: 700,
+              color: V.sub,
+              marginBottom: 6,
+            }}
+          >
+            Who spent this? (default)
+          </p>
+          <div
+            style={{
+              display: "flex",
+              gap: 6,
+              flexWrap: "wrap" as const,
+              marginBottom: 14,
+            }}
+          >
+            {PAYER_OPTIONS.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => setDefaultPayer(p.id)}
+                style={{
+                  padding: "7px 12px",
+                  borderRadius: 20,
+                  fontSize: "0.76rem",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  whiteSpace: "nowrap" as const,
+                  border: `1.5px solid ${defaultPayer === p.id ? p.color : "rgba(0,0,0,0.1)"}`,
+                  background:
+                    defaultPayer === p.id
+                      ? `${p.color}18`
+                      : "rgba(255,255,255,0.5)",
+                  color: defaultPayer === p.id ? p.color : V.sub,
+                }}
+              >
+                {p.id === "unni_personal"
+                  ? "Sushanth (Unni)"
+                  : p.id === "amma_personal"
+                    ? "Kavitha (Amma)"
+                    : p.label}
+              </button>
+            ))}
+          </div>
+
+          <p
+            style={{
+              fontSize: "0.68rem",
+              fontWeight: 700,
+              color: V.sub,
+              marginBottom: 6,
+            }}
+          >
+            Category (default)
+          </p>
+          <div
+            style={{
+              display: "flex",
+              gap: 6,
+              flexWrap: "wrap" as const,
+              marginBottom: 14,
+            }}
+          >
+            {catAll.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => setDefaultCategory(c.id)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 5,
+                  padding: "6px 11px",
+                  borderRadius: 20,
+                  fontSize: "0.76rem",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  whiteSpace: "nowrap" as const,
+                  border: `1.5px solid ${defaultCategory === c.id ? c.color : "rgba(0,0,0,0.1)"}`,
+                  background:
+                    defaultCategory === c.id ? c.bg : "rgba(255,255,255,0.5)",
+                  color: defaultCategory === c.id ? c.color : V.sub,
+                }}
+              >
+                <span>{c.icon}</span> {c.label}
+              </button>
+            ))}
+          </div>
+
+          {(!defaultPayer || !defaultCategory) && (
+            <p
+              style={{ fontSize: "0.72rem", color: V.muted, marginBottom: 10 }}
+            >
+              Pick a default spender + category above, then just tap a
+              transaction below to tag it instantly. Transfers to
+              Kavitha/Sushanth are auto-detected as settlements — use
+              "Categorise" for those.
+            </p>
+          )}
+          {defaultPayer && defaultCategory && (
+            <p
+              style={{
+                fontSize: "0.72rem",
+                color: V.green,
+                marginBottom: 10,
+                fontWeight: 600,
+              }}
+            >
+              ✓ Tap any transaction below to tag it as{" "}
+              {catAll.find((c) => c.id === defaultCategory)?.label}
+            </p>
+          )}
+
           {pending.map((p) => {
-            const def = p.category ? catDef(p.category) : null;
+            const def = displayDef(p);
+            const isSettlement = p.category === "settlement";
+            const looksLikeSettlement = !p.category && !!p.settlementDirection;
+            const canQuickTag = !!(
+              defaultCategory &&
+              !p.category &&
+              !looksLikeSettlement
+            );
             return (
               <div
                 key={p.tempId}
+                onClick={() => canQuickTag && quickTag(p.tempId)}
                 style={{
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
                   padding: "10px 12px",
                   borderRadius: 12,
-                  background: def ? def.bg : "rgba(0,0,0,0.03)",
-                  border: `1px solid ${def ? def.color + "35" : "rgba(0,0,0,0.06)"}`,
+                  background: def
+                    ? def.bg
+                    : looksLikeSettlement
+                      ? SETTLEMENT_DEF.bg
+                      : "rgba(0,0,0,0.03)",
+                  border: `1px solid ${def ? def.color + "35" : looksLikeSettlement ? SETTLEMENT_DEF.color + "35" : "rgba(0,0,0,0.06)"}`,
                   marginBottom: 8,
+                  cursor: canQuickTag ? "pointer" : "default",
                 }}
               >
                 <div>
@@ -668,34 +979,75 @@ function ScreenshotFlow({ onSaved }: { onSaved: () => void }) {
                         }}
                       >
                         {def.icon} {def.label}
+                        {isSettlement && p.settlementDirection
+                          ? ` (${p.settlementDirection === "unni_to_amma" ? "Unni→Amma" : "Amma→Unni"})`
+                          : ""}
+                        {p.split ? " · Split" : ""}
+                      </span>
+                    )}
+                    {!def && looksLikeSettlement && (
+                      <span
+                        style={{
+                          marginLeft: 6,
+                          color: SETTLEMENT_DEF.color,
+                          fontWeight: 700,
+                        }}
+                      >
+                        🔁 Looks like a settlement
                       </span>
                     )}
                   </p>
                 </div>
-                <button
-                  onClick={() => setPickerFor(p.tempId)}
-                  style={{
-                    padding: "6px 12px",
-                    borderRadius: 8,
-                    border: "none",
-                    background: def
-                      ? `${def.color}22`
-                      : "linear-gradient(135deg, #6366f1, #db2777)",
-                    color: def ? def.color : "#fff",
-                    fontSize: "0.75rem",
-                    fontWeight: 700,
-                    cursor: "pointer",
-                    whiteSpace: "nowrap" as const,
-                  }}
+                <div
+                  style={{ display: "flex", alignItems: "center" }}
+                  onClick={(e) => e.stopPropagation()}
                 >
-                  {def ? "Change" : "Categorise"}
-                </button>
+                  <button
+                    onClick={() => setPickerFor(p.tempId)}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: 8,
+                      border: "none",
+                      background: def
+                        ? `${def.color}22`
+                        : "linear-gradient(135deg, #6366f1, #db2777)",
+                      color: def ? def.color : "#fff",
+                      fontSize: "0.75rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      whiteSpace: "nowrap" as const,
+                    }}
+                  >
+                    {def ? "Change" : "Categorise"}
+                  </button>
+                  <button
+                    onClick={() => removePending(p.tempId)}
+                    style={{
+                      marginLeft: 6,
+                      width: 28,
+                      height: 28,
+                      borderRadius: 8,
+                      border: "1px solid rgba(225,29,72,0.25)",
+                      background: "rgba(225,29,72,0.08)",
+                      color: V.red,
+                      fontSize: "0.85rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
             );
           })}
+
           <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
             <button
-              disabled={!pending.some((p) => p.category)}
+              disabled={saving || !pending.some((p) => p.category)}
               onClick={saveAll}
               style={{
                 flex: 1,
@@ -713,7 +1065,7 @@ function ScreenshotFlow({ onSaved }: { onSaved: () => void }) {
                   : "not-allowed",
               }}
             >
-              ✓ Save Categorised
+              {saving ? "Saving..." : "✓ Save Categorised"}
             </button>
             <button
               onClick={reset}
@@ -730,62 +1082,131 @@ function ScreenshotFlow({ onSaved }: { onSaved: () => void }) {
               Discard
             </button>
           </div>
+          {saveError && (
+            <div
+              style={{
+                marginTop: 10,
+                padding: "10px 12px",
+                borderRadius: 10,
+                background: "rgba(225,29,72,0.06)",
+                border: "1px solid rgba(225,29,72,0.2)",
+              }}
+            >
+              <p style={{ fontSize: "0.8rem", color: V.red }}>
+                ⚠ Save failed: {saveError}
+              </p>
+            </div>
+          )}
         </div>
       )}
 
       {pickerFor && (
         <CategoryPicker
+          description={
+            pending.find((p) => p.tempId === pickerFor)?.description || ""
+          }
           onClose={() => setPickerFor(null)}
-          onPick={(category, paidBy) => {
-            setPending((prev) =>
-              prev.map((p) =>
-                p.tempId === pickerFor ? { ...p, category, paidBy } : p,
-              ),
-            );
-            setPickerFor(null);
-          }}
+          onPick={(result) => applyPick(pickerFor, result)}
         />
       )}
     </Card>
   );
 }
 
-/* ────────────────────────────────────────────────────────────────
-   Manual flow — category first, then enter the rate
-──────────────────────────────────────────────────────────────── */
-function ManualFlow({ onSaved }: { onSaved: () => void }) {
+function ManualFlow({ onSaved }: { onSaved: (msg: string) => void }) {
   const [category, setCategory] = useState<string | null>(null);
   const [paidBy, setPaidBy] = useState<string | null>(null);
+  const [split, setSplit] = useState(false);
+  const [settlementDirection, setSettlementDirection] = useState<
+    "unni_to_amma" | "amma_to_unni" | null
+  >(null);
   const [showPicker, setShowPicker] = useState(true);
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  const [date, setDate] = useState(istToday());
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const catAll = [...PERSONAL_CATEGORIES, ...COMPANY_CATEGORIES];
-  const def = category ? catAll.find((c) => c.id === category) : null;
+  const def =
+    category === "settlement"
+      ? SETTLEMENT_DEF
+      : category
+        ? catAll.find((c) => c.id === category)
+        : null;
 
   async function save() {
     if (!category || !amount) return;
     setSaving(true);
-    await supabase.from("expenses").insert({
-      description: description.trim() || def?.label || "Expense",
+    setSaveError(null);
+
+    if (category === "settlement") {
+      if (!settlementDirection) {
+        setSaving(false);
+        return;
+      }
+      const dupe = await isDuplicateSettlement(Number(amount), date);
+      if (dupe) {
+        setSaving(false);
+        onSaved(
+          "Skipped — this looks like a duplicate of an existing settlement.",
+        );
+        return;
+      }
+      const { error: insertError } = await supabase.from("settlements").insert({
+        direction: settlementDirection,
+        amount: Number(amount),
+        note: description.trim() || "Manual settlement entry",
+      });
+      setSaving(false);
+      if (insertError) {
+        setSaveError(insertError.message);
+        return;
+      }
+      onSaved("✓ Settlement recorded");
+      return;
+    }
+
+    const desc = description.trim() || def?.label || "Expense";
+    const dupe = await isDuplicateExpense(desc, Number(amount), date);
+    if (dupe) {
+      setSaving(false);
+      onSaved(
+        "Skipped — this looks like a duplicate expense already recorded.",
+      );
+      return;
+    }
+
+    const { error: insertError } = await supabase.from("expenses").insert({
+      description: desc,
       amount: Number(amount),
       category,
       date,
       paid_by: paidBy,
+      split,
     });
     setSaving(false);
-    onSaved();
+    if (insertError) {
+      setSaveError(insertError.message);
+      return;
+    }
+    onSaved("✓ Saved");
   }
 
   if (showPicker) {
     return (
       <Card>
         <CategoryPickerInline
-          onPick={(cat, pb) => {
-            setCategory(cat);
-            setPaidBy(pb);
+          description=""
+          onPick={(result) => {
+            if (result.kind === "settlement") {
+              setCategory("settlement");
+              setSettlementDirection(result.direction);
+            } else {
+              setCategory(result.category);
+              setPaidBy(result.paidBy);
+              setSplit(result.split);
+            }
             setShowPicker(false);
           }}
         />
@@ -810,9 +1231,17 @@ function ManualFlow({ onSaved }: { onSaved: () => void }) {
         <span style={{ fontSize: "1.6rem" }}>{def!.icon}</span>
         <div style={{ flex: 1 }}>
           <p style={{ fontWeight: 800, color: def!.color }}>{def!.label}</p>
-          {paidBy && (
+          {category === "settlement" && settlementDirection && (
+            <p style={{ fontSize: "0.7rem", color: V.sub }}>
+              {settlementDirection === "unni_to_amma"
+                ? "Unni → Amma"
+                : "Amma → Unni"}
+            </p>
+          )}
+          {category !== "settlement" && paidBy && (
             <p style={{ fontSize: "0.7rem", color: V.sub }}>
               {PAYER_OPTIONS.find((p) => p.id === paidBy)?.label}
+              {split ? " · Split 50/50" : ""}
             </p>
           )}
         </div>
@@ -839,7 +1268,9 @@ function ManualFlow({ onSaved }: { onSaved: () => void }) {
           marginBottom: 5,
         }}
       >
-        Rate / Amount ₹ *
+        {category === "settlement"
+          ? "Amount transferred ₹ *"
+          : "Rate / Amount ₹ *"}
       </p>
       <input
         style={{
@@ -864,7 +1295,7 @@ function ManualFlow({ onSaved }: { onSaved: () => void }) {
           marginBottom: 5,
         }}
       >
-        Description
+        {category === "settlement" ? "Note (optional)" : "Description"}
       </p>
       <input
         style={{ ...inputStyle, marginBottom: 12 }}
@@ -907,26 +1338,256 @@ function ManualFlow({ onSaved }: { onSaved: () => void }) {
           cursor: amount ? "pointer" : "not-allowed",
         }}
       >
-        {saving ? "Saving..." : "✓ Save Expense"}
+        {saving
+          ? "Saving..."
+          : category === "settlement"
+            ? "✓ Record Settlement"
+            : "✓ Save Expense"}
       </button>
+      {saveError && (
+        <div
+          style={{
+            marginTop: 10,
+            padding: "10px 12px",
+            borderRadius: 10,
+            background: "rgba(225,29,72,0.06)",
+            border: "1px solid rgba(225,29,72,0.2)",
+          }}
+        >
+          <p style={{ fontSize: "0.8rem", color: V.red }}>
+            ⚠ Save failed: {saveError}
+          </p>
+        </div>
+      )}
     </Card>
   );
 }
 
-/* ────────────────────────────────────────────────────────────────
-   Category picker — inline version (used by ManualFlow) and
-   modal version (used by ScreenshotFlow, which sits inside a card
-   already occupied by the pending-transactions list)
-──────────────────────────────────────────────────────────────── */
 function CategoryPickerInline({
+  description,
   onPick,
 }: {
-  onPick: (category: string, paidBy: string | null) => void;
+  description: string;
+  onPick: (result: PickResult) => void;
 }) {
-  const [group, setGroup] = useState<"personal" | "company" | null>(null);
+  const [group, setGroup] = useState<
+    "personal" | "company" | "settlement" | null
+  >(null);
   const [chosenCategory, setChosenCategory] = useState<string | null>(null);
+  const [chosenPayer, setChosenPayer] = useState<string | null>(null);
+
+  if (group === "settlement") {
+    const inferred = inferSettlementDirection(description);
+    if (inferred) {
+      return (
+        <div>
+          <button
+            onClick={() => setGroup(null)}
+            style={{
+              background: "transparent",
+              border: "none",
+              color: V.sub,
+              fontSize: "0.78rem",
+              cursor: "pointer",
+              marginBottom: 12,
+            }}
+          >
+            ← Back
+          </button>
+          <p style={{ fontWeight: 800, marginBottom: 8 }}>
+            Looks like a settlement
+          </p>
+          <p style={{ fontSize: "0.82rem", color: V.sub, marginBottom: 16 }}>
+            Detected:{" "}
+            <strong>
+              {inferred === "unni_to_amma" ? "Unni → Amma" : "Amma → Unni"}
+            </strong>
+            . This will reduce the pending settlement instead of being logged as
+            an expense.
+          </p>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              onClick={() =>
+                onPick({ kind: "settlement", direction: inferred })
+              }
+              style={{
+                flex: 1,
+                padding: "12px",
+                borderRadius: 12,
+                border: "none",
+                background: "linear-gradient(135deg, #22d3ee, #0891b2)",
+                color: "#fff",
+                fontWeight: 800,
+                cursor: "pointer",
+              }}
+            >
+              ✓ Confirm
+            </button>
+            <button
+              onClick={() =>
+                onPick({
+                  kind: "settlement",
+                  direction:
+                    inferred === "unni_to_amma"
+                      ? "amma_to_unni"
+                      : "unni_to_amma",
+                })
+              }
+              style={{
+                padding: "12px 14px",
+                borderRadius: 12,
+                border: "1px solid rgba(0,0,0,0.1)",
+                background: "transparent",
+                color: V.sub,
+                fontWeight: 600,
+                cursor: "pointer",
+                fontSize: "0.8rem",
+              }}
+            >
+              Wrong way? Flip
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div>
+        <button
+          onClick={() => setGroup(null)}
+          style={{
+            background: "transparent",
+            border: "none",
+            color: V.sub,
+            fontSize: "0.78rem",
+            cursor: "pointer",
+            marginBottom: 12,
+          }}
+        >
+          ← Back
+        </button>
+        <p style={{ fontWeight: 800, marginBottom: 12 }}>Which direction?</p>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={() =>
+              onPick({ kind: "settlement", direction: "unni_to_amma" })
+            }
+            style={{
+              flex: 1,
+              padding: "16px 10px",
+              borderRadius: 14,
+              border: "none",
+              background: "linear-gradient(135deg, #6366f1, #4338ca)",
+              color: "#fff",
+              fontWeight: 700,
+              fontSize: "0.82rem",
+              cursor: "pointer",
+            }}
+          >
+            Unni → Amma
+          </button>
+          <button
+            onClick={() =>
+              onPick({ kind: "settlement", direction: "amma_to_unni" })
+            }
+            style={{
+              flex: 1,
+              padding: "16px 10px",
+              borderRadius: 14,
+              border: "none",
+              background: "linear-gradient(135deg, #f472b6, #db2777)",
+              color: "#fff",
+              fontWeight: 700,
+              fontSize: "0.82rem",
+              cursor: "pointer",
+            }}
+          >
+            Amma → Unni
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (chosenCategory && chosenPayer) {
+    return (
+      <div>
+        <button
+          onClick={() => setChosenPayer(null)}
+          style={{
+            background: "transparent",
+            border: "none",
+            color: V.sub,
+            fontSize: "0.78rem",
+            cursor: "pointer",
+            marginBottom: 12,
+          }}
+        >
+          ← Back
+        </button>
+        <p style={{ fontWeight: 800, marginBottom: 8 }}>Split this 50/50?</p>
+        <p style={{ fontSize: "0.8rem", color: V.sub, marginBottom: 16 }}>
+          If shared, the other person will owe half — this shows up
+          automatically in the /finance settlement balance.
+        </p>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={() =>
+              onPick({
+                kind: "category",
+                category: chosenCategory,
+                paidBy: chosenPayer,
+                split: false,
+              })
+            }
+            style={{
+              flex: 1,
+              padding: "14px 10px",
+              borderRadius: 14,
+              border: "1.5px solid rgba(0,0,0,0.1)",
+              background: "transparent",
+              color: V.sub,
+              fontWeight: 700,
+              fontSize: "0.85rem",
+              cursor: "pointer",
+            }}
+          >
+            No, just mine
+          </button>
+          <button
+            onClick={() =>
+              onPick({
+                kind: "category",
+                category: chosenCategory,
+                paidBy: chosenPayer,
+                split: true,
+              })
+            }
+            style={{
+              flex: 1,
+              padding: "14px 10px",
+              borderRadius: 14,
+              border: "none",
+              background: "linear-gradient(135deg, #6366f1, #db2777)",
+              color: "#fff",
+              fontWeight: 800,
+              fontSize: "0.85rem",
+              cursor: "pointer",
+            }}
+          >
+            ✓ Split 50/50
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (chosenCategory) {
+    const personalPayers = PAYER_OPTIONS.filter(
+      (p) => p.id === "unni_personal" || p.id === "amma_personal",
+    );
+    const payerOptions = isPersonal(chosenCategory)
+      ? personalPayers
+      : PAYER_OPTIONS;
     return (
       <div>
         <button
@@ -942,14 +1603,24 @@ function CategoryPickerInline({
         >
           ← Back
         </button>
-        <p style={{ fontWeight: 800, marginBottom: 12 }}>Who paid for this?</p>
+        <p style={{ fontWeight: 800, marginBottom: 12 }}>Who spent this?</p>
         <div
           style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}
         >
-          {PAYER_OPTIONS.map((p) => (
+          {payerOptions.map((p) => (
             <button
               key={p.id}
-              onClick={() => onPick(chosenCategory, p.id)}
+              onClick={() => {
+                if (p.id === "unni_personal" || p.id === "amma_personal")
+                  setChosenPayer(p.id);
+                else
+                  onPick({
+                    kind: "category",
+                    category: chosenCategory,
+                    paidBy: p.id,
+                    split: false,
+                  });
+              }}
               style={{
                 padding: "14px 10px",
                 borderRadius: 12,
@@ -961,7 +1632,11 @@ function CategoryPickerInline({
                 cursor: "pointer",
               }}
             >
-              {p.label}
+              {p.id === "unni_personal"
+                ? "Sushanth (Unni)"
+                : p.id === "amma_personal"
+                  ? "Kavitha (Amma)"
+                  : p.label}
             </button>
           ))}
         </div>
@@ -973,40 +1648,60 @@ function CategoryPickerInline({
     return (
       <div>
         <p style={{ fontWeight: 800, marginBottom: 14 }}>
-          Personal or Company?
+          Personal, Company, or Settlement?
         </p>
-        <div style={{ display: "flex", gap: 10 }}>
+        <div
+          style={{ display: "flex", flexDirection: "column" as const, gap: 10 }}
+        >
+          <div style={{ display: "flex", gap: 10 }}>
+            <button
+              onClick={() => setGroup("personal")}
+              style={{
+                flex: 1,
+                padding: "22px 12px",
+                borderRadius: 16,
+                border: "none",
+                background: "linear-gradient(135deg, #6366f1, #4338ca)",
+                color: "#fff",
+                fontWeight: 800,
+                fontSize: "0.95rem",
+                cursor: "pointer",
+              }}
+            >
+              🙋 Personal
+            </button>
+            <button
+              onClick={() => setGroup("company")}
+              style={{
+                flex: 1,
+                padding: "22px 12px",
+                borderRadius: 16,
+                border: "none",
+                background: "linear-gradient(135deg, #fbbf24, #d97706)",
+                color: "#fff",
+                fontWeight: 800,
+                fontSize: "0.95rem",
+                cursor: "pointer",
+              }}
+            >
+              🏢 Company
+            </button>
+          </div>
           <button
-            onClick={() => setGroup("personal")}
+            onClick={() => setGroup("settlement")}
             style={{
-              flex: 1,
-              padding: "22px 12px",
+              width: "100%",
+              padding: "14px 12px",
               borderRadius: 16,
               border: "none",
-              background: "linear-gradient(135deg, #6366f1, #4338ca)",
+              background: "linear-gradient(135deg, #22d3ee, #0891b2)",
               color: "#fff",
               fontWeight: 800,
-              fontSize: "0.95rem",
+              fontSize: "0.9rem",
               cursor: "pointer",
             }}
           >
-            🙋 Personal
-          </button>
-          <button
-            onClick={() => setGroup("company")}
-            style={{
-              flex: 1,
-              padding: "22px 12px",
-              borderRadius: 16,
-              border: "none",
-              background: "linear-gradient(135deg, #fbbf24, #d97706)",
-              color: "#fff",
-              fontWeight: 800,
-              fontSize: "0.95rem",
-              cursor: "pointer",
-            }}
-          >
-            🏢 Company
+            🔁 Settlement (transfer to Kavitha / Sushanth)
           </button>
         </div>
       </div>
@@ -1037,9 +1732,7 @@ function CategoryPickerInline({
         {options.map((c) => (
           <button
             key={c.id}
-            onClick={() =>
-              isPersonal(c.id) ? onPick(c.id, null) : setChosenCategory(c.id)
-            }
+            onClick={() => setChosenCategory(c.id)}
             style={{
               display: "flex",
               flexDirection: "column" as const,
@@ -1066,10 +1759,12 @@ function CategoryPickerInline({
 }
 
 function CategoryPicker({
+  description,
   onPick,
   onClose,
 }: {
-  onPick: (category: string, paidBy: string | null) => void;
+  description: string;
+  onPick: (result: PickResult) => void;
   onClose: () => void;
 }) {
   return (
@@ -1110,7 +1805,7 @@ function CategoryPicker({
             ✕
           </button>
         </div>
-        <CategoryPickerInline onPick={onPick} />
+        <CategoryPickerInline description={description} onPick={onPick} />
       </Card>
     </div>
   );

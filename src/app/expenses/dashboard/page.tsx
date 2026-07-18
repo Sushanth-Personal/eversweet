@@ -182,7 +182,7 @@ export default function ExpensesDashboardPage() {
   const [expenses, setExpenses] = useState<SavedExpense[]>([]);
   const [loading, setLoading] = useState(true);
   const [scope, setScope] = useState<Scope>("total");
-  const [dateScope, setDateScope] = useState<DateScope>("month");
+  const [dateScope, setDateScope] = useState<DateScope>("all");
   const [customDate, setCustomDate] = useState(istToday());
   const [showHistory, setShowHistory] = useState(false);
   const [historyTab, setHistoryTab] = useState<"all" | "personal" | "company">(
