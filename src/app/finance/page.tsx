@@ -393,7 +393,7 @@ function BalanceCard({
                     style={{
                       fontSize: "0.72rem",
                       fontWeight: 700,
-                      color: explained ? V.green : V.indigo,
+                      color: explained ? V.green : V.unni,
                       marginBottom: 6,
                     }}
                   >
@@ -429,7 +429,7 @@ function BalanceCard({
                       padding: "7px",
                       borderRadius: 7,
                       border: "none",
-                      background: explained ? V.green : V.indigo,
+                      background: explained ? V.green : V.unni,
                       color: "#fff",
                       fontSize: "0.7rem",
                       fontWeight: 700,
@@ -1020,14 +1020,30 @@ export default function FinancePage() {
         predictedBalance: number;
       }
     > = {};
-    const pairs: [string, string, number][] = [
-      ["company_other", "unni_personal", totals.companyOtherBalance],
-      ["company_kochi", "amma_personal", totals.companyKochiBalance],
+    const pairs: [string, string, number, number][] = [
+      [
+        "company_other",
+        "unni_personal",
+        totals.companyOtherBalance,
+        totals.companyOtherCashEstimate,
+      ],
+      [
+        "company_kochi",
+        "amma_personal",
+        totals.companyKochiBalance,
+        totals.companyKochiCashEstimate,
+      ],
     ];
-    pairs.forEach(([fromId, toId, ledgerFloat]) => {
+    pairs.forEach(([fromId, toId, ledgerFloat, cashEstimate]) => {
       const actual = accountBalances[fromId];
-      if (!actual) return;
-      const excess = actual.balance - ledgerFloat;
+      // Prefer the manually-confirmed running estimate if one exists —
+      // it reflects real bank reconciliation. Otherwise fall back to the
+      // automatic, transaction-only cash estimate so this still works
+      // before anyone has ever typed in a real balance.
+      const currentCash = actual
+        ? actual.balance + (ledgerFloat - actual.ledger_at_entry)
+        : cashEstimate;
+      const excess = currentCash - ledgerFloat;
       if (excess > 1) {
         map[fromId] = {
           amount: excess,
