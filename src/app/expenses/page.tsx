@@ -1684,12 +1684,7 @@ function CategoryPickerInline({
   }
 
   if (chosenCategory) {
-    const personalPayers = PAYER_OPTIONS.filter(
-      (p) => p.id === "unni_personal" || p.id === "amma_personal",
-    );
-    const payerOptions = isPersonal(chosenCategory)
-      ? personalPayers
-      : PAYER_OPTIONS;
+    const payerOptions = PAYER_OPTIONS;
     return (
       <div>
         <button
