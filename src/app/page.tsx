@@ -230,6 +230,7 @@ export default function Home() {
     "delivery",
   );
   const [orderDone, setOrderDone] = useState(false);
+  const [orderId, setOrderId] = useState("");
   const [hasTappedPay, setHasTappedPay] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
 
@@ -348,6 +349,7 @@ export default function Home() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Something went wrong");
+      setOrderId(data.order_id || "");
       setOrderDone(true);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e: unknown) {
@@ -758,6 +760,7 @@ export default function Home() {
                 Pay first, then send us the screenshot to lock your slot.
               </p>
             )}
+            {orderId && <a href={`/confirm/${orderId}`} style={{ display:"flex",justifyContent:"center",width:"100%",padding:"14px 20px",marginTop:14,borderRadius:10,background:"linear-gradient(135deg,#ff9f67,#ffcf72)",color:"#32150c",fontSize:".95rem",fontWeight:800,textDecoration:"none",boxSizing:"border-box" as const }}>Confirm delivery details →</a>}
           </div>
         ) : (
           /* ── Payment disabled — QR + phone only ── */

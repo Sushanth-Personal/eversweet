@@ -117,6 +117,7 @@ export default function PayPage() {
         <p style={{ fontSize: "2rem", marginBottom: 12 }}>✅</p>
         <p style={{ color: "var(--cream)", fontSize: "1rem", marginBottom: 8 }}>This order is already confirmed!</p>
         <p style={{ color: "var(--cream-dim)", fontSize: "0.82rem" }}>No further action needed. We'll be in touch on WhatsApp.</p>
+        <a href={`/confirm/${order.id}`} style={{ marginTop:20,padding:"13px 20px",borderRadius:10,background:"linear-gradient(135deg,#ff9f67,#ffcf72)",color:"#32150c",fontWeight:800,textDecoration:"none" }}>View or edit delivery details →</a>
         <a href="https://instagram.com/byeversweet" target="_blank" rel="noopener noreferrer" style={{ color: "var(--gold)", fontSize: "0.7rem", letterSpacing: "0.15em", textTransform: "uppercase", textDecoration: "none", marginTop: 24 }}>
           Follow us @byeversweet →
         </a>
@@ -276,6 +277,9 @@ export default function PayPage() {
       After paying, send us the screenshot on WhatsApp to confirm your slot.
       <br />UPI ID: {UPI_ID}
     </p>
+    <a href={`/confirm/${order.id}`} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", padding: "14px 20px", marginTop: 14, borderRadius: 10, background: "linear-gradient(135deg,#ff9f67,#ffcf72)", color: "#32150c", fontSize: "0.95rem", fontWeight: 800, textDecoration: "none", boxSizing: "border-box" as const }}>
+      Next: confirm delivery details →
+    </a>
   </div>
 )}
 

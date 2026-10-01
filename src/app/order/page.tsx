@@ -128,7 +128,7 @@ export default function QuickOrderPage() {
   const [orderDone, setOrderDone] = useState(false);
   const [hasTappedPay, setHasTappedPay] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
-  const [savedOrder, setSavedOrder] = useState<{ autoBox: BoxSize | null; flavours: Record<string, number> } | null>(null);
+  const [savedOrder, setSavedOrder] = useState<{ id: string; autoBox: BoxSize | null; flavours: Record<string, number> } | null>(null);
 
   const slotRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLDivElement>(null);
@@ -219,7 +219,7 @@ export default function QuickOrderPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Something went wrong");
-      setSavedOrder({ autoBox, flavours });
+      setSavedOrder({ id: data.order_id, autoBox, flavours });
       setOrderDone(true);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e: unknown) {
@@ -373,6 +373,7 @@ export default function QuickOrderPage() {
               Just attach your payment screenshot and send! 🍡
             </p>
           )}
+          <a href={`/confirm/${savedOrder.id}`} style={{ display:"flex",justifyContent:"center",width:"100%",padding:"14px 20px",marginTop:14,borderRadius:10,background:"linear-gradient(135deg,#ff9f67,#ffcf72)",color:"#32150c",fontSize:".95rem",fontWeight:800,textDecoration:"none",boxSizing:"border-box" as const }}>Confirm delivery details →</a>
         </div>
 
         <a href="https://instagram.com/byeversweet" target="_blank" rel="noopener noreferrer" style={{ color: "var(--gold)", fontSize: "0.7rem", letterSpacing: "0.15em", textTransform: "uppercase" as const, textDecoration: "none" }}>

@@ -1,0 +1,33 @@
+"use client";
+import { useMemo, useState } from "react";
+import type { Product, BoxSize } from "@/lib/types";
+import type { ExtOrder } from "../_lib/constants";
+
+function key(date: Date) { return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`; }
+function friendlyId(id: string) { return id.split("-").map((p) => p.charAt(0).toUpperCase()+p.slice(1)).join(" "); }
+
+export function OrderCalendar({ orders, products, boxes, onEdit, onAdd, onDispatch }: {
+  orders: ExtOrder[]; products: Product[]; boxes: BoxSize[]; onEdit:(order:ExtOrder)=>void; onAdd:()=>void; onDispatch:(id:string)=>Promise<void>;
+}) {
+  const [month,setMonth]=useState(()=>new Date(new Date().getFullYear(),new Date().getMonth(),1));
+  const [selected,setSelected]=useState(()=>key(new Date())); const [dark,setDark]=useState(true);
+  const active=orders.filter((o)=>o.status!=="cancelled");
+  const byDate=useMemo(()=>active.reduce<Record<string,ExtOrder[]>>((all,o)=>{(all[o.delivery_date||"unscheduled"]||=[]).push(o);return all;},{}),[active]);
+  const first=new Date(month.getFullYear(),month.getMonth(),1); const days=Array.from({length:new Date(month.getFullYear(),month.getMonth()+1,0).getDate()},(_,i)=>new Date(month.getFullYear(),month.getMonth(),i+1));
+  const selectedOrders=byDate[selected]||[]; const remaining=selectedOrders.filter((o)=>o.status!=="dispatched");
+  const productMap=Object.fromEntries(products.map((p)=>[p.id,p.name])); const boxMap=Object.fromEntries(boxes.map((b)=>[b.id,b.label]));
+  const boxCount=Object.fromEntries(boxes.map((b)=>[b.id,b.count]));
+  const flavourName=(id:string)=>productMap[id]||friendlyId(id);
+  const flavourTotals=remaining.reduce<Record<string,number>>((totals,o)=>{Object.entries(o.flavours||{}).forEach(([id,n])=>totals[id]=(totals[id]||0)+Number(n||0));return totals;},{});
+  const todayCount=(byDate[key(new Date())]||[]).filter((o)=>o.status!=="dispatched").length;
+  const monthCount=active.filter((o)=>o.delivery_date?.startsWith(key(month).slice(0,7))&&o.status!=="dispatched").length;
+  return <div className={`order-desk ${dark?"is-dark":"is-light"}`}>
+    <header className="desk-welcome"><div><p>YOUR ORDER DAY</p><h2>Everything in one happy place <span>✦</span></h2><small>Tap a date to see exactly what needs to be prepared.</small></div><div className="desk-actions"><button onClick={()=>setDark(v=>!v)}>{dark?"☀️ Light":"🌙 Dark"}</button><button className="desk-add" onClick={onAdd}>＋ Add order</button></div></header>
+    <div className="desk-stats"><div><span>Today</span><b>{todayCount}</b><small>remaining to dispatch</small></div><div><span>This month</span><b>{monthCount}</b><small>remaining to dispatch</small></div><div><span>Need a date</span><b>{(byDate.unscheduled||[]).length}</b><small>orders to schedule</small></div></div>
+    <div className="desk-layout"><section className="calendar-card"><div className="calendar-title"><button onClick={()=>setMonth(new Date(month.getFullYear(),month.getMonth()-1,1))}>‹</button><h3>{month.toLocaleDateString("en-IN",{month:"long",year:"numeric"})}</h3><button onClick={()=>setMonth(new Date(month.getFullYear(),month.getMonth()+1,1))}>›</button></div><div className="calendar-grid weekdays">{"SMTWTFS".split("").map((d,i)=><span key={i}>{d}</span>)}</div><div className="calendar-grid">{Array.from({length:first.getDay()}).map((_,i)=><span key={`b${i}`}/>)}{days.map((date)=>{const k=key(date),count=(byDate[k]||[]).filter(o=>o.status!=="dispatched").length;return <button key={k} className={`${selected===k?"selected":""} ${k===key(new Date())?"today":""}`} onClick={()=>setSelected(k)}><b>{date.getDate()}</b>{count>0&&<em>{count}</em>}</button>})}</div><div className="calendar-legend"><span><i/> Orders left</span><button onClick={()=>{const now=new Date();setMonth(new Date(now.getFullYear(),now.getMonth(),1));setSelected(key(now));}}>Jump to today</button></div></section>
+      <section className="day-card"><div className="day-title"><div><p>{new Date(selected+"T00:00:00").toLocaleDateString("en-IN",{weekday:"long"})}</p><h3>{new Date(selected+"T00:00:00").toLocaleDateString("en-IN",{day:"numeric",month:"long"})}</h3></div><strong>{remaining.length} to dispatch</strong></div>
+        {remaining.length>0&&<div className="prep-summary"><div><span>🍡</span><p><b>Flavour summary</b><small>Everything needed for {remaining.length} remaining order{remaining.length===1?"":"s"}</small></p></div><div className="prep-flavours">{products.map(p=><span className={!flavourTotals[p.id]?"zero":""} key={p.id}>{p.name} <b>{flavourTotals[p.id]||0}</b></span>)}</div></div>}
+        {selectedOrders.length===0?<div className="empty-day"><span>🌤️</span><h4>Nothing planned yet</h4><p>A quiet day — or add an order now.</p><button onClick={onAdd}>Add an order</button></div>:<div className="day-orders">{selectedOrders.sort((a,b)=>(a.delivery_slot||"").localeCompare(b.delivery_slot||"")).map((o)=>{const total=Object.values(o.flavours||{}).reduce((a,b)=>a+Number(b||0),0),expected=boxCount[o.box_size_id]||0,coreMissing=!o.delivery_date&&!(o as ExtOrder).delivery_date||!(o.delivery_slot||o.batch_label)||!o.box_size_id,ready=!coreMissing&&expected>0&&total===expected,statusClass=ready?"is-ready":coreMissing?"needs-details":"needs-flavours";return <article className={`${statusClass} ${o.status==="dispatched"?"is-dispatched":""}`} key={o.id} onClick={()=>onEdit(o)}><div className="order-time">{o.delivery_slot||o.batch_label||"Time not set"}</div><div className="order-main"><div><h4>{o.customer_name}</h4><p>{boxMap[o.box_size_id]||"Box size missing"} · {total}/{expected||"?"} pieces</p></div><span>✎</span></div><div className="order-flavours">{Object.entries(o.flavours||{}).filter(([,n])=>n>0).map(([id,n])=><i key={id}>{flavourName(id)} ×{n}</i>)}{total===0&&<i className="missing">Flavours not selected</i>}</div><div className="readiness-label">{ready?"✓ Order details complete":coreMissing?"! Date, time or box size missing":`! Select ${expected-total>0?expected-total:`exactly ${expected}`} more piece${expected-total===1?"":"s"}`}</div>{o.status==="dispatched"?<div className="dispatched-label">✓ Dispatched</div>:<button className="dispatch-btn" onClick={async(e)=>{e.stopPropagation();await onDispatch(o.id)}}>Mark dispatched</button>}</article>})}</div>}
+      </section></div>
+  </div>;
+}
