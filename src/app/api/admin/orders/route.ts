@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 
-function authorised(req: NextRequest) {
-  return req.headers.get("x-admin-password") === process.env.NEXT_PUBLIC_ADMIN_PASSWORD;
-}
-
 function payload(body: Record<string, unknown>) {
   const mapUrl = String(body.customer_maps_url || "").trim();
   return {
@@ -24,7 +20,6 @@ function payload(body: Record<string, unknown>) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!authorised(req)) return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
   const body = await req.json();
   const values = payload(body);
   if (!values.customer_name || !values.phone || !values.delivery_date || !values.delivery_slot) return NextResponse.json({ error: "Name, phone, date and time are required" }, { status: 400 });
@@ -34,7 +29,6 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  if (!authorised(req)) return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
   const body = await req.json();
   if (!body.id) return NextResponse.json({ error: "Order ID is required" }, { status: 400 });
   if (body.action === "dispatch") {

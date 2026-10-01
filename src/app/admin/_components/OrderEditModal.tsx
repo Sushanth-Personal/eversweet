@@ -26,6 +26,7 @@ export function OrderEditModal({
     phone: order.phone || "",
     insta_id: order.insta_id || "",
     address: order.address || "",
+    customer_maps_url: order.customer_maps_url || "",
     remarks: order.remarks || "",
     notes: order.notes || "",
     delivery_date: order.delivery_date || "",
@@ -68,6 +69,7 @@ export function OrderEditModal({
           <GlassInput placeholder="Instagram (without @)" value={form.insta_id} onChange={f("insta_id")} />
         </div>
         <GlassInput placeholder="Address" value={form.address} onChange={f("address")} />
+        <GlassInput placeholder="Google Maps location link" value={form.customer_maps_url} onChange={f("customer_maps_url")} />
 
         {/* Location toggle — sets box pricing */}
         <p style={{ fontSize: "0.65rem", color: G.muted, letterSpacing: "0.1em", textTransform: "uppercase" as const, marginBottom: 6, fontWeight: 600 }}>
@@ -197,6 +199,7 @@ export function OrderEditModal({
                 phone: form.phone.trim(),
                 insta_id: form.insta_id.trim(),
                 address: form.address.trim() || null,
+                customer_maps_url: form.customer_maps_url.trim() || null,
                 remarks: form.remarks.trim(),
                 notes: isCustomBox ? `Custom box: ${form.custom_box_label || ""}${form.notes.trim() ? ` | ${form.notes.trim()}` : ""}` : form.notes.trim() || null,
                 delivery_date: form.delivery_date || null,

@@ -33,6 +33,8 @@ export type ExtOrder = Order & {
   batch_label?: string;
   fulfillment_type?: string;
   payment_confirmed_at?: string;
+  customer_maps_url?: string;
+  form_completed_at?: string;
 };
 
 export const TRACKING_START_DATE = "2026-04-21";

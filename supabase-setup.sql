@@ -46,6 +46,11 @@ create table if not exists orders (
   created_at     timestamp default now()
 );
 
+-- Customer confirmation fields (safe to run on an existing project)
+alter table orders add column if not exists customer_maps_url text;
+alter table orders add column if not exists delivery_slot text;
+alter table orders add column if not exists form_completed_at timestamp with time zone;
+
 -- ── 2. ROW LEVEL SECURITY (RLS) ──────────────────────────────────
 ALTER TABLE products    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE box_sizes   ENABLE ROW LEVEL SECURITY;
@@ -100,4 +105,3 @@ insert into products (name, description, price, image_url, is_premium, sort_orde
   ('Nutella', 'Classic Nutella filling — hazelnut chocolate that melts right into the soft mochi shell.', 0, 'https://lqokriiytzrzkonedrwe.supabase.co/storage/v1/object/public/products/nutella.png', false, 11);
 
 
-  

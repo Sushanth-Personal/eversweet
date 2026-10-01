@@ -39,6 +39,9 @@ export type Order = {
   flavours: Record<string, number>;
   delivery_date: string | null;
   delivery_batch: string | null;
+  delivery_slot?: string | null;
+  customer_maps_url?: string | null;
+  form_completed_at?: string | null;
   payment_method: string;
   notes: string | null;
   total_price: number;
