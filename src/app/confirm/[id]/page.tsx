@@ -33,7 +33,7 @@ export default function ConfirmationPage() {
     fetch(`/api/order-confirmation/${id}`)
       .then(async (r) => { const data = await r.json(); if (!r.ok) throw new Error(data.error); return data; })
       .then(({ order, products, boxes }) => {
-        setProducts(products); setBoxes(boxes);
+        setProducts([...products].sort((a:Product,b:Product)=>a.name.localeCompare(b.name,undefined,{sensitivity:"base"}))); setBoxes(boxes);
         setForm({
           customer_name: order.customer_name || "", phone: order.phone || "", address: order.address || "",
           customer_maps_url: order.customer_maps_url || "", box_size_id: order.box_size_id || "",
@@ -56,8 +56,8 @@ export default function ConfirmationPage() {
 
   async function save(e: React.FormEvent) {
     e.preventDefault(); setError(""); setSaved(false);
-    if (!form.customer_name.trim() || !form.delivery_date || !form.delivery_slot) {
-      setError("Please enter your name, delivery date and time."); return;
+    if (!form.customer_name.trim() || !form.phone.trim() || !form.delivery_date || !form.delivery_slot) {
+      setError("Please enter your name, phone number, delivery date and time."); return;
     }
     setSaving(true);
     try {
@@ -76,13 +76,13 @@ export default function ConfirmationPage() {
       <form className="confirm-card" onSubmit={save}>
         <div className="confirm-hero"><span>🍡</span><div><p>Order confirmation</p><h1>{saved ? "Your details are saved!" : "A few details, then you’re done"}</h1></div></div>
         {saved && <div className="confirm-success">✓ Thank you! You can reopen this link anytime to make changes.</div>}
-        <p className="confirm-note">Only fields marked <b>*</b> are required. Everything else can be added now or later.</p>
+        <p className="confirm-note">Review the details below and make any changes you need.</p>
 
         <section><h2>When should we prepare it?</h2><div className="confirm-grid">
-          <label><span>Name *</span><input value={form.customer_name} onChange={(e) => update("customer_name", e.target.value)} placeholder="Your name" /></label>
-          <label><span>Phone number</span><input inputMode="tel" value={form.phone} onChange={(e) => update("phone", e.target.value)} placeholder="Optional" /></label>
-          <label><span>Date *</span><input type="date" value={form.delivery_date} onChange={(e) => update("delivery_date", e.target.value)} /></label>
-          <label><span>Time *</span><select value={form.delivery_slot} onChange={(e) => update("delivery_slot", e.target.value)}><option value="">Choose a time</option>{TIMES.map((t) => <option key={t}>{t}</option>)}</select></label>
+          <label><span>Name</span><input value={form.customer_name} onChange={(e) => update("customer_name", e.target.value)} placeholder="Your name" /></label>
+          <label><span>Phone number</span><input inputMode="tel" value={form.phone} onChange={(e) => update("phone", e.target.value)} placeholder="Your phone number" /></label>
+          <label><span>Date</span><input type="date" value={form.delivery_date} onChange={(e) => update("delivery_date", e.target.value)} /></label>
+          <label><span>Time</span><select value={form.delivery_slot} onChange={(e) => update("delivery_slot", e.target.value)}><option value="">Choose a time</option>{TIMES.map((t) => <option key={t}>{t}</option>)}</select></label>
         </div></section>
 
         <section><h2>Where should it go?</h2><label><span>Address</span><textarea value={form.address} onChange={(e) => update("address", e.target.value)} placeholder="House, street, area and landmark" rows={3} /></label>
