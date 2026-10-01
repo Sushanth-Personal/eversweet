@@ -32,7 +32,7 @@ export default function NewConfirmationPage() {
   const pieces = useMemo(() => Object.values(form.flavours).reduce((a, b) => a + b, 0), [form.flavours]);
   const selectedBox = boxes.find((b) => b.id === form.box_size_id);
   const requiredPieces = (selectedBox?.count || 0) * form.box_quantity;
-  const visibleProducts = useMemo(() => products.filter((p) => p.name.toLowerCase().includes(flavourSearch.trim().toLowerCase())).sort((a,b)=>Number(Boolean(form.flavours[b.id]))-Number(Boolean(form.flavours[a.id]))), [products, flavourSearch, form.flavours]);
+  const visibleProducts = useMemo(() => products.filter((p) => p.name.toLowerCase().includes(flavourSearch.trim().toLowerCase())), [products, flavourSearch]);
   const update = (key: keyof Form, value: string) => setForm((f) => ({ ...f, [key]: value }));
   const toggleFlavour = (id: string) => setForm((f) => { const flavours = { ...f.flavours }; if (flavours[id]) delete flavours[id]; else flavours[id] = 1; return { ...f, flavours }; });
 
