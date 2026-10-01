@@ -20,6 +20,9 @@ export async function POST(req: NextRequest) {
       batch_id,
       payment_method,
       total_price,
+      fulfillment_type,
+      source,
+      delivery_charge,
     } = body;
 
     if (!customer_name || !phone || !box_size_id) {
@@ -83,7 +86,9 @@ export async function POST(req: NextRequest) {
         payment_method,
         total_price,
         status: "pending",
-        source: "website",
+        source: source || "website",
+        fulfillment_type: fulfillment_type || "delivery",
+        delivery_charge: delivery_charge || 0,
       })
       .select()
       .single();
@@ -117,7 +122,8 @@ export async function POST(req: NextRequest) {
             <p><strong>DOB:</strong> ${dob || "—"}</p>
             <p><strong>Box:</strong> ${box?.label || box_size_id} (${box?.count} pieces)</p>
             <p><strong>Delivery:</strong> ${delivery_date || "—"} · ${batchLabel || delivery_batch || "—"}</p>
-            <p><strong>Total:</strong> ₹${total_price}</p>
+            <p><strong>Fulfillment:</strong> ${fulfillment_type || "delivery"}${source === "trivandrum" ? " · 🚂 Trivandrum" : ""}</p>
+            <p><strong>Total:</strong> ₹${total_price}${delivery_charge ? ` (incl. ₹${delivery_charge} delivery)` : ""}</p>
             <p><strong>Payment:</strong> ${payment_method}</p>
             <pre style="background:#f5f5f5;padding:10px;border-radius:4px;">${flavourLines}</pre>
             ${notes ? `<p><strong>Notes:</strong> ${notes}</p>` : ""}

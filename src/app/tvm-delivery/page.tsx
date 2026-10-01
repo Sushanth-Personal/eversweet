@@ -28,6 +28,15 @@ function customerCharge(dispatchKm: number): number {
   return Math.floor(50 + 9 * dispatchKm);
 }
 
+// Porter's per-mochi commission for the trip: <25 mochis = ₹25 each,
+// 25–50 = ₹28 each, above 50 = ₹30 each. Rate applies to every mochi
+// in the trip once the threshold is crossed (not marginal/bracketed).
+function porterRate(mochis: number): number {
+  if (mochis > 50) return 30;
+  if (mochis >= 25) return 28;
+  return 25;
+}
+
 function fmtDate(d: string) {
   if (!d) return "";
   try {
@@ -154,6 +163,13 @@ function resolveMapsHref(stop: Stop): string | null {
 
 type ViewMode = "start" | "single" | "list";
 
+type PorterEarning = {
+  mochis: number;
+  orderValue: number;
+  earning: number;
+  rate: number;
+};
+
 export default function TvmDeliveryPage() {
   const [tripDate, setTripDate] = useState<string>("");
   const [stops, setStops] = useState<Stop[]>([]);
@@ -162,6 +178,12 @@ export default function TvmDeliveryPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("start");
   const [hasStarted, setHasStarted] = useState(false);
   const [areaMap, setAreaMap] = useState<Record<string, string>>({});
+  const [porterEarning, setPorterEarning] = useState<PorterEarning>({
+    mochis: 0,
+    orderValue: 0,
+    earning: 0,
+    rate: 25,
+  });
 
   const load = useCallback(async () => {
     const { data: settings } = await supabase
@@ -172,13 +194,46 @@ export default function TvmDeliveryPage() {
     setTripDate(trip);
 
     if (trip) {
-      const { data: s } = await supabase
-        .from("tvm_delivery_stops")
-        .select("*")
-        .eq("trip_date", trip)
-        .order("sequence", { ascending: true });
+      const [{ data: s }, { data: tvmOrders }] = await Promise.all([
+        supabase
+          .from("tvm_delivery_stops")
+          .select("*")
+          .eq("trip_date", trip)
+          .order("sequence", { ascending: true }),
+        // Orders placed through the Trivandrum page for this trip date —
+        // used to compute the porter's per-mochi commission below.
+        supabase
+          .from("orders")
+          .select("total_price, flavours, status")
+          .eq("source", "trivandrum")
+          .eq("delivery_date", trip)
+          .in("status", [
+            "confirmed",
+            "cooking",
+            "cooked",
+            "porter_booked",
+            "dispatched",
+          ]),
+      ]);
       const list = (s as Stop[]) || [];
       setStops(list);
+
+      const mochis = (tvmOrders || []).reduce((sum, o) => {
+        if (!o.flavours) return sum;
+        return (
+          sum +
+          Object.values(o.flavours as Record<string, number>).reduce(
+            (a, b) => a + (b || 0),
+            0,
+          )
+        );
+      }, 0);
+      const orderValue = (tvmOrders || []).reduce(
+        (sum, o) => sum + (o.total_price || 0),
+        0,
+      );
+      const rate = porterRate(mochis);
+      setPorterEarning({ mochis, orderValue, earning: mochis * rate, rate });
 
       // 1) Instant offline guess so badges show immediately.
       const instant: Record<string, string> = {};
@@ -214,6 +269,7 @@ export default function TvmDeliveryPage() {
     } else {
       setStops([]);
       setAreaMap({});
+      setPorterEarning({ mochis: 0, orderValue: 0, earning: 0, rate: 25 });
     }
     setLoading(false);
   }, []);
@@ -710,6 +766,56 @@ export default function TvmDeliveryPage() {
         <p style={{ fontSize: "0.7rem", color: "#8a8a8a", marginBottom: 12 }}>
           {tripDate ? fmtDate(tripDate) : "No trip date set"}
         </p>
+
+        {!loading && tripDate && (
+          <div
+            style={{
+              background: "rgba(31,168,85,0.07)",
+              border: "1px solid rgba(31,168,85,0.25)",
+              borderRadius: 12,
+              padding: "12px 14px",
+              marginBottom: 12,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "baseline",
+                marginBottom: 4,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: "0.7rem",
+                  color: "#3a7d4f",
+                  fontWeight: 700,
+                }}
+              >
+                💵 Your earnings today
+              </span>
+              <span style={{ fontSize: "0.66rem", color: "#6b6b6b" }}>
+                ₹{porterEarning.rate}/mochi
+              </span>
+            </div>
+            <p
+              style={{
+                fontSize: "1.35rem",
+                fontWeight: 800,
+                color: "#1fa855",
+                lineHeight: 1,
+                marginBottom: 4,
+              }}
+            >
+              ₹{porterEarning.earning.toLocaleString("en-IN")}
+            </p>
+            <p style={{ fontSize: "0.68rem", color: "#6b6b6b" }}>
+              {porterEarning.mochis} mochi
+              {porterEarning.mochis !== 1 ? "s" : ""} · order value ₹
+              {porterEarning.orderValue.toLocaleString("en-IN")}
+            </p>
+          </div>
+        )}
 
         <div
           style={{
