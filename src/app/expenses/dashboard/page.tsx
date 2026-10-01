@@ -131,8 +131,8 @@ function catDef(id: string): CategoryDef {
 const PAYER_OPTIONS = [
   { id: "unni_personal", label: "Unni · Personal" },
   { id: "amma_personal", label: "Amma · Personal" },
-  { id: "company_other", label: "Company (Other)" },
-  { id: "company_kochi", label: "Company (Kochi)" },
+  { id: "company_other", label: "Company (Unni)" },
+  { id: "company_kochi", label: "Company (Amma)" },
 ] as const;
 
 type SavedExpense = {

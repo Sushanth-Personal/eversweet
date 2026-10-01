@@ -133,8 +133,8 @@ function isPersonal(categoryId: string) {
 const PAYER_OPTIONS = [
   { id: "unni_personal", label: "Unni · Personal", color: "#4f46e5" },
   { id: "amma_personal", label: "Amma · Personal", color: "#db2777" },
-  { id: "company_other", label: "Company (Other)", color: "#d97706" },
-  { id: "company_kochi", label: "Company (Kochi)", color: "#059669" },
+  { id: "company_other", label: "Company (Unni)", color: "#d97706" },
+  { id: "company_kochi", label: "Company (Amma)", color: "#059669" },
 ] as const;
 
 function istToday() {
@@ -396,6 +396,7 @@ function ScreenshotFlow({ onSaved }: { onSaved: (msg: string) => void }) {
   const [saving, setSaving] = useState(false);
   const [provider, setProvider] = useState<string | null>(null);
   const [pickerFor, setPickerFor] = useState<string | null>(null);
+  const [breakupFor, setBreakupFor] = useState<string | null>(null);
   const [defaultPayer, setDefaultPayer] = useState<string | null>(null);
   const [defaultCategory, setDefaultCategory] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -491,8 +492,13 @@ function ScreenshotFlow({ onSaved }: { onSaved: (msg: string) => void }) {
     }
   }
 
+  function isReady(p: PendingTxn): boolean {
+    if (p.category === "settlement") return !!p.settlementDirection;
+    return !!(p.category && p.paidBy);
+  }
+
   async function saveAll() {
-    const ready = pending.filter((p) => p.category);
+    const ready = pending.filter(isReady);
     if (ready.length === 0) return;
     setSaveError(null);
     setSaving(true);
@@ -579,18 +585,15 @@ function ScreenshotFlow({ onSaved }: { onSaved: (msg: string) => void }) {
   }
 
   function quickTag(tempId: string) {
-    if (!defaultCategory) return;
     setPending((prev) =>
-      prev.map((p) =>
-        p.tempId === tempId
-          ? {
-              ...p,
-              category: defaultCategory,
-              paidBy: defaultPayer,
-              split: false,
-            }
-          : p,
-      ),
+      prev.map((p) => {
+        if (p.tempId !== tempId) return p;
+        if (p.category === "settlement") return p;
+        const category = p.category || defaultCategory;
+        const paidBy = p.paidBy || defaultPayer;
+        if (!category && !paidBy) return p;
+        return { ...p, category, paidBy, split: p.split };
+      }),
     );
   }
 
@@ -615,10 +618,41 @@ function ScreenshotFlow({ onSaved }: { onSaved: (msg: string) => void }) {
     setPickerFor(null);
   }
 
+  function applyBreakup(
+    tempId: string,
+    parts: { amount: number; category: string; paidBy: string | null }[],
+  ) {
+    setPending((prev) => {
+      const original = prev.find((p) => p.tempId === tempId);
+      if (!original) return prev;
+      const newParts: PendingTxn[] = parts.map((part, i) => ({
+        tempId: `${tempId}-part${i}`,
+        description: `${original.description} (${i + 1}/${parts.length})`,
+        amount: part.amount,
+        date: original.date,
+        category: part.category,
+        paidBy: part.paidBy,
+        split: false,
+        settlementDirection: null,
+      }));
+      return prev.filter((p) => p.tempId !== tempId).concat(newParts);
+    });
+    setBreakupFor(null);
+  }
+
   function providerLabel(id: string | null) {
     if (!id) return null;
     if (id === "chatgpt") return "ChatGPT";
     return "Groq";
+  }
+
+  function payerLabel(id: string | null) {
+    if (!id) return null;
+    if (id === "unni_personal") return "Sushanth (Unni)";
+    if (id === "amma_personal") return "Kavitha (Amma)";
+    if (id === "company_other") return "Company (Unni)";
+    if (id === "company_kochi") return "Company (Amma)";
+    return null;
   }
 
   const catAll = [...PERSONAL_CATEGORIES, ...COMPANY_CATEGORIES];
@@ -878,49 +912,125 @@ function ScreenshotFlow({ onSaved }: { onSaved: (msg: string) => void }) {
           >
             Category (default)
           </p>
+
+          <p
+            style={{
+              fontSize: "0.62rem",
+              fontWeight: 700,
+              color: V.indigo,
+              marginBottom: 6,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase" as const,
+            }}
+          >
+            Personal
+          </p>
           <div
             style={{
-              display: "flex",
-              gap: 6,
-              flexWrap: "wrap" as const,
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr 1fr",
+              gap: 8,
               marginBottom: 14,
             }}
           >
-            {catAll.map((c) => (
+            {PERSONAL_CATEGORIES.map((c) => (
               <button
                 key={c.id}
                 onClick={() => setDefaultCategory(c.id)}
                 style={{
                   display: "flex",
+                  flexDirection: "column" as const,
                   alignItems: "center",
-                  gap: 5,
-                  padding: "6px 11px",
-                  borderRadius: 20,
-                  fontSize: "0.76rem",
+                  gap: 4,
+                  padding: "10px 4px",
+                  borderRadius: 14,
+                  fontSize: "0.72rem",
                   fontWeight: 700,
                   cursor: "pointer",
-                  whiteSpace: "nowrap" as const,
                   border: `1.5px solid ${defaultCategory === c.id ? c.color : "rgba(0,0,0,0.1)"}`,
                   background:
-                    defaultCategory === c.id ? c.bg : "rgba(255,255,255,0.5)",
+                    defaultCategory === c.id ? c.bg : "rgba(255,255,255,0.6)",
                   color: defaultCategory === c.id ? c.color : V.sub,
                 }}
               >
-                <span>{c.icon}</span> {c.label}
+                <span style={{ fontSize: "1.2rem" }}>{c.icon}</span>
+                {c.label}
               </button>
             ))}
           </div>
 
-          {(!defaultPayer || !defaultCategory) && (
+          <p
+            style={{
+              fontSize: "0.62rem",
+              fontWeight: 700,
+              color: "#d97706",
+              marginBottom: 6,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase" as const,
+            }}
+          >
+            Company
+          </p>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr 1fr",
+              gap: 8,
+              marginBottom: 14,
+            }}
+          >
+            {COMPANY_CATEGORIES.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => setDefaultCategory(c.id)}
+                style={{
+                  display: "flex",
+                  flexDirection: "column" as const,
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "10px 4px",
+                  borderRadius: 14,
+                  fontSize: "0.72rem",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  border: `1.5px solid ${defaultCategory === c.id ? c.color : "rgba(0,0,0,0.1)"}`,
+                  background:
+                    defaultCategory === c.id ? c.bg : "rgba(255,255,255,0.6)",
+                  color: defaultCategory === c.id ? c.color : V.sub,
+                }}
+              >
+                <span style={{ fontSize: "1.2rem" }}>{c.icon}</span>
+                {c.label}
+              </button>
+            ))}
+          </div>
+
+          {!defaultPayer && !defaultCategory && (
             <p
               style={{ fontSize: "0.72rem", color: V.muted, marginBottom: 10 }}
             >
-              Pick a default spender + category above, then just tap a
-              transaction below to tag it instantly. Transfers to
-              Kavitha/Sushanth are auto-detected as settlements — use
-              "Categorise" for those.
+              Pick a spender and/or category above, then tap a transaction to
+              apply it. Both are needed on a row before it can be saved.
+              Transfers to Kavitha/Sushanth are auto-detected as settlements —
+              use "Categorise" for those.
             </p>
           )}
+          {(defaultPayer || defaultCategory) &&
+            !(defaultPayer && defaultCategory) && (
+              <p
+                style={{
+                  fontSize: "0.72rem",
+                  color: "#d97706",
+                  marginBottom: 10,
+                  fontWeight: 600,
+                }}
+              >
+                ⚠ Only {defaultCategory ? "category" : "spender"} is set —
+                tapping a row will fill that in, but it still needs{" "}
+                {defaultCategory ? "a spender" : "a category"} before it can be
+                saved.
+              </p>
+            )}
           {defaultPayer && defaultCategory && (
             <p
               style={{
@@ -930,7 +1040,7 @@ function ScreenshotFlow({ onSaved }: { onSaved: (msg: string) => void }) {
                 fontWeight: 600,
               }}
             >
-              ✓ Tap any transaction below to tag it as{" "}
+              ✓ Tap any transaction below to fully tag it as{" "}
               {catAll.find((c) => c.id === defaultCategory)?.label}
             </p>
           )}
@@ -939,11 +1049,10 @@ function ScreenshotFlow({ onSaved }: { onSaved: (msg: string) => void }) {
             const def = displayDef(p);
             const isSettlement = p.category === "settlement";
             const looksLikeSettlement = !p.category && !!p.settlementDirection;
-            const canQuickTag = !!(
-              defaultCategory &&
-              !p.category &&
-              !looksLikeSettlement
-            );
+            const canQuickTag =
+              !looksLikeSettlement &&
+              !isReady(p) &&
+              ((defaultCategory && !p.category) || (defaultPayer && !p.paidBy));
             return (
               <div
                 key={p.tempId}
@@ -985,6 +1094,24 @@ function ScreenshotFlow({ onSaved }: { onSaved: (msg: string) => void }) {
                         {p.split ? " · Split" : ""}
                       </span>
                     )}
+                    {def && !isSettlement && payerLabel(p.paidBy) && (
+                      <span
+                        style={{ marginLeft: 6, color: V.sub, fontWeight: 600 }}
+                      >
+                        · {payerLabel(p.paidBy)}
+                      </span>
+                    )}
+                    {def && !isSettlement && !p.paidBy && (
+                      <span
+                        style={{
+                          marginLeft: 6,
+                          color: "#d97706",
+                          fontWeight: 700,
+                        }}
+                      >
+                        · ⚠ needs spender
+                      </span>
+                    )}
                     {!def && looksLikeSettlement && (
                       <span
                         style={{
@@ -1002,6 +1129,28 @@ function ScreenshotFlow({ onSaved }: { onSaved: (msg: string) => void }) {
                   style={{ display: "flex", alignItems: "center" }}
                   onClick={(e) => e.stopPropagation()}
                 >
+                  {!isSettlement && !looksLikeSettlement && (
+                    <button
+                      onClick={() => setBreakupFor(p.tempId)}
+                      title="Split this into multiple categories"
+                      style={{
+                        marginRight: 6,
+                        width: 28,
+                        height: 28,
+                        borderRadius: 8,
+                        border: "1px solid rgba(99,60,180,0.2)",
+                        background: "rgba(99,60,180,0.06)",
+                        color: V.indigo,
+                        fontSize: "0.8rem",
+                        cursor: "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      🔀
+                    </button>
+                  )}
                   <button
                     onClick={() => setPickerFor(p.tempId)}
                     style={{
@@ -1047,22 +1196,20 @@ function ScreenshotFlow({ onSaved }: { onSaved: (msg: string) => void }) {
 
           <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
             <button
-              disabled={saving || !pending.some((p) => p.category)}
+              disabled={saving || !pending.some(isReady)}
               onClick={saveAll}
               style={{
                 flex: 1,
                 padding: "11px",
                 borderRadius: 10,
                 border: "none",
-                background: pending.some((p) => p.category)
+                background: pending.some(isReady)
                   ? "linear-gradient(135deg, #34d399, #059669)"
                   : "rgba(0,0,0,0.06)",
-                color: pending.some((p) => p.category) ? "#fff" : V.muted,
+                color: pending.some(isReady) ? "#fff" : V.muted,
                 fontWeight: 700,
                 fontSize: "0.85rem",
-                cursor: pending.some((p) => p.category)
-                  ? "pointer"
-                  : "not-allowed",
+                cursor: pending.some(isReady) ? "pointer" : "not-allowed",
               }}
             >
               {saving ? "Saving..." : "✓ Save Categorised"}
@@ -1109,6 +1256,19 @@ function ScreenshotFlow({ onSaved }: { onSaved: (msg: string) => void }) {
           onPick={(result) => applyPick(pickerFor, result)}
         />
       )}
+      {breakupFor &&
+        (() => {
+          const item = pending.find((p) => p.tempId === breakupFor);
+          if (!item) return null;
+          return (
+            <BreakupModal
+              description={item.description}
+              totalAmount={item.amount}
+              onClose={() => setBreakupFor(null)}
+              onSave={(parts) => applyBreakup(breakupFor, parts)}
+            />
+          );
+        })()}
     </Card>
   );
 }
@@ -1363,6 +1523,429 @@ function ManualFlow({ onSaved }: { onSaved: (msg: string) => void }) {
   );
 }
 
+function BreakupModal({
+  description,
+  totalAmount,
+  onClose,
+  onSave,
+}: {
+  description: string;
+  totalAmount: number;
+  onClose: () => void;
+  onSave: (
+    parts: { amount: number; category: string; paidBy: string | null }[],
+  ) => void;
+}) {
+  const [parts, setParts] = useState<
+    { amount: number; category: string; paidBy: string | null }[]
+  >([]);
+  const [addingCategory, setAddingCategory] = useState(false);
+  const [addingAmount, setAddingAmount] = useState<{
+    category: string;
+    paidBy: string | null;
+  } | null>(null);
+  const [amountDraft, setAmountDraft] = useState("");
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [pendingScanItems, setPendingScanItems] = useState<
+    { description: string; amount: number; category: string }[] | null
+  >(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const remaining = totalAmount - parts.reduce((s, p) => s + p.amount, 0);
+  const catAll = [...PERSONAL_CATEGORIES, ...COMPANY_CATEGORIES];
+
+  async function handleInvoiceFile(file: File) {
+    setScanning(true);
+    setScanError(null);
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve((reader.result as string).split(",")[1]);
+        reader.onerror = reject;
+      });
+      const res = await fetch("/api/extract-bill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64: base64, mimeType: file.type }),
+      });
+      const data = await res.json();
+      const items = (data.items || []) as {
+        description: string;
+        amount: number;
+        category: string;
+      }[];
+      if (items.length === 0)
+        setScanError("Couldn't find any line items on that invoice.");
+      else setPendingScanItems(items);
+    } catch {
+      setScanError(
+        "Failed to read the invoice. Try again or add parts manually.",
+      );
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  return (
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(30,20,50,0.45)",
+        backdropFilter: "blur(4px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 600,
+        padding: 20,
+      }}
+    >
+      <Card
+        style={{
+          width: "100%",
+          maxWidth: 440,
+          maxHeight: "85vh",
+          overflowY: "auto" as const,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            marginBottom: 4,
+          }}
+        >
+          <div>
+            <p style={{ fontWeight: 800, fontSize: "1rem" }}>
+              Split: {description}
+            </p>
+            <p style={{ fontSize: "0.78rem", color: V.sub }}>
+              Total ₹{totalAmount}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              background: "transparent",
+              border: "none",
+              fontSize: "1.1rem",
+              cursor: "pointer",
+              color: V.muted,
+            }}
+          >
+            ✕
+          </button>
+        </div>
+
+        <div
+          style={{
+            padding: "10px 12px",
+            borderRadius: 10,
+            background:
+              remaining <= 0.5
+                ? "rgba(22,163,74,0.08)"
+                : "rgba(217,119,6,0.08)",
+            border: `1px solid ${remaining <= 0.5 ? "rgba(22,163,74,0.3)" : "rgba(217,119,6,0.3)"}`,
+            margin: "12px 0",
+          }}
+        >
+          <p
+            style={{
+              fontSize: "0.78rem",
+              fontWeight: 700,
+              color: remaining <= 0.5 ? V.green : "#b45309",
+            }}
+          >
+            {remaining <= 0.5
+              ? "✓ Fully accounted for"
+              : `₹${remaining.toFixed(2)} still unassigned`}
+          </p>
+        </div>
+
+        {parts.length > 0 && (
+          <div style={{ marginBottom: 12 }}>
+            {parts.map((part, i) => {
+              const def = catAll.find((c) => c.id === part.category);
+              return (
+                <div
+                  key={i}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    padding: "8px 10px",
+                    borderRadius: 8,
+                    background: def?.bg || "rgba(0,0,0,0.03)",
+                    marginBottom: 6,
+                  }}
+                >
+                  <p style={{ fontSize: "0.78rem", fontWeight: 600 }}>
+                    {def?.icon} {def?.label}{" "}
+                    {part.paidBy && (
+                      <span style={{ color: V.sub, fontWeight: 500 }}>
+                        · {payerLabelFor(part.paidBy)}
+                      </span>
+                    )}
+                  </p>
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 8 }}
+                  >
+                    <p style={{ fontSize: "0.82rem", fontWeight: 700 }}>
+                      ₹{part.amount}
+                    </p>
+                    <button
+                      onClick={() =>
+                        setParts((prev) => prev.filter((_, j) => j !== i))
+                      }
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        color: V.red,
+                        cursor: "pointer",
+                        fontSize: "0.8rem",
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {addingAmount ? (
+          <div style={{ marginBottom: 12 }}>
+            <p
+              style={{
+                fontSize: "0.72rem",
+                fontWeight: 700,
+                color: V.sub,
+                marginBottom: 6,
+              }}
+            >
+              Amount for this part (₹)
+            </p>
+            <input
+              autoFocus
+              type="number"
+              value={amountDraft}
+              onChange={(e) => setAmountDraft(e.target.value)}
+              style={{ ...inputStyle, marginBottom: 8 }}
+              placeholder={String(Math.max(remaining, 0))}
+            />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                disabled={!amountDraft || Number(amountDraft) <= 0}
+                onClick={() => {
+                  setParts((prev) => [
+                    ...prev,
+                    {
+                      amount: Number(amountDraft),
+                      category: addingAmount.category,
+                      paidBy: addingAmount.paidBy,
+                    },
+                  ]);
+                  setAddingAmount(null);
+                  setAmountDraft("");
+                }}
+                style={{
+                  flex: 1,
+                  padding: "10px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: "linear-gradient(135deg, #34d399, #059669)",
+                  color: "#fff",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                ✓ Add this part
+              </button>
+              <button
+                onClick={() => {
+                  setAddingAmount(null);
+                  setAmountDraft("");
+                }}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  border: "1px solid rgba(0,0,0,0.1)",
+                  background: "transparent",
+                  color: V.sub,
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : addingCategory ? (
+          <div style={{ marginBottom: 12 }}>
+            <button
+              onClick={() => setAddingCategory(false)}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: V.sub,
+                fontSize: "0.78rem",
+                cursor: "pointer",
+                marginBottom: 10,
+              }}
+            >
+              ← Back
+            </button>
+            <CategoryPickerInline
+              description=""
+              onPick={(result) => {
+                if (result.kind === "category")
+                  setAddingAmount({
+                    category: result.category,
+                    paidBy: result.paidBy,
+                  });
+                setAddingCategory(false);
+              }}
+            />
+          </div>
+        ) : pendingScanItems ? (
+          <div style={{ marginBottom: 12 }}>
+            <p
+              style={{ fontSize: "0.78rem", fontWeight: 700, marginBottom: 8 }}
+            >
+              Found {pendingScanItems.length} item
+              {pendingScanItems.length > 1 ? "s" : ""} — who paid for this
+              invoice?
+            </p>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 8,
+              }}
+            >
+              {PAYER_OPTIONS.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => {
+                    setParts((prev) => [
+                      ...prev,
+                      ...pendingScanItems.map((it) => ({
+                        amount: it.amount,
+                        category: it.category,
+                        paidBy: p.id,
+                      })),
+                    ]);
+                    setPendingScanItems(null);
+                  }}
+                  style={{
+                    padding: "12px 8px",
+                    borderRadius: 10,
+                    border: `1.5px solid ${p.color}40`,
+                    background: `${p.color}14`,
+                    color: p.color,
+                    fontWeight: 700,
+                    fontSize: "0.8rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  {payerLabelFor(p.id)}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            <button
+              onClick={() => setAddingCategory(true)}
+              style={{
+                flex: 1,
+                padding: "12px 8px",
+                borderRadius: 12,
+                border: "none",
+                background: "linear-gradient(135deg, #6366f1, #db2777)",
+                color: "#fff",
+                fontWeight: 700,
+                fontSize: "0.82rem",
+                cursor: "pointer",
+              }}
+            >
+              🏷️ Add Category
+            </button>
+            <button
+              disabled={scanning}
+              onClick={() => fileInputRef.current?.click()}
+              style={{
+                flex: 1,
+                padding: "12px 8px",
+                borderRadius: 12,
+                border: "none",
+                background: scanning
+                  ? "rgba(99,60,180,0.15)"
+                  : "linear-gradient(135deg, #60a5fa, #2563eb)",
+                color: scanning ? V.indigo : "#fff",
+                fontWeight: 700,
+                fontSize: "0.82rem",
+                cursor: scanning ? "not-allowed" : "pointer",
+              }}
+            >
+              {scanning ? "Reading..." : "📎 Scan Invoice"}
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={(e) =>
+                e.target.files?.[0] && handleInvoiceFile(e.target.files[0])
+              }
+            />
+          </div>
+        )}
+
+        {scanError && (
+          <p style={{ fontSize: "0.75rem", color: V.red, marginBottom: 10 }}>
+            {scanError}
+          </p>
+        )}
+
+        <button
+          disabled={parts.length < 2}
+          onClick={() => onSave(parts)}
+          style={{
+            width: "100%",
+            padding: "12px",
+            borderRadius: 12,
+            border: "none",
+            background:
+              parts.length >= 2
+                ? "linear-gradient(135deg, #34d399, #059669)"
+                : "rgba(0,0,0,0.08)",
+            color: parts.length >= 2 ? "#fff" : V.muted,
+            fontWeight: 700,
+            cursor: parts.length >= 2 ? "pointer" : "not-allowed",
+          }}
+        >
+          ✓ Save Split ({parts.length} part{parts.length !== 1 ? "s" : ""})
+        </button>
+      </Card>
+    </div>
+  );
+}
+
+function payerLabelFor(id: string) {
+  if (id === "unni_personal") return "Sushanth (Unni)";
+  if (id === "amma_personal") return "Kavitha (Amma)";
+  if (id === "company_other") return "Company (Unni)";
+  if (id === "company_kochi") return "Company (Amma)";
+  return id;
+}
+
 function CategoryPickerInline({
   description,
   onPick,
@@ -1582,12 +2165,7 @@ function CategoryPickerInline({
   }
 
   if (chosenCategory) {
-    const personalPayers = PAYER_OPTIONS.filter(
-      (p) => p.id === "unni_personal" || p.id === "amma_personal",
-    );
-    const payerOptions = isPersonal(chosenCategory)
-      ? personalPayers
-      : PAYER_OPTIONS;
+    const payerOptions = PAYER_OPTIONS;
     return (
       <div>
         <button

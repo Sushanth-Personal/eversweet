@@ -546,6 +546,20 @@ function BalanceCard({
           <p style={{ fontSize: "0.68rem", color: V.sub, marginTop: 2 }}>
             You confirmed {fmt(actual.balance)} then
           </p>
+          {typeof cashEstimate !== "number" && (
+            <p
+              style={{
+                fontSize: "0.66rem",
+                color: V.sub,
+                marginTop: 6,
+                paddingTop: 6,
+                borderTop: "1px dashed rgba(0,0,0,0.1)",
+              }}
+            >
+              Current ledger target:{" "}
+              <strong style={{ color: V.text }}>{fmt(amount)}</strong>
+            </p>
+          )}
           {typeof cashEstimate === "number" && (
             <div
               style={{
@@ -893,9 +907,18 @@ export default function FinancePage() {
 
       // Split personal expenses fold into the same settlement ledger as
       // income splits: whoever paid personally is owed the other half back.
-      if (e.split && e.paid_by === "unni_personal")
+      // company_other is Unni's own account and company_kochi is Amma's,
+      // so a split personal expense paid from either still counts the
+      // same way as paying from their dedicated personal account.
+      if (
+        e.split &&
+        (e.paid_by === "unni_personal" || e.paid_by === "company_other")
+      )
         ammaOwesUnniRaw += e.amount / 2;
-      if (e.split && e.paid_by === "amma_personal")
+      if (
+        e.split &&
+        (e.paid_by === "amma_personal" || e.paid_by === "company_kochi")
+      )
         unniOwesAmmaRaw += e.amount / 2;
     });
 
@@ -1775,8 +1798,7 @@ export default function FinancePage() {
               const e = row.expense;
               const cat = categoryDef(e.category);
               const payer = PAYER_OPTIONS.find((p) => p.id === e.paid_by);
-              const canSplit =
-                e.paid_by === "unni_personal" || e.paid_by === "amma_personal";
+              const canSplit = isPersonalCategory(e.category);
               return (
                 <div
                   key={`exp-${e.id}`}
