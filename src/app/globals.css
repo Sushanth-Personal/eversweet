@@ -240,7 +240,7 @@ body::after {
 
 /* Customer order confirmation */
 .confirm-page { width:100%; min-width:0; min-height:100vh; min-height:100dvh; overflow:visible; overflow-anchor:none; padding:28px 14px 60px; background:radial-gradient(circle at top left,#fff2b8 0,transparent 28%),linear-gradient(145deg,#fff9ed,#ffeaf0); color:#3f2630; }
-html:has(.confirm-page),body:has(.confirm-page){width:100%;height:auto!important;min-height:100%;overflow-x:hidden!important;overflow-y:auto!important;overscroll-behavior-y:contain;background:#fff8ef!important;-webkit-overflow-scrolling:touch;touch-action:pan-y}
+html:has(.confirm-page),body:has(.confirm-page){width:100%;height:auto!important;min-height:100%;overflow-x:hidden!important;background:#fff8ef!important}
 .confirm-card { width:100%; min-width:0; max-width:720px; margin:auto; padding:clamp(20px,5vw,42px); overflow-x:hidden; border-radius:28px; background:rgba(255,255,255,.92); box-shadow:0 22px 70px rgba(122,67,75,.14); border:1px solid rgba(255,255,255,.9); }
 .confirm-card * { min-width:0; }
 .confirm-hero { display:flex; align-items:center; gap:16px; margin-bottom:14px; }

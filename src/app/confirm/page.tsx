@@ -25,14 +25,15 @@ export default function NewConfirmationPage() {
 
   useEffect(() => {
     fetch("/api/order-confirmation").then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d.error); return d; })
-      .then((d) => { setProducts(d.products?.length ? d.products : FALLBACK_FLAVOURS); setBoxes(d.boxes || []); })
+      .then((d) => { const list=d.products?.length?d.products:FALLBACK_FLAVOURS;setProducts([...list].sort((a:Product,b:Product)=>a.name.localeCompare(b.name,undefined,{sensitivity:"base"}))); setBoxes(d.boxes || []); })
       .catch(() => setError("Box sizes and flavours could not be loaded. You can still send your name, date and time."));
   }, []);
 
   const pieces = useMemo(() => Object.values(form.flavours).reduce((a, b) => a + b, 0), [form.flavours]);
   const selectedBox = boxes.find((b) => b.id === form.box_size_id);
   const requiredPieces = (selectedBox?.count || 0) * form.box_quantity;
-  const visibleProducts = useMemo(() => products.filter((p) => p.name.toLowerCase().includes(flavourSearch.trim().toLowerCase())), [products, flavourSearch]);
+  const alphabeticProducts = useMemo(() => [...products].sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:"base"})), [products]);
+  const visibleProducts = useMemo(() => alphabeticProducts.filter((p) => p.name.toLowerCase().includes(flavourSearch.trim().toLowerCase())), [alphabeticProducts, flavourSearch]);
   const update = (key: keyof Form, value: string) => setForm((f) => ({ ...f, [key]: value }));
   const toggleFlavour = (id: string) => setForm((f) => { const flavours = { ...f.flavours }; if (flavours[id]) delete flavours[id]; else flavours[id] = 1; return { ...f, flavours }; });
 

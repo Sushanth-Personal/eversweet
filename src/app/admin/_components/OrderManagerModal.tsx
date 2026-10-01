@@ -14,7 +14,7 @@ export function OrderManagerModal({order,products,boxes,password,onClose,onSaved
   const set=(k:string,v:string)=>setForm(f=>({...f,[k]:v}));
   const quantity=(id:string,delta:number)=>setForm(f=>{const flavours={...f.flavours},next=Math.max(0,(flavours[id]||0)+delta);if(next)flavours[id]=next;else delete flavours[id];return{...f,flavours}});
   const selectedPieces=Object.values(form.flavours).reduce((a,b)=>a+b,0);
-  const visibleProducts=useMemo(()=>products.filter(p=>p.name.toLowerCase().includes(flavourSearch.trim().toLowerCase())).sort((a,b)=>Number(Boolean(form.flavours[b.id]))-Number(Boolean(form.flavours[a.id]))),[products,flavourSearch,form.flavours]);
+  const visibleProducts=useMemo(()=>products.filter(p=>p.name.toLowerCase().includes(flavourSearch.trim().toLowerCase())).sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:"base"})),[products,flavourSearch]);
   async function invoice(){
     const names=products.filter(p=>form.flavours[p.id]).map(p=>p.name).join(", ")||"Flavours to be confirmed";
     const number=`EVS-${new Date().toISOString().slice(0,10).replace(/-/g,"")}-${order?.id.slice(0,6).toUpperCase()}`;
