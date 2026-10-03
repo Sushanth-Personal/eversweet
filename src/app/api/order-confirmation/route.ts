@@ -26,26 +26,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Please paste a complete map link" }, { status: 400 });
   }
 
-  const flavours = body.flavours && typeof body.flavours === "object" ? body.flavours : {};
-  const cleanFlavours = Object.fromEntries(
-    Object.entries(flavours)
-      .map(([key, value]) => [key, Math.max(0, Math.floor(Number(value) || 0))])
-      .filter(([, value]) => Number(value) > 0),
-  );
-
   const db = supabaseAdmin();
-  let totalPrice = 0;
-  if (body.box_size_id) {
-    const { data: box } = await db.from("box_sizes").select("price").eq("id", body.box_size_id).single();
-    totalPrice = Number(box?.price || 0);
-  }
+  const selections: Array<{ box_size_id?: unknown; flavours?: Record<string, unknown> }> = Array.isArray(body.box_selections) ? body.box_selections : [];
+  if (!selections.length) return NextResponse.json({ error: "Please add and complete at least one box" }, { status: 400 });
+  const boxIds = selections.map((selection) => String(selection?.box_size_id || "")).filter(Boolean);
+  const { data: selectedBoxes } = await db.from("box_sizes").select("id,count,price").in("id", boxIds);
+  const boxMap = new Map((selectedBoxes || []).map((box) => [box.id, box]));
+  const cleanSelections: Array<{ box_size_id: string; flavours: Record<string, number> }> = selections.map((selection) => ({
+    box_size_id: String(selection?.box_size_id || ""),
+    flavours: Object.fromEntries(Object.entries(selection?.flavours && typeof selection.flavours === "object" ? selection.flavours : {}).map(([key, value]) => [key, Math.max(0, Math.floor(Number(value) || 0))]).filter(([, value]) => Number(value) > 0)) as Record<string, number>,
+  }));
+  const invalid = cleanSelections.some((selection) => !boxMap.has(selection.box_size_id) || Object.values(selection.flavours).reduce((sum, quantity) => sum + Number(quantity), 0) !== Number(boxMap.get(selection.box_size_id)?.count || 0));
+  if (invalid) return NextResponse.json({ error: "Please fill every box with the correct number of flavours" }, { status: 400 });
+  const cleanFlavours = cleanSelections.reduce<Record<string, number>>((all, selection) => { Object.entries(selection.flavours).forEach(([id, quantity]) => { all[id] = (all[id] || 0) + Number(quantity); }); return all; }, {});
+  const totalPrice = cleanSelections.reduce((sum, selection) => sum + Number(boxMap.get(selection.box_size_id)?.price || 0), 0);
+  const boxLayout = encodeURIComponent(JSON.stringify(cleanSelections));
 
   const { data, error } = await db.from("orders").insert({
     customer_name: customerName,
     phone,
     address: String(body.address || "").trim() || null,
-    notes: [`Box quantity: ${Math.max(1, Number(body.box_quantity) || 1)}`, mapsUrl ? `Customer map: ${mapsUrl}` : ""].filter(Boolean).join(" | "),
-    box_size_id: body.box_size_id || null,
+    notes: [`Box quantity: ${cleanSelections.length}`, `Box layout: ${boxLayout}`, mapsUrl ? `Customer map: ${mapsUrl}` : ""].filter(Boolean).join(" | "),
+    box_size_id: cleanSelections[0]?.box_size_id || null,
     flavours: cleanFlavours,
     delivery_date: deliveryDate,
     delivery_slot: deliverySlot,
