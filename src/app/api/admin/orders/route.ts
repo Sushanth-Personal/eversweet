@@ -12,7 +12,7 @@ function payload(body: Record<string, unknown>) {
     delivery_slot: body.delivery_slot || null,
     box_size_id: body.box_size_id || null,
     flavours: body.flavours || {},
-    source: body.location === "trivandrum" ? "trivandrum" : "customer_confirmation",
+    source: body.location === "trivandrum" ? "trivandrum" : "kochi",
     fulfillment_type: body.fulfillment_type === "pickup" ? "pickup" : "delivery",
     status: body.status || "confirmed",
     total_price: Number(body.total_price || 0),
