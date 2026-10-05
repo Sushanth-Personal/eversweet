@@ -32,9 +32,16 @@ export async function PATCH(req: NextRequest) {
   const body = await req.json();
   if (!body.id) return NextResponse.json({ error: "Order ID is required" }, { status: 400 });
   if (body.action === "dispatch") {
-    const { data, error } = await supabaseAdmin().from("orders").update({ status: "dispatched" }).eq("id", body.id).select("*").single();
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ order: data });
+    const { error, count } = await supabaseAdmin()
+      .from("orders")
+      .update({ status: "dispatched" }, { count: "exact" })
+      .eq("id", String(body.id));
+    if (error) {
+      console.error("Could not mark order as dispatched", error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    if (count === 0) return NextResponse.json({ error: "Order not found" }, { status: 404 });
+    return NextResponse.json({ order: { id: String(body.id), status: "dispatched" } });
   }
   const values = payload(body);
   if (!values.customer_name || !values.phone || !values.delivery_date || !values.delivery_slot) return NextResponse.json({ error: "Name, phone, date and time are required" }, { status: 400 });
