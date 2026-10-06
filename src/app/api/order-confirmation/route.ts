@@ -4,11 +4,12 @@ import { supabaseAdmin } from "@/lib/supabase";
 export async function GET() {
   const db = supabaseAdmin();
   const [{ data: products }, { data: boxes }] = await Promise.all([
-    db.from("products").select("id,name,is_available,sort_order").eq("is_available", true).order("sort_order"),
+    db.from("products").select("id,name,is_available,sort_order").order("sort_order"),
     db.from("box_sizes").select("id,label,count,price,is_active,sort_order").eq("is_active", true).order("sort_order"),
   ]);
-  const availableProducts = [...(products || [])];
-  if (!availableProducts.some((product) => product.name.toLowerCase() === "pomegranate")) {
+  const allProducts = [...(products || [])];
+  const availableProducts = allProducts.filter((product) => product.is_available);
+  if (!allProducts.some((product) => product.name.toLowerCase() === "pomegranate")) {
     availableProducts.push({ id: "00000000-0000-4000-8000-000000000017", name: "Pomegranate", is_available: true, sort_order: 17 });
   }
   return NextResponse.json({ products: availableProducts, boxes: boxes || [] });
