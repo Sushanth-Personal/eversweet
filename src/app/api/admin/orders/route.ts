@@ -49,3 +49,18 @@ export async function PATCH(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ order: data });
 }
+
+export async function DELETE(req: NextRequest) {
+  const body = await req.json();
+  if (!body.id) return NextResponse.json({ error: "Order ID is required" }, { status: 400 });
+  const { error, count } = await supabaseAdmin()
+    .from("orders")
+    .update({ status: "cancelled" }, { count: "exact" })
+    .eq("id", String(body.id));
+  if (error) {
+    console.error("Could not delete order", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  if (count === 0) return NextResponse.json({ error: "Order not found" }, { status: 404 });
+  return NextResponse.json({ deleted: true });
+}

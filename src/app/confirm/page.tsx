@@ -5,7 +5,7 @@ type Product={id:string;name:string}; type Box={id:string;label:string;count:num
 type PlannedBox={key:string;box_size_id:string;flavours:Record<string,number>};
 type Form={customer_name:string;phone:string;address:string;customer_maps_url:string;delivery_date:string;delivery_slot:string};
 const TIMES=["9–11 AM","11 AM–1 PM","1–3 PM","3–5 PM","5–7 PM","7–9 PM","9–11 PM"];
-const FALLBACK_FLAVOURS=["Mango","Strawberry","Blueberry","Red Cherry","Lemon Curd","Kiwi","Green Apple","Orange","Pear","Nutella","Milk Choco Nuts","Coffee Nuts","Biscoff","Dark Chocolate","Pistachio","Hazelnut"].map(name=>({id:name.toLowerCase().replace(/\s+/g,"-"),name}));
+const FALLBACK_FLAVOURS=["Mango","Strawberry","Blueberry","Red Cherry","Lemon Curd","Kiwi","Green Apple","Orange","Pear","Nutella","Milk Choco Nuts","Coffee Nuts","Biscoff","Dark Chocolate","Pistachio","Hazelnut","Pomegranate"].map(name=>({id:name.toLowerCase().replace(/\s+/g,"-"),name}));
 const initial:Form={customer_name:"",phone:"",address:"",customer_maps_url:"",delivery_date:"",delivery_slot:""};
 
 export default function NewConfirmationPage(){
