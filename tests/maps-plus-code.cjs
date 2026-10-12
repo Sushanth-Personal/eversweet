@@ -1,0 +1,18 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript');
+const result={};vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/lib/maps-plus-code.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{exports:result,URL});
+const {encodePlusCode,destinationCoordinates}=result;
+const apple='https://maps.apple.com/place?map=explore&coordinate=8.596437%2C76.918732&name=Charummoodu+Vattappara+Road';
+assert.equal(JSON.stringify(destinationCoordinates(new URL(apple))),'[8.596437,76.918732]');
+assert.equal(result.googleMapsLink(apple),'https://www.google.com/maps/search/?api=1&query=8.596437%2C76.918732');
+assert.equal(result.googleMapsLink('javascript:alert(1)'),'');
+assert.equal(encodePlusCode(0,0),'6FG22222+222');
+assert.equal(encodePlusCode(47.36559,8.524997).slice(0,-1),'8FVC9G8F+6X');
+const link=new URL('https://www.google.com/maps/place/8.554267,76.914091/data=!4m6!3m5!1s0!7e2!8m2!3d8.5542673!4d76.9140908');
+assert.equal(JSON.stringify(destinationCoordinates(link)),JSON.stringify([8.5542673,76.9140908]));
+assert.equal(encodePlusCode(...destinationCoordinates(link)),'6JWRHW37+PJ4');
+assert.equal(encodePlusCode(...destinationCoordinates(new URL('https://www.google.com/maps?data=!3d8.5542673!4d76.9140908'))),'6JWRHW37+PJ4');
+assert.equal(destinationCoordinates(new URL('https://www.google.com/maps/@8.5,76.9,12z')),null);
+assert.equal(destinationCoordinates(new URL('https://maps.google.com/?q=91,76')),null);
+assert.equal(JSON.stringify(destinationCoordinates(new URL('https://maps.google.com/?q=8.5,76.9'))),'[8.5,76.9]');
+console.log('PASS: encoding, exact destination parsing, invalid coordinates, camera coordinates excluded');
+console.log('Example location:',encodePlusCode(...destinationCoordinates(link)));
