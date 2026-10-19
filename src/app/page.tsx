@@ -1334,9 +1334,6 @@ export default function Home() {
                         display: "block",
                       }}
                     />
-                    {p.is_premium && (
-                      <span className="badge-premium">Premium</span>
-                    )}
                     {qty > 0 && (
                       <div
                         style={{
@@ -1724,17 +1721,6 @@ export default function Home() {
                       <p style={{ fontSize: "0.8rem", fontWeight: 500 }}>
                         {p.name}
                       </p>
-                      {p.is_premium && (
-                        <span
-                          style={{
-                            color: "var(--gold)",
-                            fontSize: "0.6rem",
-                            letterSpacing: "0.1em",
-                          }}
-                        >
-                          PREMIUM
-                        </span>
-                      )}
                     </div>
                     <div
                       style={{

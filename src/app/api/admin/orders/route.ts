@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import {deliveryDateError} from "@/lib/delivery-date";
 import {boxValues} from "@/lib/admin-boxes";
 import { replaceNote } from "@/lib/order-draft";
 import { supabaseAdmin } from "@/lib/supabase";
@@ -34,8 +35,14 @@ export async function POST(req: NextRequest) {
   const planError=await validatePlan(body);if(planError)return NextResponse.json({error:planError},{status:400});
   const values = payload(body);
   if(body.box_selections)Object.assign(values,boxValues(body.box_selections,values.notes));
-  if (!values.customer_name || !values.phone || !values.delivery_date || !values.delivery_slot) return NextResponse.json({ error: "Name, phone, date and time are required" }, { status: 400 });
-  const { data, error } = await supabaseAdmin().from("orders").insert({ ...values, payment_method: "admin", payment_confirmed_at: new Date().toISOString() }).select("*").single();
+  const dateError=await deliveryDateError(values.source,values.delivery_date);
+  if(dateError)return NextResponse.json({error:dateError},{status:400});
+  const id=String(body.id||"");
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))return NextResponse.json({error:"Invalid creation ID. Reopen Add order."},{status:400});
+  const db=supabaseAdmin();
+  const {error}=await db.from("orders").upsert({ ...values,id,customer_name:values.customer_name||"Customer details pending",payment_method:"admin" },{onConflict:"id",ignoreDuplicates:true});
+  const {data,error:readError}=await db.from("orders").select("*").eq("id",id).single();
+  if(readError)return NextResponse.json({error:"Could not retrieve order. Retry with the same form."},{status:500});
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ order: data });
 }
@@ -61,7 +68,7 @@ export async function PATCH(req: NextRequest) {
   values.notes=replaceNote(existing?.notes,"Customer map",String(body.customer_maps_url||"").trim());
   if(["complete","incomplete","auto"].includes(body.details_status))values.notes=replaceNote(values.notes,"Details status",body.details_status==="auto"?"":body.details_status);
   if(body.box_selections)Object.assign(values,boxValues(body.box_selections,values.notes));
-  if (!values.customer_name || !values.phone) return NextResponse.json({ error: "Name and phone are required" }, { status: 400 });
+  if (!values.customer_name) values.customer_name="Customer details pending";
   const { data, error } = await supabaseAdmin().from("orders").update(values).eq("id", body.id).select("*").single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ order: data });

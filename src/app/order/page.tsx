@@ -428,7 +428,6 @@ export default function QuickOrderPage() {
                   <div style={{ flex: 1 }}>
                     <p style={{ fontSize: "0.85rem", fontWeight: 500, color: "var(--cream)" }}>
                       {p.name}
-                      {p.is_premium && <span style={{ color: "var(--gold)", fontSize: "0.6rem", letterSpacing: "0.1em", marginLeft: 6 }}>PREMIUM</span>}
                     </p>
                     {p.description && (
                       <p style={{ fontSize: "0.68rem", color: "var(--cream-dim)", lineHeight: 1.4, marginTop: 2 }}>{p.description}</p>
