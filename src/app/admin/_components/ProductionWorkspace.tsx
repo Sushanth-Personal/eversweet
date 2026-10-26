@@ -736,7 +736,7 @@ export default function ProductionWorkspace({
                           !!busy ||
                           !available ||
                           loading ||
-                          !production.valid
+                          (!production.valid && step.action !== "reset_order")
                         }
                         onClick={() => step.action && action(step.action, o.id)}
                       >

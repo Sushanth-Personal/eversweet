@@ -1,7 +1,9 @@
 import { googleMapsLink } from "./maps-plus-code";
 export type ContactField = "phone" | "instagram" | "map";
 export function instagramUrl(value?: string | null) {
-  const input = (value || "").trim();
+  const raw = (value || "").trim();
+  // Sharing/copying can include a Markdown wrapper or surrounding message.
+  const input = raw.match(/https?:\/\/(?:www\.|m\.)?instagram\.com\/[^\s<>\])]+/i)?.[0] || raw;
   if (!input) return "";
   const username = input.replace(/^@/, "");
   if (/^[\w.]{1,30}$/.test(username))

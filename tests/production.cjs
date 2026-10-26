@@ -41,6 +41,17 @@ function order(id, flavours, size = 4, extra = {}) {
     ...extra,
   };
 }
+// Popular flavours spread across unrelated boxes must not outrank a complete box.
+const packingOrders = [
+  order("first", { mango: 1, chocolate: 1, lemon: 1, biscoff: 1 }),
+  order("second", { mango: 1, strawberry: 1, blueberry: 1, nutella: 1 }),
+  order("third", { mango: 1, strawberry: 1, hazelnut: 1, kiwi: 1 }),
+];
+const scheduled = buildProduction(packingOrders, boxes, [], []);
+const batches = scheduled.manifest.slice(0,4).map(r => ({city:r.city,flavour_id:r.id,finished:r.required}));
+assert.ok(buildProduction(packingOrders,boxes,batches,[]).ready.length >= 1, "first four batches must complete a box, not scatter across orders");
+const partlyDone = buildProduction(packingOrders,boxes,[{city:"kochi",flavour_id:"mango",finished:3},{city:"kochi",flavour_id:"chocolate",finished:1},{city:"kochi",flavour_id:"lemon",finished:1}],[]);
+assert.equal(partlyDone.manifest[0].id,"biscoff","finish the almost-ready box before starting another");
 for (const size of [4, 5, 6, 8]) {
   const r = productionOrder(order("a", { mango: size }, size), boxes);
   assert.equal(r.cups.mango.white, size === 8 ? size : 0);
@@ -192,6 +203,9 @@ assert.equal(
   "https://www.instagram.com/eversweet/",
 );
 assert.equal(contacts.instagramUrl("https://evil.example/user"), "");
+const sharedInstagram = "https://www.instagram.com/_sumayyya__?vrfl=MWV1OWViZHRjN3E5eA==";
+assert.equal(contacts.instagramUrl(sharedInstagram), "https://www.instagram.com/_sumayyya__/");
+assert.equal(contacts.instagramUrl(`[${sharedInstagram}](${sharedInstagram})`), "https://www.instagram.com/_sumayyya__/");
 for (const field of ["phone", "instagram", "map"])
   assert.equal(contacts.contactAction(field, {}).focus, field);
 assert.equal(

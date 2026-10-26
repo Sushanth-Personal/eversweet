@@ -25,6 +25,9 @@ const api=load("src/app/api/admin/orders/route.ts",deps),request=body=>({json:as
  assert.equal(records.get(blank.id).insta_id,"https://www.instagram.com/customer/");
  assert.equal(records.get(blank.id).phone,"12345","Instagram-only save preserves phone");
  assert.equal(records.get(blank.id).address,"Original address","Instagram-only save preserves address");
+ const profile="https://www.instagram.com/_sumayyya__/";
+ assert.equal((await api.PATCH(request({id:blank.id,insta_id:profile}))).status,200);
+ assert.equal(records.get(blank.id).insta_id,profile,"exact reported Instagram profile survives save and readback");
  assert.equal((await api.POST(request({...body,id:"invalid"}))).status,400,"stable valid ID mandatory");
  console.log("PASS: admin dated draft, idempotent retry, retry preserves existing order, blank-order creation and UUID");
 })().catch(e=>{console.error(e);process.exitCode=1});

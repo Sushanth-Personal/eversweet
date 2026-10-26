@@ -23,7 +23,9 @@ export async function PATCH(req:NextRequest,{params}:{params:{id:string}}) {
  const dateError=customerOrderLock(old)||fixedOrderDetailsError(old,body)||(!old.delivery_date?await deliveryDateError(body.location,body.delivery_date):"");
  if(dateError)return NextResponse.json({error:dateError},{status:409});
  if(old.status==="dispatched")return NextResponse.json({error:"This order has already been dispatched. Please contact Eversweet."},{status:409});
- const name=String(body.customer_name||"").trim(),phone=String(body.phone||"").trim();
+ const name=String(body.customer_name||"").trim(),rawPhone=String(body.phone||"").trim();
+ const phone=rawPhone.replace(/[\s()-]/g, "").replace(/^\+91/, "");
+ if(!/^\d{10}$/.test(phone))return NextResponse.json({error:"Please enter a complete 10-digit phone number."},{status:400});
  if(!name||!phone)return NextResponse.json({error:"Name and phone number are required"},{status:400});
  const map=String(body.customer_maps_url||"").trim();
  if(map&&!/^https?:\/\//i.test(map))return NextResponse.json({error:"Please enter a complete map link"},{status:400});

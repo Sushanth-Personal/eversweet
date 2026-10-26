@@ -158,9 +158,38 @@ export function buildProduction(
           left[stockKey(r.city, id)] = (left[stockKey(r.city, id)] || 0) - n;
       }
     }
-    return { ready, missing };
+    return { ready, missing, left };
   }
   const allocation = allocate(inventory);
+  // Schedule whole boxes, rather than independently ranking popular flavours.
+  // Each chosen flavour represents its remaining daily batch. Keep the flavours
+  // for the cheapest-to-finish box together before moving to another box.
+  const simulatedStock = { ...allocation.left };
+  const candidates = pending
+    .filter(r => r.valid && !allocation.ready.includes(r.order.id))
+    .flatMap(r => r.plan.map(box => ({ city: r.city, flavours: box.flavours })));
+  const batchRank = new Map<string, number>();
+  while (candidates.length) {
+    const needs = (box: typeof candidates[number]) => Object.entries(box.flavours)
+      .map(([id, n]) => ({ key: stockKey(box.city, id), n: Math.max(0, n - (simulatedStock[stockKey(box.city, id)] || 0)) }))
+      .filter(x => x.n > 0);
+    let best = 0;
+    for (let i = 1; i < candidates.length; i++) {
+      const a = needs(candidates[i]), b = needs(candidates[best]);
+      if (a.length < b.length || (a.length === b.length && a.reduce((s,x)=>s+x.n,0) < b.reduce((s,x)=>s+x.n,0))) best = i;
+    }
+    const box = candidates.splice(best, 1)[0];
+    for (const need of needs(box)) {
+      if (!batchRank.has(need.key)) {
+        batchRank.set(need.key, batchRank.size);
+        simulatedStock[need.key] = (simulatedStock[need.key] || 0) + Math.max(0, required[need.key] - (prepared[need.key] || 0));
+      }
+    }
+    for (const [id,n] of Object.entries(box.flavours)) {
+      const key = stockKey(box.city,id);
+      simulatedStock[key] = Math.max(0, (simulatedStock[key] || 0) - n);
+    }
+  }
   const manifest = Object.keys(required)
     .map((k) => {
       const split = k.indexOf(":");
@@ -194,6 +223,7 @@ export function buildProduction(
     })
     .sort(
       (a, b) =>
+        (batchRank.get(a.key) ?? Number.MAX_SAFE_INTEGER) - (batchRank.get(b.key) ?? Number.MAX_SAFE_INTEGER) ||
         b.score - a.score ||
         b.remaining - a.remaining ||
         a.key.localeCompare(b.key),
