@@ -62,6 +62,7 @@ export default function AdminPage() {
           products={products}
           boxes={boxes}
           password=""
+          onUpdated={saved => setOrders(current => current.map(o => o.id === saved.id ? {...o, ...saved} : o))}
           focusField={editor.focus}
           linkOnly={editor.link}
           onClose={() => { setEditor(null); void load(); }}

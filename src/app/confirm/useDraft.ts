@@ -1,6 +1,7 @@
 "use client";
 import {useEffect,useRef,useState} from "react";
 import {initialBoxes} from "@/lib/admin-boxes";
+import {customerPhone} from "@/lib/customer-phone";
 
 export function useDraft(draftId:string|undefined,snapshot:string,hydrate:(data:any)=>void,autosave=true){
  const[ready,setReady]=useState(false),[status,setStatus]=useState(""),[error,setError]=useState(""),[locked,setLocked]=useState("");
@@ -27,9 +28,9 @@ export function useDraft(draftId:string|undefined,snapshot:string,hydrate:(data:
   queue.current=task;return task;
  }
  useEffect(()=>{if(!autosave||!ready||locked||loadedId.current!==draftId)return;if(!hydrated.current){last.current=snapshot;hydrated.current=true;return}
-  const values=JSON.parse(snapshot);if(!values.customer_name.trim()||!values.phone.trim())return;
+  const values=JSON.parse(snapshot);if(!values.customer_name.trim()||!customerPhone(values.phone))return;
   const timer=setTimeout(()=>void save(snapshot),650);return()=>clearTimeout(timer);
  },[snapshot,ready,locked,draftId,autosave]);
- async function create(name:string,phone:string){if(!name.trim()||!phone.trim()){setError("Please enter your name and phone number.");return false}return save()}
+ async function create(name:string,phone:string){if(!name.trim()||!customerPhone(phone)){setError("Please enter your name and a complete 10-digit phone number.");return false}return save()}
  return{id:draftId||"",ready,status,error,locked,save,create};
 }

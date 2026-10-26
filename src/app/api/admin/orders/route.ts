@@ -104,6 +104,7 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   const body = await req.json();
+  if (body.insta_id && !instagramUrl(String(body.insta_id))) return NextResponse.json({error:"Enter a valid Instagram username or profile link."},{status:400});
   if (!body.id)
     return NextResponse.json(
       { error: "Order ID is required" },
@@ -161,6 +162,8 @@ export async function PATCH(req: NextRequest) {
     .single();
   if (error)
     return NextResponse.json({ error: error.message }, { status: 500 });
+  if (body.insta_id !== undefined && instagramUrl(data?.insta_id) !== values.insta_id)
+    return NextResponse.json({error:"Instagram could not be verified after saving. Please retry."},{status:409});
   return NextResponse.json({ order: data });
 }
 

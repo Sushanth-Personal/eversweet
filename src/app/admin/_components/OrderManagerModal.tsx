@@ -11,13 +11,10 @@ import type { Product, BoxSize } from "@/lib/types";
 import type { ExtOrder } from "../_lib/constants";
 
 const TIMES = [
-  "9–11 AM",
   "11 AM–1 PM",
   "1–3 PM",
   "3–5 PM",
   "5–7 PM",
-  "7–9 PM",
-  "9–11 PM",
 ];
 const mapFromNotes = (notes?: string | null) =>
   notes?.match(/Customer map:\s*(https?:\/\/\S+)/i)?.[1] || "";
@@ -65,6 +62,7 @@ export function OrderManagerModal({
   boxes,
   password,
   onClose,
+  onUpdated,
   onSaved,
   onDeleted,
   focusField,
@@ -75,6 +73,7 @@ export function OrderManagerModal({
   boxes: BoxSize[];
   password: string;
   onClose: () => void;
+  onUpdated?: (order: ExtOrder) => void;
   onSaved: () => void;
   onDeleted: () => void;
   focusField?: ContactField;
@@ -167,9 +166,9 @@ export function OrderManagerModal({
   const failedDraft = useRef("");
   const historyMarker = useRef(creationId);
   const [saveNote, setSaveNote] = useState("");
-  const draftKey = JSON.stringify(draft);
+  const draftKey = JSON.stringify({ ...draft, rawInstagram: instagram });
   useEffect(() => {
-    if (!order || !editing || saving || draftKey === failedDraft.current || draftKey === JSON.stringify(persisted.current)) return;
+    if (!order || !editing || saving || draftKey === failedDraft.current || (JSON.stringify(draft) === JSON.stringify(persisted.current) && (!instagram.trim() || !!instagramUrl(instagram)))) return;
     const timer = window.setTimeout(() => { void save(true); }, 900);
     return () => window.clearTimeout(timer);
   }, [draftKey, editing, saving]);
@@ -336,15 +335,19 @@ export function OrderManagerModal({
         }),
         data = await response.json();
       if (!response.ok) throw new Error(data.error);
+      if (order && "insta_id" in changes && instagramUrl(data.order?.insta_id) !== snapshot.insta_id) {
+        throw Error("Instagram was not saved correctly. Please retry before closing.");
+      }
       persisted.current = snapshot;
       failedDraft.current = "";
       changed.forEach(k => sessionFields.current.add(k));
       setSaveNote("All changes saved");
+      if (order && data.order) onUpdated?.(data.order);
       if (order) { if (!automatic) onSaved(); }
       else setCreated(data.order);
       return true;
     } catch (caught) {
-      failedDraft.current = JSON.stringify(snapshot);
+      failedDraft.current = draftKey;
       setError(
         caught instanceof Error ? caught.message : "Could not save order",
       );
@@ -387,13 +390,17 @@ export function OrderManagerModal({
 
   async function copyNewOrder() {
     if (saving) return;
+    if (!form.delivery_date) {
+      setError("Choose the order date before copying the link.");
+      return;
+    }
     setSaving(true);
     setError("");
     try {
       const response = await fetch("/api/admin/orders", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: creationId }),
+          body: JSON.stringify({ id: creationId, delivery_date: form.delivery_date, location: form.location }),
         }),
         data = await response.json();
       if (!response.ok) throw Error(data.error);
@@ -435,13 +442,30 @@ export function OrderManagerModal({
             </button>
           </header>
           <p>
-            Create an empty order and copy its confirmation link. Your customer
-            fills in the date, flavours and delivery details.
+            Set the city and date first. These are fixed on the customer’s link;
+            they only need to fill in their details, boxes and flavours.
           </p>
+          <fieldset className="order-link-priority">
+            <legend>Order city</legend>
+            <div className="location-toggle">
+              {[["kochi", "Kochi"], ["trivandrum", "Trivandrum"]].map(([value, label]) => (
+                <button type="button" key={value} aria-pressed={form.location === value}
+                  className={form.location === value ? "active" : ""}
+                  disabled={saving} onClick={() => set("location", value)}>{label}</button>
+              ))}
+            </div>
+          </fieldset>
+          <label>
+            <span>Order date</span>
+            <input type="date" required disabled={saving} value={form.delivery_date}
+              min={new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date())}
+              onChange={e => set("delivery_date", e.target.value)} />
+          </label>
+          <p><strong>{form.location === "trivandrum" ? "Trivandrum" : "Kochi"}</strong> · {form.delivery_date || "Choose a date"}</p>
           <button
             type="button"
             className="modal-save"
-            disabled={saving}
+            disabled={saving || !form.delivery_date}
             onClick={copyNewOrder}
           >
             {saving ? "Creating order…" : "Copy Order"}
@@ -653,7 +677,8 @@ export function OrderManagerModal({
               </label>
               <label>
                 <span>Time</span>
-                <select
+                {form.location === "trivandrum" ? <p>No time selection needed for Trivandrum</p> : <select
+                  data-focus-field="time"
                   value={form.delivery_slot}
                   onChange={(event) => set("delivery_slot", event.target.value)}
                 >
@@ -661,7 +686,7 @@ export function OrderManagerModal({
                   {TIMES.map((time) => (
                     <option key={time}>{time}</option>
                   ))}
-                </select>
+                </select>}
               </label>
             </div>
             <label>
@@ -742,7 +767,7 @@ export function OrderManagerModal({
                     boxes, date or city.
                   </p>
                 )}
-                <fieldset
+                <fieldset data-focus-field="flavours" tabIndex={-1}
                   className="production-box-fieldset"
                   disabled={productionLocked}
                 >
@@ -812,7 +837,7 @@ export function OrderManagerModal({
             </button>
           )}
         </div>
-        {order && <p role="status" className="autosave-status">{saving ? "Saving…" : error ? "Not saved — correct the error above" : saveNote || "Edits save automatically"}</p>}
+        {order && <p role="status" className="autosave-status">{saving ? "Saving…" : error ? "Not saved — correct the error above" : JSON.stringify(draft) !== JSON.stringify(persisted.current) || (instagram.trim() && !instagramUrl(instagram)) ? "Changes pending…" : saveNote || "Edits save automatically"}</p>}
       </div>
     </div>
   );

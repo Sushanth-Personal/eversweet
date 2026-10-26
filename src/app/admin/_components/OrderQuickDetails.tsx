@@ -51,6 +51,9 @@ export default function OrderQuickDetails({
     ["Address", form.address],
     ["Google Maps link", form.customer_maps_url],
     ["Instagram profile", instagramUrl(form.insta_id)],
+    ["Delivery", `${form.delivery_date || "Date pending"} · ${form.delivery_slot || "Time pending"}\n${form.location === "trivandrum" ? "Trivandrum" : "Kochi"} · ${form.fulfillment_type || "delivery"}`],
+    ["Order", `${form.status} · ${form.payment_method || "Admin order"} · ₹${Number(form.total_price || 0).toLocaleString("en-IN")}`],
+    ...(form.remarks ? [["Notes", form.remarks]] : []),
   ];
   return (
     <section className="order-quick-details">
@@ -58,40 +61,27 @@ export default function OrderQuickDetails({
       <p className="quiet">Tap a detail to copy</p>
       <dl className="production-details">
         {fields.map(([label, value]) => (
-          <div key={label}>
+          <div key={label}
+            className={value ? "copy-detail-box" : undefined}
+            role={value ? "button" : undefined}
+            tabIndex={value ? 0 : undefined}
+            aria-label={value ? `Copy ${label.toLowerCase()}` : undefined}
+            onClick={() => value && void copy(value, label)}
+            onKeyDown={event => {
+              if (value && (event.key === "Enter" || event.key === " ")) {
+                event.preventDefault(); void copy(value, label);
+              }
+            }}>
             <dt>{label}</dt>
             <dd>
               {value ? (
-                <button onClick={() => copy(value, label)}>{value}</button>
+                <span className="copy-detail-value">{value}</span>
               ) : (
                 <span className="quiet">Not provided</span>
               )}
             </dd>
           </div>
         ))}
-        <div>
-          <dt>Delivery</dt>
-          <dd>
-            {form.delivery_date || "Date pending"} ·{" "}
-            {form.delivery_slot || "Time pending"}
-            <br />
-            {form.location === "trivandrum" ? "Trivandrum" : "Kochi"} ·{" "}
-            {form.fulfillment_type}
-          </dd>
-        </div>
-        <div>
-          <dt>Order</dt>
-          <dd>
-            {form.status} · {form.payment_method || "Admin order"} · ₹
-            {Number(form.total_price || 0).toLocaleString("en-IN")}
-          </dd>
-        </div>
-        {form.remarks && (
-          <div>
-            <dt>Notes</dt>
-            <dd>{form.remarks}</dd>
-          </div>
-        )}
       </dl>
       <button onClick={() => copy(deliveryText(form), "Delivery details")}>
         Copy delivery details

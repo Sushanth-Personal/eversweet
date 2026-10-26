@@ -53,7 +53,7 @@ begin
       return jsonb_build_object('saved',true);
     end if;
     if o.status in ('cancelled','dispatched') then raise exception 'This order cannot be packed'; end if;
-    if o.delivery_date is null or coalesce(o.delivery_slot,'')='' then raise exception 'Add the delivery date and time first'; end if;
+    if o.delivery_date is null or (o.source is distinct from 'trivandrum' and coalesce(o.delivery_slot,'')='') then raise exception 'Add the delivery date and time first'; end if;
     city_name:=case when o.source='trivandrum' then 'trivandrum' else 'kochi' end;
     -- Decode the existing URI-encoded Box layout without altering historical notes.
     if o.notes like '%Box layout:%' then
