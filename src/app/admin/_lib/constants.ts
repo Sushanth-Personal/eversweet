@@ -24,6 +24,9 @@ export type Expense = {
 };
 
 export type ExtOrder = Order & {
+  production_packed?: boolean;
+  production_prepared?: boolean;
+  production_ready?: boolean;
   insta_id?: string;
   remarks?: string;
   source?: string;

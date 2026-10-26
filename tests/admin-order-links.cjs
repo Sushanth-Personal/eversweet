@@ -5,6 +5,7 @@ const draft=load("src/lib/order-draft.ts");
 const deps={"next/server":{NextResponse:{json:(body,o)=>({body,status:o?.status||200})}},"@/lib/order-draft":draft,"@/lib/admin-boxes":load("src/lib/admin-boxes.ts",{"./order-draft":draft}),"@/lib/delivery-date":{deliveryDateError:async()=>""},"@/lib/supabase":{supabaseAdmin:()=>({from:table=>{
  let id;const q={select:()=>q,eq:(key,v)=>{id=v;return q},upsert:async values=>{if(!records.has(values.id))records.set(values.id,values);return{error:null}},single:async()=>({data:records.get(id),error:null}),then:resolve=>resolve({data:[],error:null})};return q;
  }})}};
+deps['@/lib/order-contacts']={instagramUrl:value=>value};
 const api=load("src/app/api/admin/orders/route.ts",deps),request=body=>({json:async()=>body});
 (async()=>{
  const body={id:"11111111-1111-4111-8111-111111111111",delivery_date:"2099-01-01",location:"kochi",box_selections:[]};

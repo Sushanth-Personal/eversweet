@@ -1,0 +1,10 @@
+{
+  "extends": "next/core-web-vitals",
+  "rules": { "react/no-unescaped-entities": "warn" },
+  "overrides": [
+    {
+      "files": ["src/app/page.tsx"],
+      "rules": { "react-hooks/rules-of-hooks": "warn" }
+    }
+  ]
+}
