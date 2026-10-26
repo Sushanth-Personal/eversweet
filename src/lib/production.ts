@@ -67,7 +67,7 @@ export function productionOrder(o: ExtOrder, boxes: BoxSize[]) {
     plan,
     flavours,
     cups,
-    valid: valid && !!o.delivery_date && !!(o.delivery_slot || o.batch_label),
+    valid: valid && !!o.delivery_date && (cityOf(o) === "trivandrum" || !!(o.delivery_slot || o.batch_label)),
   };
 }
 export function buildProduction(

@@ -11,13 +11,10 @@ import type { Product, BoxSize } from "@/lib/types";
 import type { ExtOrder } from "../_lib/constants";
 
 const TIMES = [
-  "9–11 AM",
   "11 AM–1 PM",
   "1–3 PM",
   "3–5 PM",
   "5–7 PM",
-  "7–9 PM",
-  "9–11 PM",
 ];
 const mapFromNotes = (notes?: string | null) =>
   notes?.match(/Customer map:\s*(https?:\/\/\S+)/i)?.[1] || "";
@@ -680,7 +677,8 @@ export function OrderManagerModal({
               </label>
               <label>
                 <span>Time</span>
-                <select
+                {form.location === "trivandrum" ? <p>No time selection needed for Trivandrum</p> : <select
+                  data-focus-field="time"
                   value={form.delivery_slot}
                   onChange={(event) => set("delivery_slot", event.target.value)}
                 >
@@ -688,7 +686,7 @@ export function OrderManagerModal({
                   {TIMES.map((time) => (
                     <option key={time}>{time}</option>
                   ))}
-                </select>
+                </select>}
               </label>
             </div>
             <label>
@@ -769,7 +767,7 @@ export function OrderManagerModal({
                     boxes, date or city.
                   </p>
                 )}
-                <fieldset
+                <fieldset data-focus-field="flavours" tabIndex={-1}
                   className="production-box-fieldset"
                   disabled={productionLocked}
                 >

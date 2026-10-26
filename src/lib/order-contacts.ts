@@ -1,5 +1,5 @@
 import { googleMapsLink } from "./maps-plus-code";
-export type ContactField = "phone" | "instagram" | "map";
+export type ContactField = "phone" | "instagram" | "map" | "flavours" | "time";
 export function instagramUrl(value?: string | null) {
   const raw = (value || "").trim();
   // Sharing/copying can include a Markdown wrapper or surrounding message.

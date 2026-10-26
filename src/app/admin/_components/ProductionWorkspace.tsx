@@ -668,6 +668,7 @@ export default function ProductionWorkspace({
                   <article
                     className={`order-ledger-row order-tile ${o.status === "dispatched" ? "tile-dispatched" : o.production_packed ? "tile-packed" : !production.valid ? "tile-incomplete" : "tile-preparing"}`}
                     key={o.id}
+                    onClick={event => { if (!(event.target as HTMLElement).closest('button,a,input,select,textarea,[data-order-section]')) onOpen(o); }}
                   >
                     <div className="order-tile-heading">
                       <span className="order-number">Order {index + 1}</span>
@@ -690,9 +691,11 @@ export default function ProductionWorkspace({
                           <span className="incomplete-badge">Incomplete</span>
                         )}
                     </div>
-                    <div className="order-appointment">
+                    <div className="order-appointment" data-order-section="time" role="button" tabIndex={0} aria-label="Edit delivery time"
+                      onClick={() => onOpen(o, "time")}
+                      onKeyDown={e => { if(e.key === "Enter" || e.key === " "){e.preventDefault();onOpen(o,"time");} }}>
                       <strong>
-                        {o.delivery_slot || o.batch_label || "Time pending"}
+                        {cityOf(o) === "trivandrum" ? "Trivandrum" : o.delivery_slot || o.batch_label || "Time pending"}
                       </strong>
                       <p className="order-date-line">
                         {o.delivery_date
@@ -703,7 +706,9 @@ export default function ProductionWorkspace({
                     </div>
                     {production.plan.length ? (
                       production.plan.map((box, i) => (
-                        <section className="order-tile-box" key={i}>
+                        <section className="order-tile-box" key={i} data-order-section="flavours" role="button" tabIndex={0} aria-label={`Edit box ${i+1} flavours`}
+                          onClick={() => onOpen(o,"flavours")}
+                          onKeyDown={e => {if(e.key === "Enter" || e.key === " "){e.preventDefault();onOpen(o,"flavours");}}}>
                           <h3>
                             {production.plan.length > 1
                               ? `Box ${i + 1} · `
