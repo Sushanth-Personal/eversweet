@@ -584,6 +584,8 @@
   overflow: hidden;
 }
 .production-app .order-modal {
+  min-width: 0;
+  overflow-x: hidden;
   background: var(--paper);
   color: var(--ink);
   border: 1px solid var(--line);
@@ -594,6 +596,15 @@
   overflow-y: auto;
   box-shadow: none;
   overscroll-behavior: contain;
+}
+.production-app .order-modal *, .production-app .order-modal-grid > * { min-width: 0; max-width: 100%; }
+.production-app .order-modal input, .production-app .order-modal select, .production-app .order-modal textarea { box-sizing: border-box; width: 100%; }
+.production-app .order-modal .floating-order-close { position: fixed; top: 14px; right: 14px; z-index: 90; width: 48px; height: 48px; border-radius: 50%; background: #b42332; border: 2px solid white; color: white; font: 700 24px/1 sans-serif; box-shadow: 0 2px 12px #0004; }
+.production-app .autosave-status { position: sticky; bottom: 0; background: var(--paper); padding: 12px; border-top: 1px solid var(--line); font-size: 15px; }
+@media (max-width: 520px) {
+  .production-app .order-modal-backdrop { padding: 12px; }
+  .production-app .order-modal { max-height: calc(100dvh - 24px); padding: 20px 16px; width: 100%; }
+  .production-app .order-modal header { padding-right: 40px; flex-wrap: wrap; }
 }
 .production-app .order-modal > header {
   display: flex;

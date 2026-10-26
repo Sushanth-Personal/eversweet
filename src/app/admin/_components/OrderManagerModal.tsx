@@ -154,6 +154,59 @@ export function OrderManagerModal({
     [error, setError] = useState("");
   const set = (key: string, value: string) =>
     setForm((current) => ({ ...current, [key]: value }));
+  const draft = {
+    ...form,
+    ...(!productionLocked ? boxValues(plan) : {}),
+    insta_id: instagramUrl(instagram), remarks,
+    ...(!productionLocked ? { box_selections: plan } : {}),
+  };
+  const original = useRef(JSON.parse(JSON.stringify(draft)));
+  const persisted = useRef(JSON.parse(JSON.stringify(draft)));
+  const sessionFields = useRef(new Set<string>());
+  const inFlight = useRef(false);
+  const failedDraft = useRef("");
+  const historyMarker = useRef(creationId);
+  const [saveNote, setSaveNote] = useState("");
+  const draftKey = JSON.stringify(draft);
+  useEffect(() => {
+    if (!order || !editing || saving || draftKey === failedDraft.current || draftKey === JSON.stringify(persisted.current)) return;
+    const timer = window.setTimeout(() => { void save(true); }, 900);
+    return () => window.clearTimeout(timer);
+  }, [draftKey, editing, saving]);
+  async function closeEditor() {
+    if (inFlight.current) return;
+    if (order && !(await save(true))) return;
+    if (window.history.state?.orderModal === historyMarker.current) window.history.back();
+    if (order) onSaved(); else onClose();
+  }
+  const closeRef = useRef(closeEditor);
+  closeRef.current = closeEditor;
+  useEffect(() => {
+    const marker = historyMarker.current;
+    if (window.history.state?.orderModal !== marker) window.history.pushState({ ...window.history.state, orderModal: marker }, "");
+    const back = () => { void closeRef.current(); };
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); void closeRef.current(); } };
+    window.addEventListener("popstate", back);
+    window.addEventListener("keydown", key);
+    return () => {
+      window.removeEventListener("popstate", back);
+      window.removeEventListener("keydown", key);
+    };
+  }, []);
+  async function undoSession() {
+    if (!order || inFlight.current) return;
+    setSaving(true); inFlight.current = true;
+    try {
+      const changes = Object.fromEntries(Array.from(sessionFields.current).map(k => [k, original.current[k]]));
+      const response = await fetch("/api/admin/orders", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: order.id, ...changes }) });
+      const data = await response.json();
+      if (!response.ok) throw Error(data.error);
+      persisted.current = JSON.parse(JSON.stringify(original.current));
+      sessionFields.current.clear();
+      cancel(); setSaveNote("Session changes undone");
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not undo"); }
+    finally { inFlight.current = false; setSaving(false); }
+  }
 
   async function invoice() {
     const invoiceFlavours = boxValues(plan).flavours;
@@ -255,11 +308,18 @@ export function OrderManagerModal({
       URL.revokeObjectURL(url);
     }
   }
-  async function save() {
+  async function save(automatic = false) {
+    if (inFlight.current) return false;
     if (instagram.trim() && !instagramUrl(instagram)) {
+      failedDraft.current = draftKey;
       setError("Enter a valid Instagram username or profile link.");
-      return;
+      return false;
     }
+    const snapshot = JSON.parse(JSON.stringify(draft));
+    const changed = Object.keys(snapshot).filter(k => JSON.stringify(snapshot[k]) !== JSON.stringify(persisted.current[k]));
+    if (order && !changed.length) return true;
+    const changes = Object.fromEntries(changed.map(k => [k, snapshot[k]]));
+    inFlight.current = true;
     setSaving(true);
     setError("");
     try {
@@ -270,23 +330,27 @@ export function OrderManagerModal({
             "x-admin-password": password,
           },
           body: JSON.stringify({
-            ...form,
-            ...(!productionLocked ? boxValues(plan) : {}),
-            insta_id: instagramUrl(instagram),
-            remarks,
-            box_selections: productionLocked ? undefined : plan,
+            ...(order ? changes : snapshot),
             id: order?.id || creationId,
           }),
         }),
         data = await response.json();
       if (!response.ok) throw new Error(data.error);
-      if (order) onSaved();
+      persisted.current = snapshot;
+      failedDraft.current = "";
+      changed.forEach(k => sessionFields.current.add(k));
+      setSaveNote("All changes saved");
+      if (order) { if (!automatic) onSaved(); }
       else setCreated(data.order);
+      return true;
     } catch (caught) {
+      failedDraft.current = JSON.stringify(snapshot);
       setError(
         caught instanceof Error ? caught.message : "Could not save order",
       );
+      return false;
     } finally {
+      inFlight.current = false;
       setSaving(false);
     }
   }
@@ -454,7 +518,7 @@ export function OrderManagerModal({
     <div
       className="order-modal-backdrop"
       onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget) void closeEditor();
       }}
     >
       <div
@@ -472,7 +536,7 @@ export function OrderManagerModal({
             <h2>{order ? order.customer_name : "New order"}</h2>
           </div>
           {order && !editing && <button onClick={() => edit()}>Edit</button>}
-          <button onClick={onClose} aria-label="Close order">
+          <button className="floating-order-close" onClick={() => void closeEditor()} aria-label="Close order">
             ✕
           </button>
         </header>
@@ -729,8 +793,8 @@ export function OrderManagerModal({
             </button>
           )}
           {editing && order && (
-            <button disabled={saving} onClick={cancel}>
-              Cancel
+            <button disabled={saving} onClick={undoSession}>
+              Undo session changes
             </button>
           )}
           {editing && (
@@ -738,7 +802,7 @@ export function OrderManagerModal({
               type="button"
               className="modal-save"
               disabled={saving || deleting}
-              onClick={save}
+              onClick={() => void save()}
             >
               {saving
                 ? "Saving…"
@@ -748,6 +812,7 @@ export function OrderManagerModal({
             </button>
           )}
         </div>
+        {order && <p role="status" className="autosave-status">{saving ? "Saving…" : error ? "Not saved — correct the error above" : saveNote || "Edits save automatically"}</p>}
       </div>
     </div>
   );

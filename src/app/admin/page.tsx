@@ -64,7 +64,7 @@ export default function AdminPage() {
           password=""
           focusField={editor.focus}
           linkOnly={editor.link}
-          onClose={() => setEditor(null)}
+          onClose={() => { setEditor(null); void load(); }}
           onSaved={() => {
             if (!editor.order) setCreatedVersion((v) => v + 1);
             setEditor(null);

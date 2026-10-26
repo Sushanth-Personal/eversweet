@@ -10,6 +10,7 @@
 /.next/
 /.next-build-check/
 /.next-production-review/
+/.next-production-check/
 /out/
 
 # production
