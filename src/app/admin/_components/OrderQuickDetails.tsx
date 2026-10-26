@@ -1,14 +1,123 @@
 "use client";
-import {googleMapsLink} from "@/lib/maps-plus-code";
-import {useRef,useState} from "react";
-function Detail({label,value,onEdit,onTap}:{label:string;value:string;onEdit:()=>void;onTap:()=>void}){
- const timer=useRef<ReturnType<typeof setTimeout>>(),held=useRef(false),start=useRef({x:0,y:0});
- const clear=()=>{clearTimeout(timer.current)};
- return <div className="quick-detail"><small>{label}</small><button type="button" onPointerDown={e=>{held.current=false;start.current={x:e.clientX,y:e.clientY};timer.current=setTimeout(()=>{held.current=true;onEdit()},650)}} onPointerMove={e=>{if(Math.abs(e.clientX-start.current.x)+Math.abs(e.clientY-start.current.y)>12)clear()}} onPointerUp={clear} onPointerCancel={clear} onPointerLeave={clear} onContextMenu={e=>e.preventDefault()} onClick={()=>{if(!held.current)onTap()}}>{value||"Not provided"}</button></div>
-}
-export default function OrderQuickDetails({form,products,boxes,onEdit}:{form:any;products:{id:string;name:string}[];boxes:{id:string;label:string}[];onEdit:()=>void}){
- const[message,setMessage]=useState(""),[busy,setBusy]=useState(false),[resolved,setResolved]=useState("");
- async function copy(value:string){if(!value){setMessage("No value to copy");return}try{await navigator.clipboard.writeText(value);setMessage("Copied ✓")}catch{setMessage("Could not copy automatically. Select the text below to copy: "+value)}}
- async function plus(){setBusy(true);setMessage("");try{const r=await fetch("/api/maps-plus-code",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:form.customer_maps_url})}),d=await r.json();if(!r.ok)throw Error(d.error);const value=d.code+(d.context?", "+d.context:"");setResolved(value);await copy(value)}catch(e){setMessage(e instanceof Error?e.message:"Could not get Plus Code")}finally{setBusy(false)}}
- return <section className="order-quick-details"><p>Tap to copy. Long-press a detail to edit, or use Edit order.</p><Detail label="Name" value={form.customer_name} onEdit={onEdit} onTap={()=>copy(form.customer_name)}/><Detail label="Phone" value={form.phone} onEdit={onEdit} onTap={()=>copy(form.phone)}/>{form.phone&&<a className="quick-call" href={"tel:"+form.phone.replace(/[^+\d]/g,"")}>Call customer</a>}<Detail label="Address" value={form.address} onEdit={onEdit} onTap={()=>copy(form.address)}/><Detail label="Map location · tap to copy Plus Code" value={resolved||form.customer_maps_url} onEdit={onEdit} onTap={()=>{if(!busy)void plus()}}/><button type="button" disabled={busy||!form.customer_maps_url} onClick={plus}>{busy?"Finding Plus Code…":"Copy Plus Code"}</button>{(Boolean(googleMapsLink(form.customer_maps_url)))&&<a className="quick-call" href={googleMapsLink(form.customer_maps_url)} target="_blank" rel="noopener noreferrer">Open in Google Maps ↗</a>}{resolved&&<p className="resolved-plus-code">{resolved}<button type="button" onClick={()=>copy(resolved)}>Copy again</button></p>}<p role="status">{message}</p><Detail label="Date / time" value={[form.delivery_date,form.delivery_slot].filter(Boolean).join(" · ")} onEdit={onEdit} onTap={()=>{}}/><p><strong>{form.location==="trivandrum"?"Trivandrum":"Kochi"} · {form.fulfillment_type}</strong></p>{form.box_selections?.map((box:any,i:number)=><div className="quick-detail" key={i}><strong>Box {i+1} · {boxes.find(b=>b.id===box.box_size_id)?.label||"Size not selected"}</strong><p>{Object.entries(box.flavours as Record<string,number>).filter(([,n])=>n>0).map(([id,n])=>`${n} × ${products.find(p=>p.id===id)?.name||"Unavailable flavour — review needed"}`).join(" · ")||"Flavours not selected"}</p></div>)}<Detail label="Box" value={boxes.find(b=>b.id===form.box_size_id)?.label||""} onEdit={onEdit} onTap={()=>{}}/><div className="modal-selected-flavours">{Object.entries(form.flavours as Record<string,number>).filter(([,n])=>n>0).map(([id,n])=><span key={id}><strong>{n} × </strong>{products.find(p=>p.id===id)?.name||"Unavailable flavour — review needed"}</span>)}</div><button type="button" onClick={onEdit}>Edit order</button></section>
+import { useState } from "react";
+import {
+  deliveryText,
+  instagramUrl,
+  type ContactField,
+} from "@/lib/order-contacts";
+import ContactActions from "./ContactActions";
+import FlavourChips from "./FlavourChips";
+export default function OrderQuickDetails({
+  form,
+  products,
+  boxes,
+  onEdit,
+}: {
+  form: any;
+  products: { id: string; name: string }[];
+  boxes: { id: string; label: string }[];
+  onEdit: (field?: ContactField) => void;
+}) {
+  const [message, setMessage] = useState(""),
+    [busy, setBusy] = useState(false);
+  async function copy(value: string, label: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      setMessage(`${label} copied`);
+    } catch {
+      setMessage("Copy unavailable. Select the text to copy it.");
+    }
+  }
+  async function plus() {
+    setBusy(true);
+    try {
+      const r = await fetch("/api/maps-plus-code", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: form.customer_maps_url }),
+        }),
+        d = await r.json();
+      if (!r.ok) throw Error(d.error);
+      await copy(d.code + (d.context ? ", " + d.context : ""), "Plus Code");
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Could not find Plus Code");
+    } finally {
+      setBusy(false);
+    }
+  }
+  const fields = [
+    ["Name", form.customer_name],
+    ["Phone", form.phone],
+    ["Address", form.address],
+    ["Google Maps link", form.customer_maps_url],
+    ["Instagram profile", instagramUrl(form.insta_id)],
+  ];
+  return (
+    <section className="order-quick-details">
+      <ContactActions values={form} onEdit={onEdit} />
+      <p className="quiet">Tap a detail to copy</p>
+      <dl className="production-details">
+        {fields.map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>
+              {value ? (
+                <button onClick={() => copy(value, label)}>{value}</button>
+              ) : (
+                <span className="quiet">Not provided</span>
+              )}
+            </dd>
+          </div>
+        ))}
+        <div>
+          <dt>Delivery</dt>
+          <dd>
+            {form.delivery_date || "Date pending"} ·{" "}
+            {form.delivery_slot || "Time pending"}
+            <br />
+            {form.location === "trivandrum" ? "Trivandrum" : "Kochi"} ·{" "}
+            {form.fulfillment_type}
+          </dd>
+        </div>
+        <div>
+          <dt>Order</dt>
+          <dd>
+            {form.status} · {form.payment_method || "Admin order"} · ₹
+            {Number(form.total_price || 0).toLocaleString("en-IN")}
+          </dd>
+        </div>
+        {form.remarks && (
+          <div>
+            <dt>Notes</dt>
+            <dd>{form.remarks}</dd>
+          </div>
+        )}
+      </dl>
+      <button onClick={() => copy(deliveryText(form), "Delivery details")}>
+        Copy delivery details
+      </button>
+      {form.customer_maps_url && (
+        <button disabled={busy} onClick={plus}>
+          {busy ? "Finding…" : "Copy Plus Code"}
+        </button>
+      )}
+      <p role="status" className="production-feedback">
+        {message}
+      </p>
+      <div className="production-boxes">
+        {form.box_selections?.map((box: any, i: number) => (
+          <section key={i}>
+            <h3>
+              Box {i + 1}{" "}
+              <span>
+                {boxes.find((b) => b.id === box.box_size_id)?.label ||
+                  "Size pending"}
+              </span>
+            </h3>
+            <FlavourChips flavours={box.flavours} products={products} />
+          </section>
+        ))}
+      </div>
+    </section>
+  );
 }

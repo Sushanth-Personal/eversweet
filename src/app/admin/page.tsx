@@ -1,19 +1,88 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { useCallback, useEffect, useState } from "react";
 import type { Product, BoxSize } from "@/lib/types";
+import type { ContactField } from "@/lib/order-contacts";
 import type { ExtOrder } from "./_lib/constants";
-import { OrderCalendar } from "./_components/OrderCalendar";
+import ProductionWorkspace from "./_components/ProductionWorkspace";
 import { OrderManagerModal } from "./_components/OrderManagerModal";
 import { FlavourSettingsModal } from "./_components/FlavourSettingsModal";
-
-type LocationFilter="all"|"kochi"|"trivandrum";
-export default function AdminPage(){
-  const password=process.env.NEXT_PUBLIC_ADMIN_PASSWORD||"";
-  const [orders,setOrders]=useState<ExtOrder[]>([]),[products,setProducts]=useState<Product[]>([]),[boxes,setBoxes]=useState<BoxSize[]>([]),[loading,setLoading]=useState(false),[filter,setFilter]=useState<LocationFilter>("all"),[editing,setEditing]=useState<ExtOrder|null|undefined>(undefined),[settingsOpen,setSettingsOpen]=useState(false),[message,setMessage]=useState("");
-  const load=useCallback(async()=>{setLoading(true);const [{data:o},{data:p},{data:b}]=await Promise.all([supabase.from("orders").select("*").order("created_at",{ascending:false}).limit(1000),supabase.from("products").select("*").order("sort_order"),supabase.from("box_sizes").select("*").order("sort_order")]);const all=[...(p||[])] as Product[];setOrders((o||[]) as ExtOrder[]);setProducts(all.sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:"base"})));setBoxes((b||[]) as BoxSize[]);setLoading(false)},[]);
-  useEffect(()=>{load()},[load]);
-  const shown=useMemo(()=>orders.filter(o=>filter==="all"||(filter==="trivandrum"?o.source==="trivandrum":o.source!=="trivandrum")),[orders,filter]);
-  async function dispatch(id:string){setMessage("Marking order as dispatched…");try{const r=await fetch("/api/admin/orders",{method:"PATCH",headers:{"Content-Type":"application/json","x-admin-password":password},body:JSON.stringify({id,action:"dispatch"})}),data=await r.json();if(!r.ok)throw new Error(data.error||"Could not update order");setOrders(current=>current.map(order=>order.id===id?{...order,status:"dispatched"}:order));setMessage("Order dispatched ✓")}catch(error){setMessage(error instanceof Error?`Could not dispatch: ${error.message}`:"Could not update order")}}
-  return <main className="simple-admin"><nav><div><span>🍡</span><strong>Eversweet Orders</strong></div><div><a className="admin-delivery-link" href="/delivery">🚚 Delivery</a><button className="settings-icon" title="Manage flavours" aria-label="Manage flavours" onClick={()=>setSettingsOpen(true)}>⚙</button><button onClick={load}>{loading?"Loading…":"↻ Refresh"}</button></div></nav><div className="admin-location-filter"><span>Show orders</span>{(["all","kochi","trivandrum"] as LocationFilter[]).map(v=><button className={filter===v?"active":""} key={v} onClick={()=>setFilter(v)}>{v==="all"?"All":v==="kochi"?"🍡 Kochi":"🚂 TVM"}</button>)}</div>{message&&<div className="admin-toast">{message}</div>}<OrderCalendar orders={shown} products={products} boxes={boxes} onEdit={o=>setEditing(o)} onAdd={()=>setEditing(null)} onDispatch={dispatch}/>{editing!==undefined&&<OrderManagerModal order={editing} products={products} boxes={boxes} password={password} onClose={()=>setEditing(undefined)} onSaved={async()=>{setEditing(undefined);setMessage(editing?"Order updated ✓":"Order added ✓");await load()}} onDeleted={async()=>{setEditing(undefined);setMessage("Order deleted ✓");await load()}}/>}{settingsOpen&&<FlavourSettingsModal products={products} onClose={()=>setSettingsOpen(false)} onChanged={async()=>{await load();setMessage("Flavours updated ✓")}}/>}</main>
+import "./production.css";
+export default function AdminPage() {
+  const [orders, setOrders] = useState<ExtOrder[]>([]),
+    [products, setProducts] = useState<Product[]>([]),
+    [boxes, setBoxes] = useState<BoxSize[]>([]),
+    [settings, setSettings] = useState(false),
+    [error, setError] = useState("");
+  const [editor, setEditor] = useState<{
+    order: ExtOrder | null;
+    focus?: ContactField;
+    link?: boolean;
+  } | null>(null);
+  const [createdVersion, setCreatedVersion] = useState(0);
+  const load = useCallback(async () => {
+    try {
+      const response = await fetch("/api/admin/workspace", {
+          cache: "no-store",
+        }),
+        data = await response.json();
+      if (!response.ok) throw Error(data.error);
+      setOrders(data.orders);
+      setProducts(data.products);
+      setBoxes(data.boxes);
+      setError("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not load orders");
+    }
+  }, []);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  return (
+    <main className="production-app">
+      {error && (
+        <p role="alert" className="production-feedback">
+          {error}
+          <button onClick={load}>Try refresh</button>
+        </p>
+      )}
+      <ProductionWorkspace
+        orders={orders}
+        products={products}
+        boxes={boxes}
+        createdVersion={createdVersion}
+        onOpen={(order, focus) => setEditor({ order, focus })}
+        onNew={() => setEditor({ order: null })}
+        onLink={() => setEditor({ order: null, link: true })}
+        onSettings={() => setSettings(true)}
+        onRefresh={load}
+      />
+      {editor && (
+        <OrderManagerModal
+          order={editor.order}
+          products={products}
+          boxes={boxes}
+          password=""
+          focusField={editor.focus}
+          linkOnly={editor.link}
+          onClose={() => setEditor(null)}
+          onSaved={() => {
+            if (!editor.order) setCreatedVersion((v) => v + 1);
+            setEditor(null);
+            void load();
+          }}
+          onDeleted={() => {
+            setEditor(null);
+            void load();
+          }}
+        />
+      )}
+      {settings && (
+        <FlavourSettingsModal
+          products={products}
+          onClose={() => setSettings(false)}
+          onChanged={load}
+        />
+      )}
+    </main>
+  );
 }
