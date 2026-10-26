@@ -9,7 +9,7 @@ create table if not exists public.preparation_progress (
 alter table public.preparation_progress enable row level security;
 grant all on public.preparation_progress to service_role;
 
-create table if not exists public.order_pack ing (
+create table if not exists public.order_packing (
   order_id uuid primary key references public.orders(id),
   delivery_date date not null,
   city text not null check (city in ('kochi','trivandrum')),
@@ -93,6 +93,20 @@ begin
     if o.status='dispatched' then raise exception 'Dispatched orders cannot be unpacked'; end if;
     if p_action='unprepare' and exists(select 1 from order_packing where order_id=o.id and packed_at is not null) then raise exception 'Unpack this order in Dispatch first'; end if;
     delete from order_packing where order_id=o.id;
+  elsif p_action='reset_order' then
+    city_name:=case when o.source='trivandrum' then 'trivandrum' else 'kochi' end;
+    -- Remove this order's produced allocation, not another order's reserved stock.
+    for r in select key,value::integer as n from jsonb_each_text(o.flavours::jsonb) where value::integer>0 loop
+      select coalesce(sum((flavours->>r.key)::integer),0) into consumed from order_packing where delivery_date=o.delivery_date and city=city_name and order_id<>o.id;
+      select consumed+coalesce(sum((flavours->>r.key)::integer),0) into consumed from orders x
+        where x.id<>o.id and x.delivery_date=o.delivery_date and x.status='dispatched'
+        and (case when x.source='trivandrum' then 'trivandrum' else 'kochi' end)=city_name
+        and not exists(select 1 from order_packing where order_id=x.id);
+      update preparation_progress set finished=greatest(consumed,finished-r.n)
+        where delivery_date=o.delivery_date and city=city_name and flavour_id=r.key;
+    end loop;
+    delete from order_packing where order_id=o.id;
+    update orders set status='confirmed' where id=o.id;
   elsif p_action='dispatch' then
     if o.status='dispatched' then return jsonb_build_object('dispatched',true); end if;
     if not exists(select 1 from order_packing where order_id=o.id and packed_at is not null) then raise exception 'Pack this order before dispatching'; end if;

@@ -110,7 +110,7 @@ assert.equal(
 );
 assert.equal(
   nextOrderAction({ status: "dispatched", packed: true, ready: true }).action,
-  null,
+  "reset_order",
 );
 model = buildProduction(
   [

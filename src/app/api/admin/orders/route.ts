@@ -124,13 +124,13 @@ export async function PATCH(req: NextRequest) {
   }
   const { data: existing } = await supabaseAdmin()
     .from("orders")
-    .select("notes")
+    .select("*")
     .eq("id", body.id)
     .single();
   const planError = await validatePlan(body);
   if (planError)
     return NextResponse.json({ error: planError }, { status: 400 });
-  const values = payload(body);
+  const values = payload({ ...existing, location: existing?.source, customer_maps_url: existing?.notes?.match(/Customer map: ([^|]*)/)?.[1]?.trim(), ...body });
   const { data: current } = await supabaseAdmin()
     .from("orders")
     .select("status")
@@ -142,7 +142,7 @@ export async function PATCH(req: NextRequest) {
   values.notes = replaceNote(
     existing?.notes,
     "Customer map",
-    String(body.customer_maps_url || "").trim(),
+    String(body.customer_maps_url === undefined ? existing?.notes?.match(/Customer map: ([^|]*)/)?.[1] || "" : body.customer_maps_url).trim(),
   );
   if (["complete", "incomplete", "auto"].includes(body.details_status))
     values.notes = replaceNote(

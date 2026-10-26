@@ -127,6 +127,10 @@ const { PGlite } = require("@electric-sql/pglite"),
     "packing prepared reservation never consumes twice",
   );
   await action("dispatch", id);
+  await action("reset_order", id);
+  assert.equal((await db.query("select status from orders where id=$1", [id])).rows[0].status, "confirmed");
+  assert.equal((await db.query("select * from order_packing where order_id=$1", [id])).rows.length, 0);
+  assert.equal((await db.query("select finished from preparation_progress where city='kochi'")).rows[0].finished, 4, "reset preserves the other dispatched order's four pieces");
   await db.close();
   console.log(
     "PASS: PostgreSQL migration, URI box layout, atomic packing, retries, no double use, count floor, packed edit guard, contact edit, unpack, dispatch and city isolation",

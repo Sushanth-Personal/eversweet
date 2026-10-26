@@ -8,7 +8,7 @@ export function instagramUrl(value?: string | null) {
     return `https://www.instagram.com/${username}/`;
   try {
     const url = new URL(/^https?:/.test(input) ? input : `https://${input}`);
-    if (!["instagram.com", "www.instagram.com"].includes(url.hostname))
+    if (!["instagram.com", "www.instagram.com", "m.instagram.com"].includes(url.hostname.toLowerCase()))
       return "";
     const name = url.pathname.split("/").filter(Boolean)[0];
     return name && /^[\w.]{1,30}$/.test(name)

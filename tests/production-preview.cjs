@@ -290,7 +290,7 @@ init()
           return res.end();
         }
         const upstream = http.request(
-          { hostname: "127.0.0.1", port: 3012, path: req.url, method: "GET" },
+          { hostname: "127.0.0.1", port: Number(process.env.PREVIEW_UPSTREAM || 3012), path: req.url, method: "GET" },
           (r) => {
             res.writeHead(r.statusCode, r.headers);
             r.pipe(res);
@@ -302,7 +302,7 @@ init()
         });
         upstream.end();
       })
-      .listen(3013, "127.0.0.1", () =>
+      .listen(Number(process.env.PREVIEW_PORT || 3013), "127.0.0.1", () =>
         console.log("Isolated workflow review: http://localhost:3013/admin"),
       ),
   )

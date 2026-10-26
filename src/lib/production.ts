@@ -26,7 +26,7 @@ export function nextOrderAction(state: {
 }) {
   if (state.status.trim().toLowerCase() === "cancelled")
     return { action: null, label: "Cancelled" };
-  if (isDispatched(state)) return { action: null, label: "Dispatched" };
+  if (isDispatched(state)) return { action: "reset_order", label: "Dispatched · reset" };
   if (state.packed) return { action: "dispatch", label: "Mark dispatched" };
   if (state.ready) return { action: "pack", label: "Mark packed" };
   return { action: "prepare_order", label: "Mark prepared" };

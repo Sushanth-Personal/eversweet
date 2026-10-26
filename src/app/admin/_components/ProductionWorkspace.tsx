@@ -154,6 +154,7 @@ export default function ProductionWorkspace({
     else dialog.current?.close();
   }, [sheet]);
   async function action(actionName: string, id?: string, entries?: Progress[]) {
+    if (actionName === "reset_order" && !window.confirm("This action will make this order unprepared. Continue?")) return;
     setBusy(id || "prepare");
     setMessage("");
     try {
@@ -177,7 +178,7 @@ export default function ProductionWorkspace({
                 ? "Order packed"
                 : actionName === "unpack"
                   ? "Order returned to packing"
-                  : "Order dispatched",
+                  : actionName === "reset_order" ? "Order returned to preparation" : "Order dispatched",
       );
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Could not save");

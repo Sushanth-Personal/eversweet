@@ -35,6 +35,7 @@ export async function POST(req: NextRequest) {
         "prepare",
         "prepare_order",
         "unprepare",
+        "reset_order",
       ].includes(b.action)
     )
       return NextResponse.json({ error: "Invalid action" }, { status: 400 });
