@@ -413,7 +413,7 @@ export function OrderManagerModal({
       const response = await fetch("/api/admin/orders", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: creationId, delivery_date: form.delivery_date, location: form.location }),
+          body: JSON.stringify({ id: creationId, delivery_date: form.delivery_date, location: form.location, box_selections: plan }),
         }),
         data = await response.json();
       if (!response.ok) throw Error(data.error);
@@ -456,7 +456,8 @@ export function OrderManagerModal({
           </header>
           <p>
             Set the city and date first. These are fixed on the customer’s link;
-            they only need to fill in their details, boxes and flavours.
+            choose the boxes below, then your customer can fill in their details
+            and flavours.
           </p>
           <fieldset className="order-link-priority">
             <legend>Order city</legend>
@@ -475,6 +476,28 @@ export function OrderManagerModal({
               onChange={e => set("delivery_date", e.target.value)} />
           </label>
           <p><strong>{form.location === "trivandrum" ? "Trivandrum" : "Kochi"}</strong> · {form.delivery_date || "Choose a date"}</p>
+          <section className="admin-box-editor" aria-label="Boxes for customer order">
+            <h3>Boxes</h3>
+            {plan.map((box, index) => (
+              <div className="order-modal-grid" key={index}>
+                <label>
+                  <span>Box {index + 1} size</span>
+                  <select disabled={saving} value={box.box_size_id}
+                    onChange={e => setPlan(current => current.map((item,i) => i === index ? {...item,box_size_id:e.target.value} : item))}>
+                    {boxes.filter(size => size.is_active || size.id === box.box_size_id).sort((a,b)=>a.count-b.count).map(size => <option key={size.id} value={size.id}>{size.label} · {size.count} pieces</option>)}
+                  </select>
+                </label>
+                <button type="button" disabled={saving} aria-label={`Remove box ${index+1}`}
+                  onClick={() => setPlan(current => current.filter((_,i)=>i !== index))}>Remove box</button>
+              </div>
+            ))}
+            <button type="button" disabled={saving || plan.length >= 100 || !boxes.some(size=>size.is_active)}
+              onClick={() => {
+                const size = [...boxes].filter(size=>size.is_active).sort((a,b)=>a.count-b.count)[0];
+                if(size) setPlan(current => [...current,{box_size_id:size.id,flavours:{}}]);
+              }}>＋ Add box</button>
+            <p>{plan.length ? `${plan.length} box${plan.length === 1 ? "" : "es"} · ${plan.reduce((sum,box)=>sum+(boxes.find(size=>size.id===box.box_size_id)?.count||0),0)} pieces. Your customer chooses the flavours.` : "No boxes selected yet. You can also let the customer choose."}</p>
+          </section>
           <button
             type="button"
             className="modal-save"

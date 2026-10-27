@@ -3,7 +3,7 @@ function load(file,deps={}){const exports={};vm.runInNewContext(ts.transpileModu
 const records=new Map(),writes=[];
 const draft=load("src/lib/order-draft.ts");
 const deps={"next/server":{NextResponse:{json:(body,o)=>({body,status:o?.status||200})}},"@/lib/order-draft":draft,"@/lib/admin-boxes":load("src/lib/admin-boxes.ts",{"./order-draft":draft}),"@/lib/delivery-date":{deliveryDateError:async()=>""},"@/lib/supabase":{supabaseAdmin:()=>({from:table=>{
- let id,updates;const q={select:()=>q,eq:(key,v)=>{id=v;return q},update:values=>{writes.push(values);updates=values;return q},upsert:async values=>{if(!records.has(values.id))records.set(values.id,values);return{error:null}},single:async()=>{if(updates)records.set(id,{...records.get(id),...updates});return {data:records.get(id),error:null}},then:resolve=>resolve({data:[],error:null})};return q;
+ let id,updates;const q={select:()=>q,eq:(key,v)=>{id=v;return q},update:values=>{writes.push(values);updates=values;return q},upsert:async values=>{if(!records.has(values.id))records.set(values.id,values);return{error:null}},single:async()=>{if(updates)records.set(id,{...records.get(id),...updates});return {data:records.get(id),error:null}},then:resolve=>resolve({data:table==="box_sizes"?[{id:"four"},{id:"five"},{id:"six"}]:[],error:null})};return q;
  }})}};
 deps['@/lib/order-contacts']={instagramUrl:value=>value};
 const api=load("src/app/api/admin/orders/route.ts",deps),request=body=>({json:async()=>body});
@@ -32,6 +32,16 @@ const api=load("src/app/api/admin/orders/route.ts",deps),request=body=>({json:as
  await api.PATCH(request({id:blank.id,phone:"9876543210"}));
  assert.deepEqual(Object.keys(writes[writes.length-1]),["phone"],"a later unrelated autosave cannot overwrite Instagram with a stale empty value");
  assert.equal(records.get(blank.id).insta_id,profile);
+ const selectedBoxes=[{box_size_id:"five",flavours:{}},{box_size_id:"six",flavours:{}}];
+ const boxed={id:"33333333-3333-4333-8333-333333333333",location:"kochi",delivery_date:"2099-01-01",box_selections:selectedBoxes};
+ assert.equal((await api.POST(request(boxed))).status,200,"link creation accepts multiple empty boxes for customer to fill");
+ assert.equal(JSON.stringify(draft.layout(records.get(boxed.id).notes)),JSON.stringify(selectedBoxes),"customer hydration receives exact selected sizes and empty flavours");
+ assert.equal((await api.POST(request({...boxed,box_selections:[]}))).status,200);
+ assert.equal(draft.layout(records.get(boxed.id).notes).length,2,"retry keeps the already-created order boxes");
+ const removed={...boxed,id:"44444444-4444-4444-8444-444444444444",box_selections:selectedBoxes.slice(1)};
+ assert.equal((await api.POST(request(removed))).status,200);
+ assert.equal(draft.layout(records.get(removed.id).notes).length,1,"only boxes remaining after removal are created");
+ assert.equal(draft.layout(records.get(removed.id).notes)[0].box_size_id,"six");
  assert.equal((await api.POST(request({...body,id:"invalid"}))).status,400,"stable valid ID mandatory");
  console.log("PASS: admin dated draft, idempotent retry, retry preserves existing order, blank-order creation and UUID");
 })().catch(e=>{console.error(e);process.exitCode=1});
