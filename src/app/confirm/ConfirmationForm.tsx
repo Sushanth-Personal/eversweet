@@ -26,13 +26,10 @@ type Form = {
   delivery_slot: string;
 };
 const TIMES = [
-  "9–11 AM",
   "11 AM–1 PM",
   "1–3 PM",
   "3–5 PM",
   "5–7 PM",
-  "7–9 PM",
-  "9–11 PM",
 ];
 const today = () =>
   new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(
@@ -604,7 +601,8 @@ export default function NewConfirmationPage({ draftId }: { draftId?: string }) {
                 )}
               </p>
               <label>
-                <span>Time</span>
+                <span>{form.location === "trivandrum" ? "Delivery" : "Time"}</span>
+                {form.location === "trivandrum" ? <p>No time selection needed for Trivandrum.</p> : <>
                 <select
                   value={form.delivery_slot}
                   onChange={(e) => update("delivery_slot", e.target.value)}
@@ -614,6 +612,7 @@ export default function NewConfirmationPage({ draftId }: { draftId?: string }) {
                     <option key={t}>{t}</option>
                   ))}
                 </select>
+                </>}
               </label>
               <label>
                 <span>Address</span>

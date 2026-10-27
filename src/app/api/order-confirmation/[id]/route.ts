@@ -198,7 +198,7 @@ export async function PATCH(
       customer_name: name,
       phone,
       address: String(body.address || "").trim() || null,
-      delivery_slot: body.delivery_slot || null,
+      delivery_slot: (old.source === "trivandrum" || (!old.delivery_date && body.location === "trivandrum")) ? null : body.delivery_slot || null,
       notes,
       box_size_id: plan[0]?.box_size_id || null,
       flavours: totals,

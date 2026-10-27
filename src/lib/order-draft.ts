@@ -36,6 +36,7 @@ export function completeness(
     address?: string | null;
     delivery_date?: string | null;
     delivery_slot?: string | null;
+    source?: string | null;
     notes?: string | null;
     box_size_id?: string;
     flavours?: Record<string, number>;
@@ -50,7 +51,7 @@ export function completeness(
     !order.customer_name?.trim() && "name",
     !order.phone?.trim() && "phone",
     !order.delivery_date && "date",
-    !order.delivery_slot && "time",
+    order.source !== "trivandrum" && !order.delivery_slot && "time",
     !order.address?.trim() && "address",
     !mapLink(order.notes) && "map link",
   ];
