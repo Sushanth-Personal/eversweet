@@ -58,8 +58,8 @@ export function productionOrder(o: ExtOrder, boxes: BoxSize[]) {
       if (!n) continue;
       flavours[id] = (flavours[id] || 0) + n;
       cups[id] ||= { white: 0, regular: 0 };
-      if (size === 8) cups[id].white += n;
-      else if (size === 4 || size === 5 || size === 6) cups[id].regular += n;
+      if (size === 5 || size === 8) cups[id].white += n;
+      else if (size === 4 || size === 6) cups[id].regular += n;
     }
   }
   return {

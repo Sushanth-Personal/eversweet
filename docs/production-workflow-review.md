@@ -50,7 +50,7 @@ Instagram uses the existing `orders.insta_id` field. Both usernames and profile 
 - Cancelling or editing an unpacked order recalculates demand without deleting extra produced stock.
 - An explicitly prepared order must release its reservation, and a packed order must be unpacked, before its date, city, box plan or cancellation can change. Contact edits remain allowed. Dispatched orders cannot be unpacked.
 
-Latest confirmed cup rules: **4, 5 and 6 use regular cups; 8 uses white cups.** Counts come from each actual box's flavour quantities.
+Latest confirmed cup rules: **4 and 6 use regular cups; 5 and 8 use white cups.** Counts come from each actual box's flavour quantities, including mixed-size orders.
 
 The preparation drawer distinguishes the full day's required/prepared counts from remaining work. The manifest defaults to remaining quantities, with a full-count toggle. It shows “4 left to prepare · 8 total today” rather than implying all eight are still outstanding.
 

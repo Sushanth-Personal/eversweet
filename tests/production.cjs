@@ -55,9 +55,21 @@ const partlyDone = buildProduction(packingOrders,boxes,[{city:"kochi",flavour_id
 assert.equal(partlyDone.manifest[0].id,"biscoff","finish the almost-ready box before starting another");
 for (const size of [4, 5, 6, 8]) {
   const r = productionOrder(order("a", { mango: size }, size), boxes);
-  assert.equal(r.cups.mango.white, size === 8 ? size : 0);
-  assert.equal(r.cups.mango.regular, [4, 5, 6].includes(size) ? size : 0);
+  assert.equal(r.cups.mango.white, [5, 8].includes(size) ? size : 0);
+  assert.equal(r.cups.mango.regular, [4, 6].includes(size) ? size : 0);
 }
+const mixedPlan = [
+  {box_size_id:"b5",flavours:{mango:2,berry:3}},
+  {box_size_id:"b5",flavours:{mango:1,berry:4}},
+  {box_size_id:"b6",flavours:{mango:2,berry:4}},
+];
+const mixedOrder = order("mixed-cups",{mango:5,berry:11},5,{notes:box.boxValues(mixedPlan).notes});
+const mixedCups = productionOrder(mixedOrder, boxes);
+assert.equal(mixedCups.cups.mango.white,3,"Mango in the two boxes of five uses white cups");
+assert.equal(mixedCups.cups.mango.regular,2,"Mango in box of six uses regular cups");
+const mixedManifest = buildProduction([mixedOrder],boxes,[],[]).manifest.find(r=>r.id==="mango");
+assert.equal(mixedManifest.cups.white,3);
+assert.equal(mixedManifest.cups.regular,2);
 const a = order("a", { mango: 4 }),
   b = order("b", { mango: 4 }, 4, { delivery_slot: "3–5 PM" }),
   t = order("t", { mango: 4 }, 4, { source: "trivandrum" });
