@@ -174,13 +174,21 @@ export async function DELETE(req: NextRequest) {
       { error: "Order ID is required" },
       { status: 400 },
     );
-  const { error, count } = await supabaseAdmin()
+  const db = supabaseAdmin();
+  const { error: cancelError } = await db.rpc("production_action", {
+    p_action: "cancel_order", p_order_id: String(body.id),
+  });
+  if (!cancelError) return NextResponse.json({ deleted: true });
+  // Compatibility for projects that have not applied the latest workflow SQL.
+  if (cancelError.code !== "PGRST202" && !/Unknown production action/i.test(cancelError.message))
+    return NextResponse.json({ error: cancelError.message }, { status: 409 });
+  const { error, count } = await db
     .from("orders")
     .update({ status: "cancelled" }, { count: "exact" })
     .eq("id", String(body.id));
   if (error) {
     console.error("Could not delete order", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: /Unpack/i.test(error.message) ? "This order has reserved pieces. Apply the latest workflow SQL to delete it directly, or undo preparation/unpack it first." : error.message }, { status: 409 });
   }
   if (count === 0)
     return NextResponse.json({ error: "Order not found" }, { status: 404 });

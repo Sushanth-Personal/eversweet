@@ -93,6 +93,11 @@ begin
     if o.status='dispatched' then raise exception 'Dispatched orders cannot be unpacked'; end if;
     if p_action='unprepare' and exists(select 1 from order_packing where order_id=o.id and packed_at is not null) then raise exception 'Unpack this order in Dispatch first'; end if;
     delete from order_packing where order_id=o.id;
+  elsif p_action='cancel_order' then
+    -- Soft-delete and release its reservation atomically. Produced pieces
+    -- remain available stock; deleting an order doesn't unmake the mochi.
+    delete from order_packing where order_id=o.id;
+    update orders set status='cancelled' where id=o.id;
   elsif p_action='reset_order' then
     city_name:=case when o.source='trivandrum' then 'trivandrum' else 'kochi' end;
     -- Remove this order's produced allocation, not another order's reserved stock.

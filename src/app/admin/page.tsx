@@ -7,6 +7,7 @@ import ProductionWorkspace from "./_components/ProductionWorkspace";
 import { OrderManagerModal } from "./_components/OrderManagerModal";
 import { FlavourSettingsModal } from "./_components/FlavourSettingsModal";
 import "./production.css";
+import { supabase } from "@/lib/supabase";
 export default function AdminPage() {
   const [orders, setOrders] = useState<ExtOrder[]>([]),
     [products, setProducts] = useState<Product[]>([]),
@@ -36,6 +37,33 @@ export default function AdminPage() {
   }, []);
   useEffect(() => {
     void load();
+  }, [load]);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const refresh = () => {
+      if (document.visibilityState === "hidden") return;
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        void load();
+        window.dispatchEvent(new Event("eversweet:updated"));
+      }, 250);
+    };
+    let channel = supabase.channel("admin-production-updates");
+    for (const table of ["orders", "preparation_progress", "order_packing", "products", "box_sizes"]) {
+      channel = channel.on("postgres_changes", { event: "*", schema: "public", table }, refresh);
+    }
+    channel.subscribe();
+    // Realtime needs publication/RLS configuration on Supabase. Keep a bounded
+    // fallback so changes still arrive if the channel disconnects or isn't enabled.
+    const interval = setInterval(refresh, 15000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      clearTimeout(timer); clearInterval(interval);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+      void supabase.removeChannel(channel);
+    };
   }, [load]);
   return (
     <main className="production-app">
@@ -72,7 +100,10 @@ export default function AdminPage() {
             void load();
           }}
           onDeleted={() => {
+            const deletedId = editor.order?.id;
+            setOrders(current => current.filter(o => o.id !== deletedId));
             setEditor(null);
+            window.dispatchEvent(new Event("eversweet:updated"));
             void load();
           }}
         />
