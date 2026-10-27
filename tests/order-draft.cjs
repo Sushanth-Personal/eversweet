@@ -13,7 +13,7 @@ const records = new Map();
 function from(table) {
   let id, action, values;
   const q = {
-    select(){return q}, is(){return q}, eq(k,v){if(k==="id")id=v;return q}, neq(){return q},
+    select(){return q}, is(){return q}, eq(k,v){if(k==="id")id=v;return q}, neq(){return q}, gt(){return q},
     upsert(v){if(!records.has(v.id))records.set(v.id,{...v,notes:"",created_at:new Date().toISOString()});return Promise.resolve({error:null})},
     update(v){values=v;action="update";return q},
     single(){if(action==="update")records.set(id,{...records.get(id),...values});return Promise.resolve({data:records.get(id)||null,error:null})},
@@ -21,6 +21,7 @@ function from(table) {
   };return q;
 }
 const deps={"next/server":{NextResponse:{json:(body,options)=>({body,status:options?.status||200})}},"@/lib/supabase":{supabaseAdmin:()=>({from})},"@/lib/order-draft":helpers};
+deps['@/lib/order-lifecycle']=load('src/lib/order-lifecycle.ts');
 deps["@/lib/customer-order"]=load("src/lib/customer-order.ts");
 deps["@/lib/delivery-date"]=load("src/lib/delivery-date.ts",deps);
 const create=load("src/app/api/order-confirmation/route.ts",deps);

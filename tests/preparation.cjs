@@ -4,7 +4,11 @@ const assert = require("node:assert/strict"),
   ts = require("typescript");
 let call,
   fail = false;
+let orderStatus = "confirmed";
+const lifecycle = {};
+vm.runInNewContext(ts.transpileModule(fs.readFileSync("src/lib/order-lifecycle.ts","utf8"),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{exports:lifecycle});
 const db = {
+  from: () => { const q={select:()=>q,eq:()=>q,single:async()=>({data:{status:orderStatus},error:null})};return q; },
   rpc: async (name, args) => {
     call = { name, args };
     return {
@@ -28,7 +32,7 @@ vm.runInNewContext(
               json: (body, o) => ({ body, status: o?.status || 200 }),
             },
           }
-        : { supabaseAdmin: () => db },
+        : n === "@/lib/order-lifecycle" ? lifecycle : { supabaseAdmin: () => db },
   },
 );
 const req = (body) => ({ json: async () => body });
@@ -41,6 +45,11 @@ const req = (body) => ({ json: async () => body });
   assert.equal((await api.POST(req(body))).status, 200);
   assert.equal(call.name, "production_action");
   assert.equal(call.args.p_entries[0].finished, 5);
+  orderStatus="draft";
+  assert.equal((await api.POST(req({action:"prepare_order",id:"11111111-1111-4111-8111-111111111111"}))).status,409,"draft cannot enter workflow RPC");
+  orderStatus="dispatched";
+  assert.equal((await api.POST(req({action:"pack",id:"11111111-1111-4111-8111-111111111111"}))).status,409,"completed order cannot re-enter active packing");
+  orderStatus="confirmed";
   for (const finished of [-1, 1.5, 100001])
     assert.equal(
       (

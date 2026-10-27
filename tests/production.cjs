@@ -20,6 +20,7 @@ const draft = load("src/lib/order-draft.ts"),
 const { buildProduction, productionOrder } = load("src/lib/production.ts", {
   "./admin-boxes": box,
   "./business-date": load("src/lib/business-date.ts"),
+  "./order-lifecycle": load("src/lib/order-lifecycle.ts"),
 });
 const boxes = [4, 5, 6, 8].map((count) => ({
   id: "b" + count,
@@ -175,8 +176,8 @@ assert.equal(
 );
 assert.equal(
   model.manifest[0].prepared,
-  4,
-  "dispatched pieces are already prepared",
+  0,
+  "dispatched pieces are consumed, not active prepared work",
 );
 model = buildProduction(
   [a, { ...b, status: "cancelled" }],

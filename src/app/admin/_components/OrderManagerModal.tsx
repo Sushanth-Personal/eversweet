@@ -413,7 +413,7 @@ export function OrderManagerModal({
       const response = await fetch("/api/admin/orders", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: creationId, delivery_date: form.delivery_date, location: form.location, box_selections: plan }),
+          body: JSON.stringify({ id: creationId, link_draft: true, delivery_date: form.delivery_date, location: form.location, box_selections: plan }),
         }),
         data = await response.json();
       if (!response.ok) throw Error(data.error);

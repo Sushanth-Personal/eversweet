@@ -6,6 +6,7 @@ const deps={"next/server":{NextResponse:{json:(body,o)=>({body,status:o?.status|
  let id,updates;const q={select:()=>q,eq:(key,v)=>{id=v;return q},update:values=>{writes.push(values);updates=values;return q},upsert:async values=>{if(!records.has(values.id))records.set(values.id,values);return{error:null}},single:async()=>{if(updates)records.set(id,{...records.get(id),...updates});return {data:records.get(id),error:null}},then:resolve=>resolve({data:table==="box_sizes"?[{id:"four"},{id:"five"},{id:"six"}]:[],error:null})};return q;
  }})}};
 deps['@/lib/order-contacts']={instagramUrl:value=>value};
+deps['@/lib/order-lifecycle']=load('src/lib/order-lifecycle.ts');
 const api=load("src/app/api/admin/orders/route.ts",deps),request=body=>({json:async()=>body});
 (async()=>{
  const body={id:"11111111-1111-4111-8111-111111111111",delivery_date:"2099-01-01",location:"kochi",box_selections:[]};

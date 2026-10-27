@@ -9,6 +9,8 @@ import {
   productionOrder,
   nextOrderAction,
   isDispatched,
+  historicalProductionOrders,
+  activeOrdersForDate,
   type City,
   type Packing,
   type Progress,
@@ -130,22 +132,22 @@ export default function ProductionWorkspace({
     return () => { window.removeEventListener("focus", refresh); window.removeEventListener("eversweet:updated", refresh); };
   }, [load, onRefresh]);
   const filtered = useMemo(
-      () => orders.filter((o) => o.status.trim().toLowerCase() !== "cancelled" && (city === "all" || cityOf(o) === city)),
-      [orders, city],
+      () => historicalProductionOrders(orders,boxes).filter((o) => city === "all" || cityOf(o) === city),
+      [orders, boxes, city],
     ),
     daily = useMemo(
-      () => ordersOnDate(filtered, date),
-      [filtered, date],
+      () => activeOrdersForDate(filtered, boxes, date),
+      [filtered, boxes, date],
     );
   const model = useMemo(
     () =>
       buildProduction(
-        daily,
+        ordersOnDate(filtered,date),
         boxes,
         progress.filter((p) => city === "all" || p.city === city),
-        packing.filter((p) => city === "all" || p.city === city),
+        packing.filter((p) => filtered.some(o=>o.id===p.order_id && o.delivery_date===date)),
       ),
-    [daily, boxes, progress, packing, city],
+    [filtered, date, boxes, progress, packing, city],
   );
   const name = (id: string) =>
     products.find((p) => p.id === id)?.name || "Unavailable flavour";
@@ -348,12 +350,7 @@ export default function ProductionWorkspace({
       </section>
     );
   }
-  const orderList =
-    scope === "all"
-      ? filtered
-      : scope === "undated"
-        ? filtered.filter((o) => !o.delivery_date)
-        : daily;
+  const orderList = scope === "history" ? ordersOnDate(filtered,date).filter(isDispatched) : daily;
   const active = model.rows.length,
     remaining = model.manifest.reduce((sum, r) => sum + r.remaining, 0);
   return (
@@ -637,9 +634,9 @@ export default function ProductionWorkspace({
                   value={scope}
                   onChange={(e) => setScope(e.target.value)}
                 >
-                  <option value="date">Selected date</option>
-                  <option value="undated">Date pending</option>
-                  <option value="all">All orders</option>
+                  <option value="date">Active orders</option>
+                  <option value="all">All active orders</option>
+                  <option value="history">Completed history</option>
                 </select>
               </div>
               {!orderList.length && (
@@ -761,8 +758,7 @@ export default function ProductionWorkspace({
                   {
                     model.rows.filter(
                       (r) =>
-                        model.packed.has(r.order.id) ||
-                        r.order.status === "dispatched",
+                        model.packed.has(r.order.id),
                     ).length
                   }{" "}
                   orders
@@ -770,8 +766,7 @@ export default function ProductionWorkspace({
               </div>
               {!model.rows.some(
                 (r) =>
-                  model.packed.has(r.order.id) ||
-                  r.order.status === "dispatched",
+                  model.packed.has(r.order.id),
               ) && (
                 <p className="production-empty">
                   Packed orders appear here automatically.
@@ -780,8 +775,7 @@ export default function ProductionWorkspace({
               {model.rows
                 .filter(
                   (r) =>
-                    model.packed.has(r.order.id) ||
-                    r.order.status === "dispatched",
+                    model.packed.has(r.order.id),
                 )
                 .map((r) => (
                   <article className="dispatch-row" key={r.order.id}>
