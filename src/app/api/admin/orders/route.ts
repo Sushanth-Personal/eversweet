@@ -13,7 +13,7 @@ function payload(body: Record<string, unknown>) {
     address: String(body.address || "").trim() || null,
     notes: mapUrl ? `Customer map: ${mapUrl}` : null,
     delivery_date: body.delivery_date || null,
-    delivery_slot: body.delivery_slot || null,
+    delivery_slot: body.location === "trivandrum" ? null : body.delivery_slot || null,
     box_size_id: body.box_size_id || null,
     flavours: body.flavours || {},
     source: body.location === "trivandrum" ? "trivandrum" : "kochi",

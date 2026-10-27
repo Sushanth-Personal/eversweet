@@ -68,6 +68,30 @@ export default function ProductionWorkspace({
     [count, setCount] = useState(0);
   const dialog = useRef<HTMLDialogElement>(null),
     request = useRef(0);
+  const navigationReady = useRef(false);
+  useEffect(() => {
+    if (!navigationReady.current) {
+      window.history.replaceState({ ...window.history.state, productionHome: true, productionView: false }, "");
+      navigationReady.current = true;
+    }
+    const back = () => {
+      // Closing an order modal lands on its underlying view first. The next
+      // browser Back (including the native mobile gesture) lands on Calendar.
+      if (!window.history.state?.productionView) {
+        setSheet(null);
+        setCalendar(true);
+      } else setCalendar(false);
+    };
+    window.addEventListener("popstate", back);
+    return () => window.removeEventListener("popstate", back);
+  }, []);
+  useEffect(() => {
+    if (!calendar && !window.history.state?.productionView) {
+      window.history.pushState({ ...window.history.state, productionHome: false, productionView: true }, "");
+    } else if (calendar && window.history.state?.productionView && !window.history.state?.orderModal) {
+      window.history.back();
+    }
+  }, [calendar]);
   useEffect(() => {
     if (createdVersion) {
       setTab("orders");
