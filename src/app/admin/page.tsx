@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Product, BoxSize } from "@/lib/types";
 import type { ContactField } from "@/lib/order-contacts";
 import type { ExtOrder } from "./_lib/constants";
@@ -20,18 +20,22 @@ export default function AdminPage() {
     link?: boolean;
   } | null>(null);
   const [createdVersion, setCreatedVersion] = useState(0);
+  const readVersion = useRef(0);
   const load = useCallback(async () => {
+    const version = ++readVersion.current;
     try {
       const response = await fetch("/api/admin/workspace", {
           cache: "no-store",
         }),
         data = await response.json();
       if (!response.ok) throw Error(data.error);
+      if (version !== readVersion.current) return;
       setOrders(data.orders);
       setProducts(data.products);
       setBoxes(data.boxes);
       setError("");
     } catch (e) {
+      if (version !== readVersion.current) return;
       setError(e instanceof Error ? e.message : "Could not load orders");
     }
   }, []);
@@ -90,7 +94,7 @@ export default function AdminPage() {
           products={products}
           boxes={boxes}
           password=""
-          onUpdated={saved => setOrders(current => current.map(o => o.id === saved.id ? {...o, ...saved} : o))}
+          onUpdated={saved => { ++readVersion.current; setOrders(current => current.map(o => o.id === saved.id ? {...o, ...saved} : o)); }}
           focusField={editor.focus}
           linkOnly={editor.link}
           onClose={() => { setEditor(null); void load(); }}

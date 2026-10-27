@@ -17,17 +17,10 @@ import { mapLink, completeness } from "@/lib/order-draft";
 import type { ContactField } from "@/lib/order-contacts";
 import ContactActions from "./ContactActions";
 import FlavourChips from "./FlavourChips";
+import { indiaToday, businessDateLabel, calendarMonth, shiftBusinessMonth, ordersOnDate } from "@/lib/business-date";
 
-const today = () =>
-  new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(
-    new Date(),
-  );
-const dateLabel = (date: string) =>
-  new Date(date + "T12:00:00").toLocaleDateString("en-IN", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  });
+const today = indiaToday;
+const dateLabel = businessDateLabel;
 type Props = {
   orders: ExtOrder[];
   products: Product[];
@@ -141,7 +134,7 @@ export default function ProductionWorkspace({
       [orders, city],
     ),
     daily = useMemo(
-      () => filtered.filter((o) => o.delivery_date === date),
+      () => ordersOnDate(filtered, date),
       [filtered, date],
     );
   const model = useMemo(
@@ -435,9 +428,7 @@ export default function ProductionWorkspace({
             <button
               aria-label="Previous month"
               onClick={() => {
-                const d = new Date(month + "-15");
-                d.setMonth(d.getMonth() - 1);
-                setMonth(d.toISOString().slice(0, 7));
+                setMonth(shiftBusinessMonth(month, -1));
               }}
             >
               <svg
@@ -455,17 +446,12 @@ export default function ProductionWorkspace({
               </svg>
             </button>
             <h2>
-              {new Date(month + "-15").toLocaleDateString("en-IN", {
-                month: "long",
-                year: "numeric",
-              })}
+              {calendarMonth(month).label}
             </h2>
             <button
               aria-label="Next month"
               onClick={() => {
-                const d = new Date(month + "-15");
-                d.setMonth(d.getMonth() + 1);
-                setMonth(d.toISOString().slice(0, 7));
+                setMonth(shiftBusinessMonth(month, 1));
               }}
             >
               <svg
@@ -488,24 +474,13 @@ export default function ProductionWorkspace({
               <small key={i}>{v}</small>
             ))}
             {Array.from(
-              { length: new Date(month + "-01").getDay() },
+              { length: calendarMonth(month).leading },
               (_, i) => (
                 <span key={"blank" + i} />
               ),
             )}
-            {Array.from(
-              {
-                length: new Date(
-                  Number(month.slice(0, 4)),
-                  Number(month.slice(5)),
-                  0,
-                ).getDate(),
-              },
-              (_, i) => {
-                const day = month + "-" + String(i + 1).padStart(2, "0"),
-                  n = filtered.filter(
-                    (o) => o.delivery_date === day && o.status !== "cancelled",
-                  ).length;
+            {calendarMonth(month).days.map((day, i) => {
+                const n = ordersOnDate(filtered, day).length;
                 return (
                   <button
                     key={day}
@@ -529,8 +504,7 @@ export default function ProductionWorkspace({
                     )}
                   </button>
                 );
-              },
-            )}
+              })}
           </div>
           <button
             onClick={() => {
