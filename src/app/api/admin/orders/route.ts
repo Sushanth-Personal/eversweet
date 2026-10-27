@@ -154,9 +154,29 @@ export async function PATCH(req: NextRequest) {
   if (body.box_selections)
     Object.assign(values, boxValues(body.box_selections, values.notes));
   if (!values.customer_name) values.customer_name = "Customer details pending";
+  // Never write fields copied from an earlier read. Two overlapping autosaves
+  // (or another browser) must not erase a newly saved Instagram link.
+  const changedColumns: Record<string, unknown> = {};
+  const fields: Record<string, string> = {
+    customer_name: "customer_name", phone: "phone", address: "address",
+    delivery_date: "delivery_date", delivery_slot: "delivery_slot",
+    box_size_id: "box_size_id", flavours: "flavours", location: "source",
+    fulfillment_type: "fulfillment_type", total_price: "total_price",
+    insta_id: "insta_id", remarks: "remarks",
+  };
+  for (const [input, column] of Object.entries(fields)) {
+    if (Object.prototype.hasOwnProperty.call(body, input)) changedColumns[column] = values[column as keyof typeof values];
+  }
+  if (body.customer_maps_url !== undefined || body.details_status !== undefined || body.box_selections !== undefined) changedColumns.notes = values.notes;
+  if (body.box_selections !== undefined) {
+    changedColumns.box_size_id = values.box_size_id;
+    changedColumns.flavours = values.flavours;
+  }
+  if (body.location === "trivandrum") changedColumns.delivery_slot = null;
+  if (!Object.keys(changedColumns).length) return NextResponse.json({ order: existing });
   const { data, error } = await supabaseAdmin()
     .from("orders")
-    .update(values)
+    .update(changedColumns)
     .eq("id", body.id)
     .select("*")
     .single();

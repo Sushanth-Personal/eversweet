@@ -1,9 +1,9 @@
 const assert=require("node:assert/strict"),fs=require("node:fs"),vm=require("node:vm"),ts=require("typescript");
 function load(file,deps={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,"utf8"),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{exports,require:n=>deps[n],console,Date});return exports}
-const records=new Map();
+const records=new Map(),writes=[];
 const draft=load("src/lib/order-draft.ts");
 const deps={"next/server":{NextResponse:{json:(body,o)=>({body,status:o?.status||200})}},"@/lib/order-draft":draft,"@/lib/admin-boxes":load("src/lib/admin-boxes.ts",{"./order-draft":draft}),"@/lib/delivery-date":{deliveryDateError:async()=>""},"@/lib/supabase":{supabaseAdmin:()=>({from:table=>{
- let id,updates;const q={select:()=>q,eq:(key,v)=>{id=v;return q},update:values=>{updates=values;return q},upsert:async values=>{if(!records.has(values.id))records.set(values.id,values);return{error:null}},single:async()=>{if(updates)records.set(id,{...records.get(id),...updates});return {data:records.get(id),error:null}},then:resolve=>resolve({data:[],error:null})};return q;
+ let id,updates;const q={select:()=>q,eq:(key,v)=>{id=v;return q},update:values=>{writes.push(values);updates=values;return q},upsert:async values=>{if(!records.has(values.id))records.set(values.id,values);return{error:null}},single:async()=>{if(updates)records.set(id,{...records.get(id),...updates});return {data:records.get(id),error:null}},then:resolve=>resolve({data:[],error:null})};return q;
  }})}};
 deps['@/lib/order-contacts']={instagramUrl:value=>value};
 const api=load("src/app/api/admin/orders/route.ts",deps),request=body=>({json:async()=>body});
@@ -28,6 +28,10 @@ const api=load("src/app/api/admin/orders/route.ts",deps),request=body=>({json:as
  const profile="https://www.instagram.com/_sumayyya__/";
  assert.equal((await api.PATCH(request({id:blank.id,insta_id:profile}))).status,200);
  assert.equal(records.get(blank.id).insta_id,profile,"exact reported Instagram profile survives save and readback");
+ assert.deepEqual(Object.keys(writes[writes.length-1]),["insta_id"],"Instagram save cannot rewrite any other field");
+ await api.PATCH(request({id:blank.id,phone:"9876543210"}));
+ assert.deepEqual(Object.keys(writes[writes.length-1]),["phone"],"a later unrelated autosave cannot overwrite Instagram with a stale empty value");
+ assert.equal(records.get(blank.id).insta_id,profile);
  assert.equal((await api.POST(request({...body,id:"invalid"}))).status,400,"stable valid ID mandatory");
  console.log("PASS: admin dated draft, idempotent retry, retry preserves existing order, blank-order creation and UUID");
 })().catch(e=>{console.error(e);process.exitCode=1});
