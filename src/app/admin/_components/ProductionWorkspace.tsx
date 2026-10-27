@@ -99,9 +99,9 @@ export default function ProductionWorkspace({
       setCalendar(false);
     }
   }, [createdVersion]);
-  const load = useCallback(async () => {
+  const load = useCallback(async (silent = false) => {
     const version = ++request.current;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const response = await fetch("/api/admin/workflow?date=" + date, {
         cache: "no-store",
@@ -130,14 +130,14 @@ export default function ProductionWorkspace({
   }, [load]);
   useEffect(() => {
     const refresh = () => {
-      void load();
-      void onRefresh();
+      void load(true);
     };
     window.addEventListener("focus", refresh);
-    return () => window.removeEventListener("focus", refresh);
+    window.addEventListener("eversweet:updated", refresh);
+    return () => { window.removeEventListener("focus", refresh); window.removeEventListener("eversweet:updated", refresh); };
   }, [load, onRefresh]);
   const filtered = useMemo(
-      () => orders.filter((o) => city === "all" || cityOf(o) === city),
+      () => orders.filter((o) => o.status.trim().toLowerCase() !== "cancelled" && (city === "all" || cityOf(o) === city)),
       [orders, city],
     ),
     daily = useMemo(
@@ -404,14 +404,6 @@ export default function ProductionWorkspace({
           </button>
           <button aria-label="Settings" onClick={onSettings}>
             Settings
-          </button>
-          <button
-            onClick={() => {
-              void load();
-              void onRefresh();
-            }}
-          >
-            Refresh
           </button>
         </div>
       </div>
