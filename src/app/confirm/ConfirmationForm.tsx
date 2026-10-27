@@ -203,7 +203,7 @@ export default function NewConfirmationPage({ draftId }: { draftId?: string }) {
     }
     setMapPrompt(false);
     setSaving(true);
-    if (await draft.save()) setOrderId(draft.id);
+    if (await draft.save(JSON.stringify({...JSON.parse(snapshot), submit: true}))) setOrderId(draft.id);
     setSaving(false);
   }
   async function submit(e: React.FormEvent) {

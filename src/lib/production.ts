@@ -2,6 +2,7 @@ import { initialBoxes } from "./admin-boxes";
 import type { ExtOrder } from "@/app/admin/_lib/constants";
 import type { BoxSize } from "./types";
 import { deliveryDateOf, orderCity } from "./business-date";
+import { isRealOrder, isActiveOrder } from "./order-lifecycle";
 
 export type City = "kochi" | "trivandrum";
 export type Progress = { city: City; flavour_id: string; finished: number };
@@ -77,9 +78,7 @@ export function buildProduction(
   progress: Progress[],
   packing: Packing[],
 ) {
-  const active = orders.filter(
-    (o) => o.status.trim().toLowerCase() !== "cancelled",
-  );
+  const active = orders.filter(isRealOrder);
   const rows = active
     .map((o) => productionOrder(o, boxes))
     .sort(
@@ -93,6 +92,7 @@ export function buildProduction(
     prepared: Record<string, number> = {},
     reserved: Record<string, number> = {},
     cups: Record<string, { white: number; regular: number }> = {};
+  const completed: Record<string,number> = {};
   for (const p of progress)
     prepared[stockKey(p.city, p.flavour_id)] = p.finished;
   const packed = new Map(
@@ -104,10 +104,13 @@ export function buildProduction(
   for (const row of rows)
     for (const [id, n] of Object.entries(row.flavours)) {
       const k = stockKey(row.city, id);
-      required[k] = (required[k] || 0) + n;
+      if (isActiveOrder(row.order) && row.valid) required[k] = (required[k] || 0) + n;
+      if (!isActiveOrder(row.order)) completed[k] = (completed[k] || 0) + n;
       cups[k] ||= { white: 0, regular: 0 };
-      cups[k].white += row.cups[id].white;
-      cups[k].regular += row.cups[id].regular;
+      if (isActiveOrder(row.order) && row.valid) {
+        cups[k].white += row.cups[id].white;
+        cups[k].regular += row.cups[id].regular;
+      }
       // Historical dispatched orders predate the reservation ledger, but their stock is still consumed.
       if (
         (isDispatched(row.order) ||
@@ -131,7 +134,8 @@ export function buildProduction(
     new Set([...Object.keys(prepared), ...Object.keys(reserved)]),
   ))
     inventory[k] = Math.max(0, (prepared[k] || 0) - (reserved[k] || 0));
-  const pending = rows.filter(
+  const operational = rows.filter(r=>isActiveOrder(r.order) && r.valid);
+  const pending = operational.filter(
     (r) =>
       !packed.has(r.order.id) &&
       !r.order.production_packed &&
@@ -183,7 +187,7 @@ export function buildProduction(
     for (const need of needs(box)) {
       if (!batchRank.has(need.key)) {
         batchRank.set(need.key, batchRank.size);
-        simulatedStock[need.key] = (simulatedStock[need.key] || 0) + Math.max(0, required[need.key] - (prepared[need.key] || 0));
+        simulatedStock[need.key] = (simulatedStock[need.key] || 0) + Math.max(0, required[need.key] - Math.max(0,(prepared[need.key] || 0)-(completed[need.key]||0)));
       }
     }
     for (const [id,n] of Object.entries(box.flavours)) {
@@ -215,9 +219,9 @@ export function buildProduction(
         city,
         id,
         required: required[k],
-        prepared: prepared[k] || 0,
-        reserved: reserved[k] || 0,
-        remaining: Math.max(0, required[k] - (prepared[k] || 0)),
+        prepared: Math.max(0,(prepared[k] || 0)-(completed[k]||0)),
+        reserved: Math.max(0,(reserved[k] || 0)-(completed[k]||0)),
+        remaining: Math.max(0, required[k] - Math.max(0,(prepared[k] || 0)-(completed[k]||0))),
         cups: cups[k],
         score: gain * 100000 + near * 100 + dependents,
       };
@@ -230,7 +234,7 @@ export function buildProduction(
         a.key.localeCompare(b.key),
     );
   return {
-    rows,
+    rows: operational,
     pending,
     manifest,
     ready: allocation.ready,
@@ -239,4 +243,11 @@ export function buildProduction(
     preparedOrders,
     inventory,
   };
+}
+/** Calendar/history keeps completed real orders; incomplete plans never create work. */
+export function historicalProductionOrders(orders: ExtOrder[], boxes: BoxSize[]) {
+  return orders.filter(o => isRealOrder(o) && !!deliveryDateOf(o) && (isDispatched(o) || productionOrder(o, boxes).valid));
+}
+export function activeOrdersForDate(orders: ExtOrder[], boxes: BoxSize[], date: string, city = "all") {
+  return historicalProductionOrders(orders,boxes).filter(o=>isActiveOrder(o) && deliveryDateOf(o)===date && (city==="all" || cityOf(o)===city));
 }

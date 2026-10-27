@@ -5,7 +5,7 @@
   "scripts": {
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "node tests/order-draft.cjs && node tests/admin-boxes.cjs && node tests/admin-order-links.cjs && node tests/delivery-date.cjs && node tests/maps-plus-code.cjs && node tests/preparation.cjs && node tests/production.cjs && node tests/production-database.cjs && node tests/data-correctness.cjs",
+    "test": "node tests/order-draft.cjs && node tests/admin-boxes.cjs && node tests/admin-order-links.cjs && node tests/delivery-date.cjs && node tests/maps-plus-code.cjs && node tests/preparation.cjs && node tests/production.cjs && node tests/production-database.cjs && node tests/data-correctness.cjs && node tests/order-lifecycle.cjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start"

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { isActiveOrder } from "@/lib/order-lifecycle";
 export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const date = req.nextUrl.searchParams.get("date");
@@ -63,7 +64,12 @@ export async function POST(req: NextRequest) {
         );
     } else if (typeof b.id !== "string" || !/^[\da-f-]{36}$/i.test(b.id))
       return NextResponse.json({ error: "Invalid order" }, { status: 400 });
-    const { data, error } = await supabaseAdmin().rpc("production_action", {
+    const db = supabaseAdmin();
+    if (["prepare_order","pack","dispatch"].includes(b.action)) {
+      const {data:order,error:readError}=await db.from("orders").select("status").eq("id",b.id).single();
+      if(readError || !order || !isActiveOrder(order)) return NextResponse.json({error:"This order is not active production work."},{status:409});
+    }
+    const { data, error } = await db.rpc("production_action", {
       p_action: b.action,
       p_order_id: b.id || null,
       p_date: b.date || null,

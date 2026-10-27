@@ -4,6 +4,7 @@ import { boxValues } from "@/lib/admin-boxes";
 import { replaceNote } from "@/lib/order-draft";
 import { supabaseAdmin } from "@/lib/supabase";
 import { instagramUrl } from "@/lib/order-contacts";
+import { LINK_LIFETIME_MS } from "@/lib/order-lifecycle";
 
 function payload(body: Record<string, unknown>) {
   const mapUrl = String(body.customer_maps_url || "").trim();
@@ -56,9 +57,11 @@ export async function POST(req: NextRequest) {
   if (planError)
     return NextResponse.json({ error: planError }, { status: 400 });
   const values = payload(body);
-  values.status = "confirmed";
+  values.status = body.link_draft === true ? "draft" : "confirmed";
   if (body.box_selections)
     Object.assign(values, boxValues(body.box_selections, values.notes));
+  const linkCreatedAt = new Date();
+  if (body.link_draft === true) values.notes = replaceNote(values.notes, "Order link expires at", new Date(linkCreatedAt.getTime()+LINK_LIFETIME_MS).toISOString());
   const dateError = await deliveryDateError(
     values.source,
     values.delivery_date,
@@ -81,6 +84,7 @@ export async function POST(req: NextRequest) {
     .upsert(
       {
         ...values,
+        ...(body.link_draft === true ? {created_at:linkCreatedAt.toISOString()} : {}),
         id,
         customer_name: values.customer_name || "Customer details pending",
         payment_method: "admin",
