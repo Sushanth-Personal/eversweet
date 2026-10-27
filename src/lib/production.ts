@@ -1,6 +1,7 @@
 import { initialBoxes } from "./admin-boxes";
 import type { ExtOrder } from "@/app/admin/_lib/constants";
 import type { BoxSize } from "./types";
+import { deliveryDateOf, orderCity } from "./business-date";
 
 export type City = "kochi" | "trivandrum";
 export type Progress = { city: City; flavour_id: string; finished: number };
@@ -13,7 +14,7 @@ export type Packing = {
   dispatched_at?: string | null;
 };
 export const cityOf = (o: { source?: string }): City =>
-  o.source === "trivandrum" ? "trivandrum" : "kochi";
+  orderCity(o);
 export const isDispatched = (o: { status: string }) =>
   o.status.trim().toLowerCase() === "dispatched";
 export const stockKey = (city: City, id: string) => `${city}:${id}`;
@@ -67,7 +68,7 @@ export function productionOrder(o: ExtOrder, boxes: BoxSize[]) {
     plan,
     flavours,
     cups,
-    valid: valid && !!o.delivery_date && (cityOf(o) === "trivandrum" || !!(o.delivery_slot || o.batch_label)),
+    valid: valid && !!deliveryDateOf(o) && (cityOf(o) === "trivandrum" || !!(o.delivery_slot || o.batch_label)),
   };
 }
 export function buildProduction(

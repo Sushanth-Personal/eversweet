@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { customerPhone } from "@/lib/customer-phone";
+import { indiaToday, deliveryDateOf } from "@/lib/business-date";
 import { useDraft } from "./useDraft";
 
 type Product = {
@@ -31,10 +32,7 @@ const TIMES = [
   "3–5 PM",
   "5–7 PM",
 ];
-const today = () =>
-  new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(
-    new Date(),
-  );
+const today = indiaToday;
 const initial: Form = {
   location: "kochi",
   customer_name: "",
@@ -96,7 +94,7 @@ export default function NewConfirmationPage({ draftId }: { draftId?: string }) {
           phone: o.phone || "",
           address: o.address || "",
           customer_maps_url: o.customer_maps_url || "",
-          delivery_date: o.delivery_date || "",
+          delivery_date: deliveryDateOf(o),
           delivery_slot: o.delivery_slot || "",
         });
         setPlan(

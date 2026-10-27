@@ -28,5 +28,5 @@ export async function GET() {
     })),
     products: products.data,
     boxes: boxes.data,
-  });
+  }, { headers: { "Cache-Control": "private, no-store" } });
 }

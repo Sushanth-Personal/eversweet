@@ -7,6 +7,7 @@ import OrderQuickDetails from "./OrderQuickDetails";
 import { useEffect, useRef, useState } from "react";
 import { instagramUrl, type ContactField } from "@/lib/order-contacts";
 import { completeness } from "@/lib/order-draft";
+import { createSaveQueue } from "@/lib/save-queue";
 import type { Product, BoxSize } from "@/lib/types";
 import type { ExtOrder } from "../_lib/constants";
 
@@ -166,15 +167,28 @@ export function OrderManagerModal({
   const failedDraft = useRef("");
   const historyMarker = useRef(creationId);
   const [saveNote, setSaveNote] = useState("");
+  const latestDraft = useRef({ values: draft, rawInstagram: instagram });
+  latestDraft.current = { values: draft, rawInstagram: instagram };
+  const saveQueue = useRef<ReturnType<typeof createSaveQueue<typeof latestDraft.current>> | null>(null);
+  if (!saveQueue.current) saveQueue.current = createSaveQueue(
+    latestDraft.current,
+    () => JSON.parse(JSON.stringify(latestDraft.current)),
+    value => persistSnapshot(value.values, value.rawInstagram),
+  );
+  const closing = useRef(false);
   const draftKey = JSON.stringify({ ...draft, rawInstagram: instagram });
+  const autosave = useRef(save);
+  autosave.current = save;
   useEffect(() => {
-    if (!order || !editing || saving || draftKey === failedDraft.current || (JSON.stringify(draft) === JSON.stringify(persisted.current) && (!instagram.trim() || !!instagramUrl(instagram)))) return;
-    const timer = window.setTimeout(() => { void save(true); }, 900);
+    const current = latestDraft.current;
+    if (!order?.id || !editing || saving || draftKey === failedDraft.current || (JSON.stringify(current.values) === JSON.stringify(persisted.current) && (!current.rawInstagram.trim() || !!instagramUrl(current.rawInstagram)))) return;
+    const timer = window.setTimeout(() => { void autosave.current(true); }, 900);
     return () => window.clearTimeout(timer);
-  }, [draftKey, editing, saving]);
+  }, [draftKey, editing, saving, order?.id]);
   async function closeEditor() {
-    if (inFlight.current) return;
-    if (order && !(await save(true))) return;
+    if (closing.current) return;
+    closing.current = true;
+    if (order && !(await save(true))) { closing.current = false; return; }
     if (window.history.state?.orderModal === historyMarker.current) window.history.back();
     if (order) onSaved(); else onClose();
   }
@@ -201,6 +215,7 @@ export function OrderManagerModal({
       const data = await response.json();
       if (!response.ok) throw Error(data.error);
       persisted.current = JSON.parse(JSON.stringify(original.current));
+      saveQueue.current?.reset({ values: original.current, rawInstagram: order.insta_id || "" });
       sessionFields.current.clear();
       cancel(); setSaveNote("Session changes undone");
     } catch (e) { setError(e instanceof Error ? e.message : "Could not undo"); }
@@ -307,21 +322,11 @@ export function OrderManagerModal({
       URL.revokeObjectURL(url);
     }
   }
-  async function save(automatic = false) {
-    if (inFlight.current) return false;
-    if (instagram.trim() && !instagramUrl(instagram)) {
-      failedDraft.current = draftKey;
-      setError("Enter a valid Instagram username or profile link.");
-      return false;
-    }
-    const snapshot = JSON.parse(JSON.stringify(draft));
-    const changed = Object.keys(snapshot).filter(k => JSON.stringify(snapshot[k]) !== JSON.stringify(persisted.current[k]));
-    if (order && !changed.length) return true;
+  async function persistSnapshot(snapshot: typeof draft, rawInstagram: string) {
+    if (rawInstagram.trim() && !instagramUrl(rawInstagram)) throw Error("Enter a valid Instagram username or profile link.");
+    const changed = (Object.keys(snapshot) as Array<keyof typeof snapshot>).filter(k => JSON.stringify(snapshot[k]) !== JSON.stringify(persisted.current[k]));
+    if (order && !changed.length) return;
     const changes = Object.fromEntries(changed.map(k => [k, snapshot[k]]));
-    inFlight.current = true;
-    setSaving(true);
-    setError("");
-    try {
       const response = await fetch("/api/admin/orders", {
           method: order ? "PATCH" : "POST",
           headers: {
@@ -341,10 +346,18 @@ export function OrderManagerModal({
       persisted.current = snapshot;
       failedDraft.current = "";
       changed.forEach(k => sessionFields.current.add(k));
-      setSaveNote("All changes saved");
       if (order && data.order) onUpdated?.(data.order);
-      if (order) { if (!automatic) onSaved(); }
-      else setCreated(data.order);
+      if (!order) setCreated(data.order);
+  }
+  async function save(automatic = false) {
+    inFlight.current = true;
+    setSaving(true);
+    setError("");
+    try {
+      if (order) await saveQueue.current!.flush();
+      else await persistSnapshot(latestDraft.current.values, latestDraft.current.rawInstagram);
+      setSaveNote("All changes saved");
+      if (order && !automatic) onSaved();
       return true;
     } catch (caught) {
       failedDraft.current = draftKey;

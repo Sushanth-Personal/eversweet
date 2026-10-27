@@ -11,6 +11,7 @@ import {
   replaceNote,
   type Selection,
 } from "@/lib/order-draft";
+export const dynamic = "force-dynamic";
 
 const FIELDS =
   "source,id,customer_name,phone,address,notes,box_size_id,flavours,delivery_date,delivery_slot,batch_label,total_price,status,created_at";
