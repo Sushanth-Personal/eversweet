@@ -227,8 +227,8 @@ assert.equal(
   "tel:+9112345",
 );
 assert.equal(
-  contacts.contactAction("instagram", { insta_id: "eversweet" }).href,
-  "https://www.instagram.com/eversweet/",
+  contacts.contactAction("instagram", { insta_id: "https://www.instagram.com/eversweet/" }).href,
+  "https://ig.me/m/eversweet",
 );
 assert.ok(
   contacts.contactAction("map", {

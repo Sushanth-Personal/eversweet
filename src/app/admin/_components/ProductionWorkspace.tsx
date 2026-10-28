@@ -371,6 +371,23 @@ export default function ProductionWorkspace({
           />
         </label>
       </header>
+      <div className="pickup-code-actions" aria-label="Copy pickup Plus Code">
+        {[
+          {label: "TVM", code: "FXQ2+35X Thiruvananthapuram, Keralam"},
+          {label: "Kochi", code: "7J2R28VM+3X"},
+        ].map(({label, code}) => (
+          <button key={label} type="button" aria-label={`Copy ${label} Plus Code`} onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(code);
+              setMessage(`${label} Plus Code copied`);
+            } catch {
+              setMessage(`Could not copy automatically. ${label}: ${code}`);
+            }
+          }}>
+            <span aria-hidden="true">🏍</span> {label}
+          </button>
+        ))}
+      </div>
       <div className="production-toolbar">
         <div className="city-filter" aria-label="City">
           {(["all", "kochi", "trivandrum"] as const).map((c) => (
