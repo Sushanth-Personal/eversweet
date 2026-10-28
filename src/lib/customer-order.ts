@@ -3,7 +3,6 @@ export function customerOrderLock(order: {status: string; delivery_date?: string
   if (order.status === 'cancelled') return 'This order has been cancelled. Please contact Eversweet for a new order.';
   if (order.status === 'dispatched') return 'This order has been dispatched. For another order, please contact Eversweet for a new link.';
   if (!order.delivery_date) return '';
-  if (order.delivery_date < today) return 'This order date has passed. Please contact Eversweet for a new order link.';
   return '';
 }
 export function fixedOrderDetailsError(old: {delivery_date?: string | null; source?: string | null}, body: {delivery_date?: unknown; location?: unknown}) {

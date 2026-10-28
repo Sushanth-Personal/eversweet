@@ -350,8 +350,8 @@ export default function ProductionWorkspace({
       </section>
     );
   }
-  const orderList = scope === "history" ? ordersOnDate(filtered,date).filter(isDispatched) : daily;
-  const active = model.rows.length,
+  const orderList = scope === "history" ? ordersOnDate(filtered,date).filter(isDispatched) : scope === "active" ? daily : ordersOnDate(filtered,date);
+  const active = ordersOnDate(filtered,date).length,
     remaining = model.manifest.reduce((sum, r) => sum + r.remaining, 0);
   return (
     <div className="production-workspace">
@@ -634,8 +634,8 @@ export default function ProductionWorkspace({
                   value={scope}
                   onChange={(e) => setScope(e.target.value)}
                 >
-                  <option value="date">Active orders</option>
-                  <option value="all">All active orders</option>
+                  <option value="date">All orders</option>
+                  <option value="active">Active orders</option>
                   <option value="history">Completed history</option>
                 </select>
               </div>

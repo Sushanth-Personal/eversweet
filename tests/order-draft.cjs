@@ -53,7 +53,7 @@ const request=body=>({json:async()=>body});
  assert.equal((await edit.PATCH(request({...details,box_selections:[{box_size_id:"four",flavours:{retired:1}}]}),{params:{id}})).status,400,"retired additions rejected");
  assert.equal(records.get(id).total_price,1000,"customer edits preserve admin quote");
  records.get(id).delivery_date="2000-01-01";
- assert.equal((await edit.PATCH(request({...details,delivery_date:"2000-01-01"}),{params:{id}})).status,409,"past links locked");
+ assert.equal((await edit.PATCH(request({...details,delivery_date:"2000-01-01"}),{params:{id}})).status,200,"saved links do not expire when their date passes");
  records.get(id).delivery_date="2099-12-01";
  records.get(id).delivery_date=null;
  assert.equal((await edit.PATCH(request({...details,delivery_date:"2099-12-03"}),{params:{id}})).status,200,"customer chooses date on empty draft");
