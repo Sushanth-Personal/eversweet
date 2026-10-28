@@ -1644,9 +1644,10 @@ body:has(.production-app .order-modal-backdrop) {
   background: #eaf5ec;
 }
 .production-app .order-tile.tile-dispatched {
-  border-color: #9eb0c0;
-  border-left-color: #6b8195;
-  background: #eef3f8;
+  border-color: #bac0bd;
+  border-left-color: #89938d;
+  background: #f0f1ef;
+  opacity: .82;
 }
 .order-tile-heading {
   display: flex !important;

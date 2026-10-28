@@ -12,7 +12,6 @@ import {
   type Selection,
 } from "@/lib/order-draft";
 export const dynamic = "force-dynamic";
-import { isExpiredLink, EXPIRED_LINK_MESSAGE, LINK_LIFETIME_MS, normalizedStatus } from "@/lib/order-lifecycle";
 
 const FIELDS =
   "source,id,customer_name,phone,address,notes,box_size_id,flavours,delivery_date,delivery_slot,batch_label,total_price,status,created_at";
@@ -35,10 +34,6 @@ export async function GET(
   ]);
   if (error || !order || order.status === "cancelled")
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
-  if (isExpiredLink(order)) {
-    if (normalizedStatus(order) === "draft") await db.from("orders").update({status:"expired"}).eq("id",order.id).eq("status","draft");
-    return NextResponse.json({locked:EXPIRED_LINK_MESSAGE,order:null,products:[],boxes:[]});
-  }
   if (productError || boxError)
     return NextResponse.json(
       { error: "Could not load the flavour catalogue. Please try again." },
@@ -79,7 +74,6 @@ export async function PATCH(
     .single();
   if (!old || old.status === "cancelled")
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
-  if (isExpiredLink(old)) return NextResponse.json({error:EXPIRED_LINK_MESSAGE},{status:410});
   const dateError =
     customerOrderLock(old) ||
     fixedOrderDetailsError(old, body) ||
@@ -201,7 +195,8 @@ export async function PATCH(
   let query = db
     .from("orders")
     .update({
-      ...(body.submit === true ? {status:"confirmed"} : {}),
+      // A customer's saved details are a real order even before final submission.
+      ...(["draft", "expired"].includes(old.status) || body.submit === true ? {status:"confirmed"} : {}),
       ...(!old.delivery_date
         ? {
             delivery_date: body.delivery_date || null,
@@ -222,7 +217,6 @@ export async function PATCH(
     .neq("status", "dispatched")
     .eq("status",old.status)
     .select(FIELDS);
-  if (normalizedStatus(old) === "draft") query = query.gt("created_at",new Date(Date.now()-LINK_LIFETIME_MS).toISOString());
   query = old.delivery_date
     ? query.eq("delivery_date", old.delivery_date)
     : query.is("delivery_date", null);

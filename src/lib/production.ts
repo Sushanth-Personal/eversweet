@@ -234,7 +234,7 @@ export function buildProduction(
         a.key.localeCompare(b.key),
     );
   return {
-    rows: operational,
+    rows: rows.filter(r => isActiveOrder(r.order)),
     pending,
     manifest,
     ready: allocation.ready,
@@ -244,9 +244,9 @@ export function buildProduction(
     inventory,
   };
 }
-/** Calendar/history keeps completed real orders; incomplete plans never create work. */
+/** Saved orders remain visible while incomplete; only valid plans create work. */
 export function historicalProductionOrders(orders: ExtOrder[], boxes: BoxSize[]) {
-  return orders.filter(o => isRealOrder(o) && !!deliveryDateOf(o) && (isDispatched(o) || productionOrder(o, boxes).valid));
+  return orders.filter(o => isRealOrder(o) && !!deliveryDateOf(o));
 }
 export function activeOrdersForDate(orders: ExtOrder[], boxes: BoxSize[], date: string, city = "all") {
   return historicalProductionOrders(orders,boxes).filter(o=>isActiveOrder(o) && deliveryDateOf(o)===date && (city==="all" || cityOf(o)===city));
