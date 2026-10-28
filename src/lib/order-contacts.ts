@@ -1,5 +1,21 @@
 import { googleMapsLink } from "./maps-plus-code";
 export type ContactField = "phone" | "instagram" | "map" | "flavours" | "time";
+/** Convert profile links at opening time only; stored profile values stay unchanged. */
+export function getInstagramDmUrl(profileUrl?: string | null) {
+  if (!profileUrl?.trim()) return "";
+  try {
+    const url = new URL(profileUrl.trim());
+    if (!['https:', 'http:'].includes(url.protocol) ||
+        !['instagram.com', 'www.instagram.com', 'm.instagram.com'].includes(url.hostname.toLowerCase()) ||
+        url.username || url.password || url.port) return "";
+    const match = url.pathname.match(/^\/([A-Za-z0-9_.]{1,30})\/?$/);
+    const username = match?.[1];
+    if (!username || ['p', 'reel', 'reels', 'stories', 'explore', 'direct', 'accounts', 'about', 'developer', 'legal'].includes(username.toLowerCase())) return "";
+    return `https://ig.me/m/${username}`;
+  } catch {
+    return "";
+  }
+}
 export function instagramUrl(value?: string | null) {
   const raw = (value || "").trim();
   // Sharing/copying can include a Markdown wrapper or surrounding message.
@@ -28,7 +44,7 @@ export function contactAction(
     field === "phone"
       ? values.phone?.replace(/[^\d+]/g, "")
       : field === "instagram"
-        ? instagramUrl(values.insta_id)
+        ? getInstagramDmUrl(values.insta_id)
         : googleMapsLink(values.customer_maps_url || "");
   return value
     ? { href: field === "phone" ? `tel:${value}` : value, focus: null }
