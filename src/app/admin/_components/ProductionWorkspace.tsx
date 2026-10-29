@@ -394,7 +394,7 @@ export default function ProductionWorkspace({
               setMessage(`Could not copy automatically. ${label}: ${code}`);
             }
           }}>
-            <span aria-hidden="true">🏍</span> {label}
+            <span className="pickup-code-icon" aria-hidden="true">🏍</span><span className="pickup-code-label">{label}</span>
           </button>
         ))}
       </div>
