@@ -18,6 +18,7 @@ import {
 import { mapLink, completeness } from "@/lib/order-draft";
 import type { ContactField } from "@/lib/order-contacts";
 import ContactActions from "./ContactActions";
+import { DEFAULT_PICKUP_CODES, PICKUP_CITIES, type PickupCodes } from "@/lib/pickup-codes";
 import FlavourChips from "./FlavourChips";
 import { indiaToday, businessDateLabel, calendarMonth, shiftBusinessMonth, ordersOnDate } from "@/lib/business-date";
 
@@ -63,6 +64,16 @@ export default function ProductionWorkspace({
     [count, setCount] = useState(0);
   const dialog = useRef<HTMLDialogElement>(null),
     request = useRef(0);
+  const [pickupCodes, setPickupCodes] = useState<PickupCodes>(DEFAULT_PICKUP_CODES);
+  useEffect(() => {
+    let live = true;
+    const load = () => { fetch("/api/admin/pickup-codes", { cache: "no-store" }).then(r => r.json()).then(d => { if (live && d.codes) setPickupCodes(d.codes); }).catch(() => {}); };
+    const updated = (e: Event) => setPickupCodes((e as CustomEvent<PickupCodes>).detail);
+    load();
+    window.addEventListener("pickup-codes-updated", updated);
+    window.addEventListener("focus", load);
+    return () => { live = false; window.removeEventListener("pickup-codes-updated", updated); window.removeEventListener("focus", load); };
+  }, []);
   const navigationReady = useRef(false);
   useEffect(() => {
     if (!navigationReady.current) {
@@ -372,11 +383,10 @@ export default function ProductionWorkspace({
         </label>
       </header>
       <div className="pickup-code-actions" aria-label="Copy pickup Plus Code">
-        {[
-          {label: "TVM", code: "FXQ2+35X Thiruvananthapuram, Keralam"},
-          {label: "Kochi", code: "7J2R28VM+3X"},
-        ].map(({label, code}) => (
+        {PICKUP_CITIES.map(({id, label}) => (
           <button key={label} type="button" aria-label={`Copy ${label} Plus Code`} onClick={async () => {
+            const code = pickupCodes[id];
+            if (!code) { setMessage(`Set the ${label} pickup Plus Code in Settings first.`); onSettings(); return; }
             try {
               await navigator.clipboard.writeText(code);
               setMessage(`${label} Plus Code copied`);
