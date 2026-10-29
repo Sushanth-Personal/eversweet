@@ -51,7 +51,7 @@ export default function OrderQuickDetails({
     ["Address", form.address],
     ["Google Maps link", form.customer_maps_url],
     ["Instagram profile", instagramUrl(form.insta_id)],
-    ["Delivery", `${form.delivery_date || "Date pending"} · ${form.delivery_slot || "Time pending"}\n${form.location === "trivandrum" ? "Trivandrum" : "Kochi"} · ${form.fulfillment_type || "delivery"}`],
+    ["Delivery", `${form.delivery_date || "Date pending"} · ${form.delivery_slot || "Time pending"}\n${form.location === "trivandrum" ? "Trivandrum" : form.location === "kozhikode" ? "Kozhikode" : "Kochi"} · ${form.fulfillment_type || "delivery"}`],
     ["Order", `${form.status} · ${form.payment_method || "Admin order"} · ₹${Number(form.total_price || 0).toLocaleString("en-IN")}`],
     ...(form.remarks ? [["Notes", form.remarks]] : []),
   ];

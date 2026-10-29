@@ -200,7 +200,7 @@ export async function PATCH(
       ...(!old.delivery_date
         ? {
             delivery_date: body.delivery_date || null,
-            source: body.location === "trivandrum" ? "trivandrum" : "kochi",
+            source: body.location === "trivandrum" ? "trivandrum" : body.location === "kozhikode" ? "kozhikode" : "kochi",
           }
         : {}),
       customer_name: name,

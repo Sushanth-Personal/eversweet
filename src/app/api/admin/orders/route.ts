@@ -16,7 +16,7 @@ function payload(body: Record<string, unknown>) {
     delivery_slot: body.location === "trivandrum" ? null : body.delivery_slot || null,
     box_size_id: body.box_size_id || null,
     flavours: body.flavours || {},
-    source: body.location === "trivandrum" ? "trivandrum" : "kochi",
+    source: body.location === "trivandrum" ? "trivandrum" : body.location === "kozhikode" ? "kozhikode" : "kochi",
     fulfillment_type:
       body.fulfillment_type === "pickup" ? "pickup" : "delivery",
     status: body.status || "confirmed",

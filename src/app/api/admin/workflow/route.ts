@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
         new Set(b.entries.map((e: any) => e.city)).size !== b.entries.length ||
         b.entries.some(
           (e: any) =>
-            !["kochi", "trivandrum"].includes(e.city) ||
+            !["kochi", "trivandrum", "kozhikode"].includes(e.city) ||
             typeof e.flavour_id !== "string" ||
             !e.flavour_id ||
             e.flavour_id.length > 200 ||

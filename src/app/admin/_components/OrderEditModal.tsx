@@ -36,14 +36,14 @@ export function OrderEditModal({
     fulfillment_type: (order.fulfillment_type as "delivery" | "pickup") || "delivery",
     box_size_id: order.box_size_id || "",
     custom_box_label: "",
-    location: (order.source === "trivandrum" ? "trivandrum" : "kochi") as "kochi" | "trivandrum",
+    location: (order.source === "trivandrum" ? "trivandrum" : order.source === "kozhikode" ? "kozhikode" : "kochi") as "kochi" | "trivandrum" | "kozhikode",
   });
   const [flavours, setFlavours] = useState<Record<string, number>>((order.flavours as Record<string, number>) || {});
   const [saving, setSaving] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const f = (k: string) => (v: string) => setForm((p) => ({ ...p, [k]: v }));
 
-  function priceForLocation(box: BoxSize, location: "kochi" | "trivandrum"): number {
+  function priceForLocation(box: BoxSize, location: "kochi" | "trivandrum" | "kozhikode"): number {
     if (location === "trivandrum") return box.price_trivandrum ?? box.price;
     return box.price;
   }
@@ -76,7 +76,7 @@ export function OrderEditModal({
           📍 Order Location <span style={{ color: G.gold, fontWeight: 400 }}>(sets box pricing)</span>
         </p>
         <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-          {(["kochi", "trivandrum"] as const).map((loc) => (
+          {(["kochi", "trivandrum", "kozhikode"] as const).map((loc) => (
             <button
               key={loc}
               onClick={() => {
@@ -88,7 +88,7 @@ export function OrderEditModal({
               }}
               style={{ flex: 1, padding: "9px 12px", borderRadius: 9, fontFamily: "system-ui, sans-serif", border: `1px solid ${form.location === loc ? G.goldBorder : G.glassBorder}`, background: form.location === loc ? G.goldGlass : G.glass, color: form.location === loc ? G.gold : G.sub, fontSize: "0.82rem", fontWeight: form.location === loc ? 700 : 400, cursor: "pointer" }}
             >
-              {loc === "kochi" ? "🍡 Kochi" : "🚂 Trivandrum"}
+              {loc === "kochi" ? "🍡 Kochi" : loc === "kozhikode" ? "Kozhikode" : "🚂 Trivandrum"}
             </button>
           ))}
         </div>
@@ -208,7 +208,7 @@ export function OrderEditModal({
                 status: form.status,
                 fulfillment_type: form.fulfillment_type,
                 box_size_id: isCustomBox ? null : form.box_size_id || null,
-                source: form.location === "trivandrum" ? "trivandrum" : "dm",
+                source: form.location === "trivandrum" ? "trivandrum" : form.location === "kozhikode" ? "kozhikode" : "dm",
                 flavours,
               })
               .eq("id", order.id);

@@ -2396,3 +2396,6 @@ body:has(.production-app .order-modal-backdrop) {
  .production-app .settings-tabs button { font-size:13px; padding:8px 5px; }
  .pickup-code-actions button { flex:1; padding:8px 12px; }
 }
+.production-app .city-filter { flex-wrap:wrap; }
+.production-app .location-toggle:has(>button:nth-child(3):last-child) { grid-template-columns:repeat(3,minmax(0,1fr)); }
+@media(max-width:400px) { .production-app .location-toggle:has(>button:nth-child(3):last-child) { grid-template-columns:1fr; } }

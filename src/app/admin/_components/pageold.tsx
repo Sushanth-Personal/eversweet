@@ -1795,7 +1795,7 @@ function ManualOrderForm({
     payment_method: "upi",
     status: "pending",
     fulfillment_type: "delivery" as "delivery" | "pickup",
-    location: "kochi" as "kochi" | "trivandrum",
+    location: "kochi" as "kochi" | "trivandrum" | "kozhikode",
     custom_box_label: "",
   });
   const [boxRows, setBoxRows] = useState<
@@ -1881,7 +1881,7 @@ function ManualOrderForm({
           payment_method: form.payment_method,
           total_price: Number(row.price),
           status: form.status,
-          source: form.location === "trivandrum" ? "trivandrum" : "dm",
+          source: form.location === "trivandrum" ? "trivandrum" : form.location === "kozhikode" ? "kozhikode" : "dm",
           order_date: form.order_date,
           fulfillment_type: form.fulfillment_type,
         })
@@ -1960,7 +1960,7 @@ function ManualOrderForm({
         📍 Order Location
       </p>
       <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-        {(["kochi", "trivandrum"] as const).map((loc) => (
+        {(["kochi", "trivandrum", "kozhikode"] as const).map((loc) => (
           <button
             key={loc}
             onClick={() => setForm((p) => ({ ...p, location: loc }))}
@@ -1977,7 +1977,7 @@ function ManualOrderForm({
               cursor: "pointer",
             }}
           >
-            {loc === "kochi" ? "🍡 Kochi" : "🚂 Trivandrum"}
+            {loc === "kochi" ? "🍡 Kochi" : loc === "kozhikode" ? "Kozhikode" : "🚂 Trivandrum"}
           </button>
         ))}
       </div>

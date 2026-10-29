@@ -86,7 +86,7 @@ export default function NewConfirmationPage({ draftId }: { draftId?: string }) {
         setDateLocked(Boolean(o.delivery_date));
         setForm({
           location:
-            o.location || (o.source === "trivandrum" ? "trivandrum" : "kochi"),
+            o.location || (o.source === "trivandrum" ? "trivandrum" : o.source === "kozhikode" ? "kozhikode" : "kochi"),
           customer_name:
             o.customer_name === "Customer details pending"
               ? ""
@@ -511,7 +511,7 @@ export default function NewConfirmationPage({ draftId }: { draftId?: string }) {
                 <small>YOUR RESERVED DATE</small>
                 <strong>
                   {form.delivery_date} ·{" "}
-                  {form.location === "trivandrum" ? "Trivandrum" : "Kochi"}
+                  {form.location === "trivandrum" ? "Trivandrum" : form.location === "kozhikode" ? "Kozhikode" : "Kochi"}
                 </strong>
                 <p>
                   This date is fixed. Please contact Eversweet to reschedule or
@@ -522,7 +522,7 @@ export default function NewConfirmationPage({ draftId }: { draftId?: string }) {
               <>
                 <h2>Where and when?</h2>
                 <div className="location-toggle">
-                  {["kochi", "trivandrum"].map((city) => (
+                  {["kochi", "trivandrum", "kozhikode"].map((city) => (
                     <button
                       type="button"
                       key={city}
@@ -535,13 +535,13 @@ export default function NewConfirmationPage({ draftId }: { draftId?: string }) {
                         }))
                       }
                     >
-                      {city === "kochi" ? "Kochi" : "Trivandrum"}
+                      {city === "kochi" ? "Kochi" : city === "kozhikode" ? "Kozhikode" : "Trivandrum"}
                     </button>
                   ))}
                 </div>
                 <label>
                   <span>Order date</span>
-                  {form.location === "kochi" ? (
+                  {form.location !== "trivandrum" ? (
                     <input
                       type="date"
                       min={today()}
@@ -588,7 +588,7 @@ export default function NewConfirmationPage({ draftId }: { draftId?: string }) {
             <section>
               <h2>When and where?</h2>
               <p>
-                {form.location === "trivandrum" ? "Trivandrum" : "Kochi"} ·{" "}
+                {form.location === "trivandrum" ? "Trivandrum" : form.location === "kozhikode" ? "Kozhikode" : "Kochi"} ·{" "}
                 {form.delivery_date || "Date not chosen"}{" "}
                 {dateLocked ? (
                   <small> Date fixed · contact us to reschedule</small>

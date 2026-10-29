@@ -4,7 +4,7 @@ import type { BoxSize } from "./types";
 import { deliveryDateOf, orderCity } from "./business-date";
 import { isRealOrder, isActiveOrder } from "./order-lifecycle";
 
-export type City = "kochi" | "trivandrum";
+export type City = "kochi" | "trivandrum" | "kozhikode";
 export type Progress = { city: City; flavour_id: string; finished: number };
 export type Packing = {
   order_id: string;

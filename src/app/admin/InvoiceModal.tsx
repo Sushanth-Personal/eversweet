@@ -108,7 +108,8 @@ function fmtDeliveryDate(dateVal: string, slot: string) {
 }
 
 export function InvoiceModal({ onClose }: { onClose: () => void }) {
-  const [isTvm, setIsTvm] = useState(false);
+  const [city, setCity] = useState("kochi");
+  const isTvm = city === "trivandrum";
   const [totalMochis, setTotalMochis] = useState(0);
   const [deliveryDate, setDeliveryDate] = useState("");
   const [deliverySlot, setDeliverySlot] = useState("3–5 PM");
@@ -192,7 +193,7 @@ export function InvoiceModal({ onClose }: { onClose: () => void }) {
 
   const billText = [
     "          EVERSWEET",
-    "    Cloud Kitchen · Kochi",
+    `    Cloud Kitchen · ${city === "kozhikode" ? "Kozhikode" : isTvm ? "Trivandrum" : "Kochi"}`,
     "",
     LINE,
     row("Receipt", bn),
@@ -207,7 +208,7 @@ export function InvoiceModal({ onClose }: { onClose: () => void }) {
     row("TOTAL", `₹${grandTotal.toLocaleString("en-IN")}`),
     LINE,
     "  Thank you for your order!",
-    "  Eversweet 🍡 · Fresh mochi, Kochi",
+    `  Eversweet 🍡 · Fresh mochi, ${city === "kozhikode" ? "Kozhikode" : isTvm ? "Trivandrum" : "Kochi"}`,
   ]
     .filter((l) => l !== "")
     .join("\n");
@@ -317,7 +318,7 @@ export function InvoiceModal({ onClose }: { onClose: () => void }) {
         payment_method: "upi",
         total_price: grandTotal,
         status: "pending",
-        source: isTvm ? "trivandrum" : "dm",
+        source: city,
         order_date: today,
         notes: `Auto-created invoice. Boxes: ${boxSummary}. Auto-cancels midnight IST if unconfirmed.`,
       });
@@ -438,48 +439,10 @@ export function InvoiceModal({ onClose }: { onClose: () => void }) {
         </div>
 
         <div style={{ padding: 16 }}>
-          {/* TVM toggle */}
-          <button
-            onClick={() => {
-              setIsTvm((v) => !v);
-              setTotalMochis(0);
-            }}
-            style={{
-              width: "100%",
-              padding: "11px 14px",
-              marginBottom: 14,
-              borderRadius: 10,
-              border: `1px solid ${isTvm ? G.goldBorder : G.glassBorder}`,
-              background: isTvm ? G.goldGlass : G.glass,
-              color: isTvm ? G.gold : G.sub,
-              fontSize: "0.88rem",
-              fontWeight: isTvm ? 700 : 400,
-              cursor: "pointer",
-              fontFamily: "system-ui",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            <span>🚂 Trivandrum pricing (5→₹899, 8→₹1299)</span>
-            <span
-              style={{
-                width: 20,
-                height: 20,
-                borderRadius: 5,
-                border: `2px solid ${isTvm ? G.gold : G.muted}`,
-                background: isTvm ? G.gold : "transparent",
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: "0.7rem",
-                color: "#160c08",
-                flexShrink: 0,
-              }}
-            >
-              {isTvm ? "✓" : ""}
-            </span>
-          </button>
+          <label style={lbl}>Order city</label>
+          <div className="location-toggle">
+            {[["kochi", "Kochi"], ["trivandrum", "Trivandrum"], ["kozhikode", "Kozhikode"]].map(([id, label]) => <button type="button" key={id} className={city === id ? "active" : ""} aria-pressed={city === id} onClick={() => { setCity(id); setTotalMochis(0); }}>{label}</button>)}
+          </div>
 
           {/* Box tap buttons */}
           <label style={lbl}>Tap to add mochis</label>

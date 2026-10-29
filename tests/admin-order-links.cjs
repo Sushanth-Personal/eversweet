@@ -44,5 +44,15 @@ const api=load("src/app/api/admin/orders/route.ts",deps),request=body=>({json:as
  assert.equal(draft.layout(records.get(removed.id).notes).length,1,"only boxes remaining after removal are created");
  assert.equal(draft.layout(records.get(removed.id).notes)[0].box_size_id,"six");
  assert.equal((await api.POST(request({...body,id:"invalid"}))).status,400,"stable valid ID mandatory");
+ const calicut={...body,id:"55555555-5555-4555-8555-555555555555",location:"kozhikode"};
+ assert.equal((await api.POST(request(calicut))).status,200);
+ assert.equal(records.get(calicut.id).source,"kozhikode","Kozhikode link must preserve its city");
+ await api.PATCH(request({id:calicut.id,location:"kochi"}));
+ assert.equal(records.get(calicut.id).source,"kochi");
+ await api.PATCH(request({id:calicut.id,location:"kozhikode"}));
+ assert.equal(records.get(calicut.id).source,"kozhikode","editing city must round-trip Kozhikode");
+ const customer=load("src/lib/customer-order.ts");
+ assert.equal(customer.fixedOrderDetailsError(records.get(calicut.id),{delivery_date:calicut.delivery_date,location:"kozhikode"}),"");
+ assert.notEqual(customer.fixedOrderDetailsError(records.get(calicut.id),{delivery_date:calicut.delivery_date,location:"kochi"}),"");
  console.log("PASS: admin dated draft, idempotent retry, retry preserves existing order, blank-order creation and UUID");
 })().catch(e=>{console.error(e);process.exitCode=1});

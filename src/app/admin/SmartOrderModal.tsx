@@ -288,7 +288,7 @@ type AIExtracted = {
   _provider?: string;
 };
 
-type OrderLocation = "kochi" | "trivandrum";
+type OrderLocation = "kochi" | "trivandrum" | "kozhikode";
 
 // A single box line-item on the order. `box_size_label` of "custom" means
 // a one-off box the picker doesn't have a preset for.
@@ -608,7 +608,7 @@ export function SmartOrderModal({
             payment_method: "upi",
             total_price: Number(row.price),
             status: form.status,
-            source: form.location === "trivandrum" ? "trivandrum" : "dm",
+            source: form.location === "trivandrum" ? "trivandrum" : form.location === "kozhikode" ? "kozhikode" : "dm",
             order_date: form.order_date,
             fulfillment_type: form.fulfillment_type,
           })
@@ -951,7 +951,7 @@ export function SmartOrderModal({
               </span>
             </p>
             <div style={{ display: "flex", gap: 8 }}>
-              {(["kochi", "trivandrum"] as const).map((loc) => (
+              {(["kochi", "trivandrum", "kozhikode"] as const).map((loc) => (
                 <button
                   key={loc}
                   onClick={() => changeLocation(loc)}
@@ -968,7 +968,7 @@ export function SmartOrderModal({
                     cursor: "pointer",
                   }}
                 >
-                  {loc === "kochi" ? "🍡 Kochi" : "🚂 Trivandrum / Other"}
+                  {loc === "kochi" ? "🍡 Kochi" : loc === "kozhikode" ? "Kozhikode" : "🚂 Trivandrum"}
                 </button>
               ))}
             </div>

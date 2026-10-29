@@ -88,7 +88,7 @@ export function OrderManagerModal({
     delivery_date: order?.delivery_date || "",
     delivery_slot: order?.delivery_slot || order?.batch_label || "",
     box_size_id: order?.box_size_id || "",
-    location: order?.source === "trivandrum" ? "trivandrum" : "kochi",
+    location: order?.source === "trivandrum" ? "trivandrum" : order?.source === "kozhikode" ? "kozhikode" : "kochi",
     fulfillment_type: order?.fulfillment_type || "delivery",
     status: order?.status || "confirmed",
     total_price: String(order?.total_price || ""),
@@ -139,7 +139,7 @@ export function OrderManagerModal({
       delivery_date: order?.delivery_date || "",
       delivery_slot: order?.delivery_slot || order?.batch_label || "",
       box_size_id: order?.box_size_id || "",
-      location: order?.source === "trivandrum" ? "trivandrum" : "kochi",
+      location: order?.source === "trivandrum" ? "trivandrum" : order?.source === "kozhikode" ? "kozhikode" : "kochi",
       fulfillment_type: order?.fulfillment_type || "delivery",
       status: order?.status || "confirmed",
       total_price: String(order?.total_price || ""),
@@ -264,7 +264,7 @@ export function OrderManagerModal({
       ["Customer", form.customer_name],
       ["Phone", form.phone],
       ["Delivery", `${form.delivery_date} · ${form.delivery_slot}`],
-      ["Location", form.location === "trivandrum" ? "Trivandrum" : "Kochi"],
+      ["Location", form.location === "trivandrum" ? "Trivandrum" : form.location === "kozhikode" ? "Kozhikode" : "Kochi"],
       ["Address", form.address || "—"],
       ["Flavours", names],
     ];
@@ -462,7 +462,7 @@ export function OrderManagerModal({
           <fieldset className="order-link-priority">
             <legend>Order city</legend>
             <div className="location-toggle">
-              {[["kochi", "Kochi"], ["trivandrum", "Trivandrum"]].map(([value, label]) => (
+              {[["kochi", "Kochi"], ["trivandrum", "Trivandrum"], ["kozhikode", "Kozhikode"]].map(([value, label]) => (
                 <button type="button" key={value} aria-pressed={form.location === value}
                   className={form.location === value ? "active" : ""}
                   disabled={saving} onClick={() => set("location", value)}>{label}</button>
@@ -475,7 +475,7 @@ export function OrderManagerModal({
               min={new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date())}
               onChange={e => set("delivery_date", e.target.value)} />
           </label>
-          <p><strong>{form.location === "trivandrum" ? "Trivandrum" : "Kochi"}</strong> · {form.delivery_date || "Choose a date"}</p>
+          <p><strong>{form.location === "trivandrum" ? "Trivandrum" : form.location === "kozhikode" ? "Kozhikode" : "Kochi"}</strong> · {form.delivery_date || "Choose a date"}</p>
           <section className="admin-box-editor" aria-label="Boxes for customer order">
             <h3>Boxes</h3>
             {plan.map((box, index) => (
@@ -738,6 +738,7 @@ export function OrderManagerModal({
               {[
                 ["kochi", "Kochi"],
                 ["trivandrum", "TVM"],
+                ["kozhikode", "Kozhikode"],
               ].map(([value, label]) => (
                 <button
                   type="button"

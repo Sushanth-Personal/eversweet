@@ -281,7 +281,7 @@ export default function ProductionWorkspace({
               <span>
                 {next.order.delivery_slot || next.order.batch_label}
                 <br />
-                {next.city === "kochi" ? "Kochi" : "TVM"}
+                {next.city === "kochi" ? "Kochi" : next.city === "kozhikode" ? "Kozhikode" : "TVM"}
               </span>
             </div>
             {boxDetails(next)}
@@ -400,13 +400,13 @@ export default function ProductionWorkspace({
       </div>
       <div className="production-toolbar">
         <div className="city-filter" aria-label="City">
-          {(["all", "kochi", "trivandrum"] as const).map((c) => (
+          {(["all", "kochi", "trivandrum", "kozhikode"] as const).map((c) => (
             <button
               key={c}
               aria-pressed={city === c}
               onClick={() => setCity(c)}
             >
-              {c === "all" ? "All" : c === "kochi" ? "Kochi" : "TVM"}
+              {c === "all" ? "All" : c === "kochi" ? "Kochi" : c === "kozhikode" ? "Kozhikode" : "TVM"}
             </button>
           ))}
         </div>
@@ -573,10 +573,10 @@ export default function ProductionWorkspace({
               {model.rows.reduce((n, r) => n + total(r.flavours), 0)} mochi
               total ·{" "}
               {city === "all"
-                ? "Both cities"
+                ? "All cities"
                 : city === "kochi"
                   ? "Kochi"
-                  : "Trivandrum"}
+                  : city === "kozhikode" ? "Kozhikode" : "Trivandrum"}
             </p>
           </section>
           {(tab === "prepare" || tab === "orders") && (
@@ -635,7 +635,7 @@ export default function ProductionWorkspace({
                       <span>
                         {name(r.id)}
                         {city === "all" && (
-                          <small>{r.city === "kochi" ? "Kochi" : "TVM"}</small>
+                          <small>{r.city === "kochi" ? "Kochi" : r.city === "kozhikode" ? "Kozhikode" : "TVM"}</small>
                         )}
                       </span>
                       <em className={r.remaining ? "shortage" : ""}>
@@ -715,7 +715,7 @@ export default function ProductionWorkspace({
                         {o.delivery_date
                           ? dateLabel(o.delivery_date)
                           : "Date pending"}{" "}
-                        · {cityOf(o) === "kochi" ? "Kochi" : "Trivandrum"}
+                        · {cityOf(o) === "kochi" ? "Kochi" : cityOf(o) === "kozhikode" ? "Kozhikode" : "Trivandrum"}
                       </p>
                     </div>
                     {production.plan.length ? (
@@ -812,7 +812,7 @@ export default function ProductionWorkspace({
                       </button>
                       <span>
                         {r.order.delivery_slot} ·{" "}
-                        {r.city === "kochi" ? "Kochi" : "TVM"}
+                        {r.city === "kochi" ? "Kochi" : r.city === "kozhikode" ? "Kozhikode" : "TVM"}
                       </span>
                     </div>
                     <p>{r.order.phone || "Phone not provided"}</p>
@@ -865,7 +865,7 @@ export default function ProductionWorkspace({
           <>
             <header>
               <p className="eyebrow">
-                {selected.city === "kochi" ? "Kochi" : "Trivandrum"} ·{" "}
+                {selected.city === "kochi" ? "Kochi" : selected.city === "kozhikode" ? "Kozhikode" : "Trivandrum"} ·{" "}
                 {dateLabel(date)}
               </p>
               <button

@@ -5,7 +5,7 @@ import type {Product} from "@/lib/types";
 export default function PreparationSummary({date,orders,products}:{date:string;orders:ExtOrder[];products:Product[]}){
  const[progress,setProgress]=useState<Record<string,number>>({}),[full,setFull]=useState(false),[ready,setReady]=useState(false),[error,setError]=useState(""),[busy,setBusy]=useState(false),[editing,setEditing]=useState<string|null>(null),[value,setValue]=useState(0);
  const totals:Record<string,{city:string;id:string;total:number}>={};
- for(const o of orders){if(o.status==="cancelled")continue;const city=o.source==="trivandrum"?"trivandrum":"kochi";for(const[id,n]of Object.entries(o.flavours||{})){if(n<=0)continue;const k=city+":"+id;if(!totals[k])totals[k]={city,id,total:0};totals[k].total+=n}}
+ for(const o of orders){if(o.status==="cancelled")continue;const city=o.source==="trivandrum"?"trivandrum":o.source==="kozhikode"?"kozhikode":"kochi";for(const[id,n]of Object.entries(o.flavours||{})){if(n<=0)continue;const k=city+":"+id;if(!totals[k])totals[k]={city,id,total:0};totals[k].total+=n}}
  useEffect(()=>{let live=true;setReady(false);fetch("/api/admin/preparation?date="+encodeURIComponent(date),{cache:"no-store"}).then(async r=>{const d=await r.json();if(!r.ok)throw Error(d.error);if(live){setProgress(Object.fromEntries(d.progress.map((p:any)=>[p.city+":"+p.flavour_id,p.finished])));setReady(true)}}).catch(e=>{if(live)setError(e.message)});return()=>{live=false}},[date]);
  const dialog=useRef<HTMLDialogElement>(null);
  useEffect(()=>{if(editing)dialog.current?.showModal();else dialog.current?.close()},[editing]);

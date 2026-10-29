@@ -158,9 +158,9 @@ export function AllOrdersTab({
                   {o.phone && <p style={{ fontSize: "0.75rem", color: G.sub, marginTop: 2 }}>📞 {o.phone}</p>}
                   {o.address && <p style={{ fontSize: "0.72rem", color: G.muted, marginTop: 1 }}>📍 {o.address}</p>}
                   {o.remarks && <p style={{ fontSize: "0.72rem", color: "#86efac", fontStyle: "italic" as const, marginTop: 2 }}>💬 {o.remarks}</p>}
-                  {o.source === "trivandrum" && (
+                  {(o.source === "trivandrum" || o.source === "kozhikode") && (
                     <span style={{ fontSize: "0.6rem", padding: "2px 7px", borderRadius: 6, background: G.goldGlass, color: G.gold, fontWeight: 700, border: `1px solid ${G.goldBorder}`, display: "inline-block", marginTop: 4 }}>
-                      🚂 TVM
+                      {o.source === "kozhikode" ? "Kozhikode" : "🚂 TVM"}
                     </span>
                   )}
                   {flavours.length > 0 && (

@@ -31,7 +31,7 @@ export function BoxSizeRow({
         <div>
           <GlassInput placeholder="Label" value={label} onChange={setLabel} />
           <GlassInput placeholder="Pieces" type="number" value={count} onChange={setCount} />
-          <GlassInput placeholder="Kochi Price ₹" type="number" value={priceKochi} onChange={setPriceKochi} />
+          <GlassInput placeholder="Kochi / Kozhikode Price ₹" type="number" value={priceKochi} onChange={setPriceKochi} />
           <GlassInput placeholder="Trivandrum Price ₹ (optional)" type="number" value={priceTvm} onChange={setPriceTvm} />
           <div style={{ display: "flex", gap: 8 }}>
             <button

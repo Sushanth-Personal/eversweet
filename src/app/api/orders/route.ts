@@ -122,7 +122,7 @@ export async function POST(req: NextRequest) {
             <p><strong>DOB:</strong> ${dob || "—"}</p>
             <p><strong>Box:</strong> ${box?.label || box_size_id} (${box?.count} pieces)</p>
             <p><strong>Delivery:</strong> ${delivery_date || "—"} · ${batchLabel || delivery_batch || "—"}</p>
-            <p><strong>Fulfillment:</strong> ${fulfillment_type || "delivery"}${source === "trivandrum" ? " · 🚂 Trivandrum" : ""}</p>
+            <p><strong>Fulfillment:</strong> ${fulfillment_type || "delivery"}${source === "trivandrum" ? " · 🚂 Trivandrum" : source === "kozhikode" ? " · Kozhikode" : ""}</p>
             <p><strong>Total:</strong> ₹${total_price}${delivery_charge ? ` (incl. ₹${delivery_charge} delivery)` : ""}</p>
             <p><strong>Payment:</strong> ${payment_method}</p>
             <pre style="background:#f5f5f5;padding:10px;border-radius:4px;">${flavourLines}</pre>

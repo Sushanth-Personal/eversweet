@@ -11,6 +11,7 @@ const { PGlite } = require("@electric-sql/pglite"),
   await db.exec(
     fs.readFileSync("migrations/20261026_production_workflow.sql", "utf8"),
   );
+  await db.exec(fs.readFileSync("migrations/20261029_kozhikode_orders.sql", "utf8"));
   const id = "11111111-1111-4111-8111-111111111111",
     second = "22222222-2222-4222-8222-222222222222",
     size = "00000000-0000-4000-8000-000000000004";
@@ -135,6 +136,16 @@ const { PGlite } = require("@electric-sql/pglite"),
   assert.equal((await db.query("select status from orders where id=$1", [second])).rows[0].status,"cancelled");
   assert.equal((await db.query("select * from order_packing where order_id=$1",[second])).rows.length,0,"deletion releases reservation");
   assert.equal((await db.query("select finished from preparation_progress where city='kochi'")).rows[0].finished,4,"deletion preserves produced stock");
+  const calicut = "33333333-3333-4333-8333-333333333333";
+  await db.query(`insert into orders values($1,'Kozhikode customer','123',null,'2099-01-01','9–11 AM','kozhikode','confirmed',$2,'{"mango":4}',$3)`, [calicut,size,notes]);
+  await assert.rejects(action("pack", calicut), /inventory changed/i, "Kochi stock cannot pack Kozhikode orders");
+  await action("prepare_order", calicut);
+  assert.equal((await db.query("select finished from preparation_progress where city='kozhikode'")).rows[0].finished,4);
+  assert.equal((await db.query("select finished from preparation_progress where city='kochi'")).rows[0].finished,4,"Kozhikode preparation preserves Kochi stock");
+  await action("pack", calicut);
+  assert.equal((await db.query("select city from order_packing where order_id=$1",[calicut])).rows[0].city,"kozhikode");
+  await action("dispatch", calicut);
+  assert.equal((await db.query("select status from orders where id=$1",[calicut])).rows[0].status,"dispatched");
   await db.close();
   console.log(
     "PASS: PostgreSQL migration, URI box layout, atomic packing, retries, no double use, count floor, packed edit guard, contact edit, unpack, dispatch and city isolation",
