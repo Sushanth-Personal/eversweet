@@ -35,7 +35,8 @@ export function shiftBusinessMonth(month: string, delta: number) {
   return `${Math.floor(index / 12)}-${String(((index % 12) + 12) % 12 + 1).padStart(2, "0")}`;
 }
 export function orderCity(order: { source?: string | null }) {
-  return order.source?.trim().toLowerCase() === "trivandrum" ? "trivandrum" : "kochi";
+  const source = order.source?.trim().toLowerCase();
+  return source === "trivandrum" ? "trivandrum" : source === "kozhikode" ? "kozhikode" : "kochi";
 }
 export function ordersOnDate<T extends { delivery_date?: string | null; source?: string | null; status: string }>(orders: T[], date: string, city = "all") {
   return orders.filter(order => order.status.trim().toLowerCase() !== "cancelled" && deliveryDateOf(order) === date && (city === "all" || orderCity(order) === city));

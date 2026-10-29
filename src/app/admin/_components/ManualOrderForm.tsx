@@ -33,7 +33,7 @@ export function ManualOrderForm({
     payment_method: "upi",
     status: "pending",
     fulfillment_type: "delivery" as "delivery" | "pickup",
-    location: "kochi" as "kochi" | "trivandrum",
+    location: "kochi" as "kochi" | "trivandrum" | "kozhikode",
     custom_box_label: "",
   });
   const [boxRows, setBoxRows] = useState<{ box_size_label: string; price: string; custom_label?: string }[]>([{ box_size_label: "", price: "" }]);
@@ -46,7 +46,7 @@ export function ManualOrderForm({
   const f = (k: string) => (v: string) => setForm((p) => ({ ...p, [k]: v }));
   const totalPrice = boxRows.reduce((s, r) => s + (Number(r.price) || 0), 0);
 
-  function priceForLocation(box: BoxSize, location: "kochi" | "trivandrum"): number {
+  function priceForLocation(box: BoxSize, location: "kochi" | "trivandrum" | "kozhikode"): number {
     if (location === "trivandrum") return box.price_trivandrum ?? box.price;
     return box.price;
   }
@@ -78,7 +78,7 @@ export function ManualOrderForm({
     });
   }
 
-  function changeLocation(location: "kochi" | "trivandrum") {
+  function changeLocation(location: "kochi" | "trivandrum" | "kozhikode") {
     setForm((p) => ({ ...p, location }));
     setBoxRows((rows) =>
       rows.map((row) => {
@@ -114,7 +114,7 @@ export function ManualOrderForm({
           payment_method: form.payment_method,
           total_price: Number(row.price),
           status: form.status,
-          source: form.location === "trivandrum" ? "trivandrum" : "dm",
+          source: form.location === "trivandrum" ? "trivandrum" : form.location === "kozhikode" ? "kozhikode" : "dm",
           order_date: form.order_date,
           fulfillment_type: form.fulfillment_type,
         })
@@ -144,13 +144,13 @@ export function ManualOrderForm({
 
       <p style={{ fontSize: "0.65rem", color: G.muted, letterSpacing: "0.1em", textTransform: "uppercase" as const, marginBottom: 6, fontWeight: 600 }}>📍 Order Location</p>
       <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-        {(["kochi", "trivandrum"] as const).map((loc) => (
+        {(["kochi", "trivandrum", "kozhikode"] as const).map((loc) => (
           <button
             key={loc}
             onClick={() => changeLocation(loc)}
             style={{ flex: 1, padding: "9px 12px", borderRadius: 9, fontFamily: "system-ui, sans-serif", border: `1px solid ${form.location === loc ? G.goldBorder : G.glassBorder}`, background: form.location === loc ? G.goldGlass : G.glass, color: form.location === loc ? G.gold : G.sub, fontSize: "0.82rem", fontWeight: form.location === loc ? 700 : 400, cursor: "pointer" }}
           >
-            {loc === "kochi" ? "🍡 Kochi" : "🚂 Trivandrum"}
+            {loc === "kochi" ? "🍡 Kochi" : loc === "kozhikode" ? "Kozhikode" : "🚂 Trivandrum"}
           </button>
         ))}
       </div>

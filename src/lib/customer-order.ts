@@ -6,6 +6,6 @@ export function customerOrderLock(order: {status: string; delivery_date?: string
   return '';
 }
 export function fixedOrderDetailsError(old: {delivery_date?: string | null; source?: string | null}, body: {delivery_date?: unknown; location?: unknown}) {
-  if (old.delivery_date && (body.delivery_date !== old.delivery_date || body.location !== (old.source === 'trivandrum' ? 'trivandrum' : 'kochi'))) return 'The date and city are fixed for this order. Please contact Eversweet to reschedule.';
+  if (old.delivery_date && (body.delivery_date !== old.delivery_date || body.location !== (old.source === 'trivandrum' ? 'trivandrum' : old.source === 'kozhikode' ? 'kozhikode' : 'kochi'))) return 'The date and city are fixed for this order. Please contact Eversweet to reschedule.';
   return '';
 }
