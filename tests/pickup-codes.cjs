@@ -1,0 +1,22 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const ts = require('typescript');
+const { PGlite } = require('@electric-sql/pglite');
+const out = {};
+vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/lib/pickup-codes.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: out });
+(async () => {
+  for (const code of Object.values(out.DEFAULT_PICKUP_CODES)) assert.ok(out.validPickupCode(code));
+  assert.ok(out.validPickupCode('28VM+3X Kochi'));
+  for (const code of ['some address', '1234+AB', null, 'X'.repeat(201)]) assert.equal(out.validPickupCode(code), false);
+  assert.equal(out.DEFAULT_PICKUP_CODES.kozhikode, '');
+  const db = new PGlite();
+  const migration = fs.readFileSync('migrations/20261029_pickup_codes.sql', 'utf8');
+  await db.exec(migration);
+  assert.equal((await db.query('select * from pickup_codes')).rows.length, 3);
+  await db.query('update pickup_codes set code=$1 where city=$2', ['28VM+3X Kozhikode', 'kozhikode']);
+  await db.exec(migration);
+  assert.equal((await db.query("select code from pickup_codes where city='kozhikode'")).rows[0].code, '28VM+3X Kozhikode');
+  await db.close();
+  console.log('PASS: pickup code validation, city defaults, migration and saved-value preservation');
+})().catch(e => { console.error(e); process.exitCode = 1; });
